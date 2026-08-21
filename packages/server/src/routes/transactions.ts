@@ -1,15 +1,16 @@
 import { Hono } from 'hono';
-import { Env } from '../types';
+import { Env, AppVariables } from '../types';
 import { ApiResponse, Transaction, SyncBatchRequest, SyncBatchResponse } from '@ledger/shared';
 
-const transactionsRouter = new Hono<{ Bindings: Env }>();
+const transactionsRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 /**
  * 获取流水账单列表
  */
 transactionsRouter.get('/', async (c) => {
   try {
-    const userId = c.req.query('userId') || 'default_user';
+    const authUser = c.get('user');
+    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
     const ledgerId = c.req.query('ledgerId');
 
     let query = 'SELECT * FROM transactions WHERE user_id = ?';
@@ -60,12 +61,14 @@ async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: str
  */
 transactionsRouter.post('/', async (c) => {
   try {
+    const authUser = c.get('user');
     const body = await c.req.json<Partial<Transaction>>();
     const transactionId = body.transaction_id || `tx_${Date.now()}`;
-    const userId = body.user_id || 'default_user';
+    const userId = authUser?.userId || body.user_id || 'default_user';
     const ledgerId = body.ledger_id || 'default_ledger';
     const type = body.type || 'expense';
     const amount = typeof body.amount === 'number' ? body.amount : 0;
+
     const categoryId = body.category_id || null;
     const fromAccount = body.from_account || null;
     const toAccount = body.to_account || null;

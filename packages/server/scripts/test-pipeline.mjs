@@ -11,61 +11,151 @@ async function testPipeline() {
   assert.strictEqual(healthJson.success, true);
   assert.strictEqual(healthJson.data.database.status, 'connected');
 
-  console.log('\n--- 2. Testing Categories Endpoint ---');
-  const catRes = await fetch(`${BASE}/api/categories`);
+  console.log('\n--- 2. Testing User Registration (JWT Auth) ---');
+  const testEmail = `user_${Date.now()}@example.com`;
+  const testPassword = 'Password123!';
+
+  const regRes = await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      password: testPassword,
+    }),
+  });
+  assert.strictEqual(regRes.status, 201, 'Registration should return 201 Created');
+  const regJson = await regRes.json();
+  console.log('Registration Response:', regJson);
+  assert.strictEqual(regJson.success, true);
+  assert(regJson.data.token, 'Token must be present in register response');
+  assert.strictEqual(regJson.data.user.email, testEmail);
+  assert(regJson.data.user.default_ledger_id, 'Default ledger should be automatically created');
+  const userToken = regJson.data.token;
+  const registeredUserId = regJson.data.user.user_id;
+
+  console.log('\n--- 3. Testing Duplicate Registration Prevention ---');
+  const dupRes = await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      password: 'AnotherPassword456',
+    }),
+  });
+  assert.strictEqual(dupRes.status, 400, 'Duplicate registration should return 400');
+  const dupJson = await dupRes.json();
+  console.log('Duplicate Email Error Response:', dupJson);
+  assert.strictEqual(dupJson.success, false);
+
+  console.log('\n--- 4. Testing User Login with Wrong Password ---');
+  const wrongLoginRes = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      password: 'WrongPassword!',
+    }),
+  });
+  assert.strictEqual(wrongLoginRes.status, 401, 'Wrong password should return 401 Unauthorized');
+  const wrongLoginJson = await wrongLoginRes.json();
+  assert.strictEqual(wrongLoginJson.success, false);
+
+  console.log('\n--- 5. Testing User Login with Valid Password ---');
+  const loginRes = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      password: testPassword,
+    }),
+  });
+  assert.strictEqual(loginRes.status, 200, 'Login with correct credentials should return 200');
+  const loginJson = await loginRes.json();
+  console.log('Login Response:', loginJson);
+  assert.strictEqual(loginJson.success, true);
+  assert(loginJson.data.token, 'Login response must provide valid JWT token');
+  assert.strictEqual(loginJson.data.user.email, testEmail);
+
+  console.log('\n--- 6. Testing Protected /api/auth/me Endpoint ---');
+  // 6.1 Without Token -> 401
+  const unauthMeRes = await fetch(`${BASE}/api/auth/me`);
+  assert.strictEqual(unauthMeRes.status, 401, 'Accessing /api/auth/me without token should return 401');
+
+  // 6.2 With Bearer Token -> 200
+  const authMeRes = await fetch(`${BASE}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(authMeRes.status, 200, 'Accessing /api/auth/me with Bearer token should return 200');
+  const authMeJson = await authMeRes.json();
+  console.log('Auth Me Profile Response:', authMeJson);
+  assert.strictEqual(authMeJson.success, true);
+  assert.strictEqual(authMeJson.data.user_id, registeredUserId);
+  assert.strictEqual(authMeJson.data.email, testEmail);
+
+  console.log('\n--- 7. Testing Categories Endpoint ---');
+  const catRes = await fetch(`${BASE}/api/categories`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
   assert.strictEqual(catRes.status, 200);
   const catJson = await catRes.json();
   console.log(`Categories returned: ${catJson.data.length} items`);
   assert(catJson.data.length >= 10, 'Should return pre-seeded categories');
 
-  console.log('\n--- 3. Testing Create Transaction Endpoint ---');
+  console.log('\n--- 8. Testing Create Transaction with Authenticated JWT ---');
   const newTx = {
     transaction_id: `tx_${Date.now()}`,
-    user_id: 'test_user',
-    ledger_id: 'test_ledger',
     type: 'expense',
-    amount: 3500, // 35.00 CNY
-    category_id: 'cat_exp_food_lunch',
+    amount: 5200, // 52.00 CNY
+    category_id: 'cat_exp_food_dinner',
     transaction_date: new Date().toISOString(),
-    remark: 'Pipeline Verification Test',
+    remark: 'Authenticated JWT Transaction Verification',
   };
 
   const createRes = await fetch(`${BASE}/api/transactions`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
     body: JSON.stringify(newTx),
   });
   assert.strictEqual(createRes.status, 201);
   const createJson = await createRes.json();
-  console.log('Created Transaction in D1:', createJson.data);
-  assert.strictEqual(createJson.data.amount, 3500);
+  console.log('Created Authenticated Transaction in D1:', createJson.data);
+  assert.strictEqual(createJson.data.amount, 5200);
+  assert.strictEqual(createJson.data.user_id, registeredUserId);
 
-  console.log('\n--- 4. Testing List Transactions Endpoint ---');
-  const listRes = await fetch(`${BASE}/api/transactions?userId=test_user`);
+  console.log('\n--- 9. Testing List Transactions with Authenticated JWT ---');
+  const listRes = await fetch(`${BASE}/api/transactions`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
   assert.strictEqual(listRes.status, 200);
   const listJson = await listRes.json();
-  console.log(`Transactions found for user test_user: ${listJson.data.length}`);
+  console.log(`Transactions found for authenticated user: ${listJson.data.length}`);
   assert(listJson.data.some((t) => t.transaction_id === newTx.transaction_id));
 
-  console.log('\n--- 5. Testing Offline Batch Sync Endpoint ---');
+  console.log('\n--- 10. Testing Offline Batch Sync Endpoint ---');
   const syncBatch = {
     transactions: [
       {
         transaction_id: `tx_sync_${Date.now()}`,
-        user_id: 'test_user',
-        ledger_id: 'test_ledger',
+        user_id: registeredUserId,
+        ledger_id: regJson.data.user.default_ledger_id,
         type: 'income',
-        amount: 88800, // 888.00 CNY
+        amount: 120000, // 1200.00 CNY
         category_id: 'cat_inc_salary',
         transaction_date: new Date().toISOString(),
-        remark: 'Offline Sync Verification',
+        remark: 'Offline Sync Verification with Auth',
       },
     ],
   };
 
   const syncRes = await fetch(`${BASE}/api/transactions/sync`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
     body: JSON.stringify(syncBatch),
   });
   assert.strictEqual(syncRes.status, 200);
@@ -73,7 +163,7 @@ async function testPipeline() {
   console.log('Sync Batch Response:', syncJson);
   assert.strictEqual(syncJson.data.synced_ids.length, 1);
 
-  console.log('\n🎉 ALL PIPELINE INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉');
+  console.log('\n🎉 ALL PIPELINE & JWT AUTHENTICATION INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉');
 }
 
 testPipeline().catch((err) => {

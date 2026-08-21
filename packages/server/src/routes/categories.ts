@@ -1,18 +1,20 @@
 import { Hono } from 'hono';
-import { Env } from '../types';
+import { Env, AppVariables } from '../types';
 import { ApiResponse, Category } from '@ledger/shared';
 
-const categoriesRouter = new Hono<{ Bindings: Env }>();
+const categoriesRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 /**
  * 获取分类列表 (包含系统预置分类以及用户自定义分类)
  */
 categoriesRouter.get('/', async (c) => {
   try {
-    const userId = c.req.query('userId') || null;
+    const authUser = c.get('user');
+    const userId = authUser?.userId || c.req.query('userId') || null;
 
     let query = 'SELECT * FROM categories WHERE user_id IS NULL';
     const params: any[] = [];
+
 
     if (userId) {
       query += ' OR user_id = ?';

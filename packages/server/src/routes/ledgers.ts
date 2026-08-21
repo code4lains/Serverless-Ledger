@@ -1,15 +1,16 @@
 import { Hono } from 'hono';
-import { Env } from '../types';
+import { Env, AppVariables } from '../types';
 import { ApiResponse, Ledger } from '@ledger/shared';
 
-const ledgersRouter = new Hono<{ Bindings: Env }>();
+const ledgersRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
 /**
  * 获取用户的账本列表
  */
 ledgersRouter.get('/', async (c) => {
   try {
-    const userId = c.req.query('userId') || 'default_user';
+    const authUser = c.get('user');
+    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
 
     const { results } = await c.env.DB.prepare(
       'SELECT * FROM ledgers WHERE user_id = ? ORDER BY is_default DESC, created_at ASC'
@@ -36,13 +37,15 @@ ledgersRouter.get('/', async (c) => {
  */
 ledgersRouter.post('/', async (c) => {
   try {
+    const authUser = c.get('user');
     const body = await c.req.json<Partial<Ledger>>();
     const ledgerId = body.ledger_id || `led_${Date.now()}`;
-    const userId = body.user_id || 'default_user';
+    const userId = authUser?.userId || body.user_id || 'default_user';
     const name = body.name || '日常账本';
     const currency = body.currency || 'CNY';
     const isDefault = body.is_default ? 1 : 0;
     const now = new Date().toISOString();
+
 
     await c.env.DB.prepare(
       'INSERT INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'

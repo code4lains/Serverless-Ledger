@@ -103,3 +103,40 @@ export interface SyncBatchResponse {
   server_transactions: Transaction[];
   server_time: string;
 }
+
+/**
+ * 认证相关数据结构
+ */
+export interface AuthUser {
+  user_id: string;
+  email: string;
+  created_at: string;
+  default_ledger_id?: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name?: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  user: AuthUser;
+  token: string;
+  expires_in: number;
+}
+
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  exp: number;
+  iat?: number;
+  [key: string]: any;
+}
+
+

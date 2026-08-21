@@ -25,15 +25,29 @@ import {
   Briefcase,
   Gift,
   HelpCircle,
+  User as UserIcon,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
-import { Transaction, Category, TransactionType, formatMoney, toCents } from '@ledger/shared';
+import { Transaction, Category, TransactionType, AuthUser, formatMoney, toCents } from '@ledger/shared';
 import { localDb, seedLocalCategories } from './db';
-import { checkServerHealth, getCategories, createTransaction, syncPendingTransactions } from './api/client';
+import {
+  checkServerHealth,
+  getCategories,
+  createTransaction,
+  syncPendingTransactions,
+  getStoredUser,
+  fetchCurrentUser,
+  clearSession,
+} from './api/client';
+import { AuthModal } from './components/AuthModal';
 
 export function App() {
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<TransactionType>('expense');
   const [amountStr, setAmountStr] = useState<string>('');
   const [remark, setRemark] = useState<string>('');
@@ -72,6 +86,14 @@ export function App() {
       }
       await loadLocalData();
 
+      // 验证并更新用户信息
+      const userRes = await fetchCurrentUser();
+      if (userRes.success && userRes.data) {
+        setCurrentUser(userRes.data);
+      } else if (!userRes.success && getStoredUser()) {
+        setCurrentUser(null);
+      }
+
       // 检查后端 CF Workers + D1 连通性
       const health = await checkServerHealth();
       setServerStatus(health);
@@ -87,11 +109,13 @@ export function App() {
 
     const amountInCents = toCents(amountStr);
     const txId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const userId = currentUser?.user_id || 'default_user';
+    const ledgerId = currentUser?.default_ledger_id || 'default_ledger';
 
     await createTransaction({
       transaction_id: txId,
-      user_id: 'default_user',
-      ledger_id: 'default_ledger',
+      user_id: userId,
+      ledger_id: ledgerId,
       type: activeTab,
       amount: amountInCents,
       category_id: selectedCategory || null,
@@ -113,6 +137,19 @@ export function App() {
     await loadLocalData();
     setIsSyncing(false);
   };
+
+  // 退出登录
+  const handleLogout = () => {
+    clearSession();
+    setCurrentUser(null);
+  };
+
+  // 登录/注册成功回调
+  const handleAuthSuccess = async (user: AuthUser) => {
+    setCurrentUser(user);
+    await handleSync();
+  };
+
 
   // 计算本月支出/收入总额 (单位: 分)
   const totalExpense = transactions
@@ -161,6 +198,29 @@ export function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {currentUser ? (
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 text-xs">
+                <UserIcon className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <span className="font-medium max-w-[90px] truncate text-gray-700 dark:text-gray-200" title={currentUser.email}>
+                  {currentUser.email.split('@')[0]}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  title="退出登录"
+                  className="p-0.5 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  <LogOut className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAuthModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold shadow-sm hover:opacity-90 active:scale-95 transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>登录/注册</span>
+              </button>
+            )}
             <button
               onClick={handleSync}
               disabled={isSyncing}
@@ -177,6 +237,7 @@ export function App() {
             </button>
           </div>
         </header>
+
 
         {/* 全栈开发管线连通状态面板 */}
         <div className="bg-white dark:bg-neutral-800/80 rounded-2xl p-3.5 shadow-sm border border-gray-100 dark:border-neutral-700/60 backdrop-blur-sm">
@@ -391,9 +452,17 @@ export function App() {
             </div>
           )}
         </div>
+
+        {/* 登录/注册 弹窗 */}
+        <AuthModal
+          isOpen={isAuthModalOpen}
+          onClose={() => setIsAuthModalOpen(false)}
+          onSuccess={handleAuthSuccess}
+        />
       </div>
     </div>
   );
 }
 
 export default App;
+
