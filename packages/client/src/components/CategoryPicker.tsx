@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { Category, TransactionType } from '@ledger/shared';
+import { Category, TransactionType, buildCategoryTree } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 
 interface CategoryPickerProps {
@@ -15,82 +15,79 @@ export function CategoryPicker({
   selectedCategoryId,
   onSelectCategory,
 }: CategoryPickerProps) {
-  // 过滤当前类型 (支出/收入) 的分类
-  const filteredCategories = useMemo(() => {
-    const targetType = type === 'income' ? 'income' : 'expense';
-    return categories.filter((c) => c.type === targetType);
-  }, [categories, type]);
+  const targetType = type === 'income' ? 'income' : 'expense';
 
-  // 大类列表 (parent_id 为空)
-  const parentCategories = useMemo(() => {
-    return filteredCategories.filter((c) => !c.parent_id);
-  }, [filteredCategories]);
+  // 构建大类及子分类树形结构
+  const categoryTree = useMemo(() => {
+    return buildCategoryTree(categories, targetType);
+  }, [categories, targetType]);
 
-  // 小类分组映射 (parent_id -> Category[])
-  const subCategoriesMap = useMemo(() => {
-    const map = new Map<string, Category[]>();
-    for (const c of filteredCategories) {
-      if (c.parent_id) {
-        if (!map.has(c.parent_id)) {
-          map.set(c.parent_id, []);
-        }
-        map.get(c.parent_id)!.push(c);
-      }
-    }
-    return map;
-  }, [filteredCategories]);
-
-  // 当前激活的大分类
+  // 当前激活的大分类 ID
   const [activeParentId, setActiveParentId] = useState<string>('');
 
-  // 当选择的分类变化或类型切换时，同步定位所在的大分类
+  // 同步选中的分类与当前激活的大分类
   useEffect(() => {
+    if (categoryTree.length === 0) return;
+
     if (!selectedCategoryId) {
-      if (parentCategories.length > 0) {
-        const firstParent = parentCategories[0];
-        setActiveParentId(firstParent.category_id);
-        onSelectCategory(firstParent.category_id);
+      const firstTreeItem = categoryTree[0];
+      if (firstTreeItem) {
+        setActiveParentId(firstTreeItem.category.category_id);
+        const defaultChoice = firstTreeItem.children.length > 0
+          ? firstTreeItem.children[0].category_id
+          : firstTreeItem.category.category_id;
+        onSelectCategory(defaultChoice);
       }
       return;
     }
 
-    const currentCat = categories.find((c) => c.category_id === selectedCategoryId);
-    if (currentCat) {
-      if (currentCat.parent_id) {
-        setActiveParentId(currentCat.parent_id);
+    // 查找选中的分类是哪个大类或其子类
+    const current = categories.find((c) => c.category_id === selectedCategoryId);
+    if (current) {
+      if (current.parent_id) {
+        setActiveParentId(current.parent_id);
       } else {
-        setActiveParentId(currentCat.category_id);
+        setActiveParentId(current.category_id);
       }
-    } else if (parentCategories.length > 0) {
-      const firstParent = parentCategories[0];
-      setActiveParentId(firstParent.category_id);
-      onSelectCategory(firstParent.category_id);
+    } else {
+      // 若当前 selectedCategoryId 不在列表中，重置为首个
+      const firstTreeItem = categoryTree[0];
+      if (firstTreeItem) {
+        setActiveParentId(firstTreeItem.category.category_id);
+        const defaultChoice = firstTreeItem.children.length > 0
+          ? firstTreeItem.children[0].category_id
+          : firstTreeItem.category.category_id;
+        onSelectCategory(defaultChoice);
+      }
     }
-  }, [selectedCategoryId, type, parentCategories, categories]);
+  }, [selectedCategoryId, targetType, categoryTree, categories]);
 
-  // 获取当前大类下的所有子分类
-  const currentSubCategories = useMemo(() => {
-    return subCategoriesMap.get(activeParentId) || [];
-  }, [subCategoriesMap, activeParentId]);
+  // 当前激活大类节点
+  const currentParentNode = useMemo(() => {
+    return categoryTree.find((node) => node.category.category_id === activeParentId) || categoryTree[0];
+  }, [categoryTree, activeParentId]);
 
-  // 点击大分类时的处理
+  // 切换大分类
   const handleSelectParent = (parentId: string) => {
     setActiveParentId(parentId);
-    // 默认选中该大类自身，或者也可以默认选中该大类的第一个子分类
-    const subs = subCategoriesMap.get(parentId) || [];
-    if (subs.length > 0) {
-      onSelectCategory(subs[0].category_id);
-    } else {
-      onSelectCategory(parentId);
+    const targetNode = categoryTree.find((n) => n.category.category_id === parentId);
+    if (targetNode) {
+      if (targetNode.children.length > 0) {
+        // 默认选中第一个子分类
+        onSelectCategory(targetNode.children[0].category_id);
+      } else {
+        // 若无子分类则选中大分类自身
+        onSelectCategory(targetNode.category.category_id);
+      }
     }
   };
 
   return (
     <div className="flex flex-col gap-2.5">
-      {/* 1. 一级大分类选择器 (横向滑动/自适应网格) */}
+      {/* 1. 一级大分类横向切换导航 */}
       <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
-        {parentCategories.map((parent) => {
-          const isParentActive = activeParentId === parent.category_id;
+        {categoryTree.map(({ category: parent }) => {
+          const isParentActive = currentParentNode?.category.category_id === parent.category_id;
           return (
             <button
               key={parent.category_id}
@@ -109,10 +106,10 @@ export function CategoryPicker({
         })}
       </div>
 
-      {/* 2. 二级子分类选择器 (胶囊 Pills) */}
-      {currentSubCategories.length > 0 && (
+      {/* 2. 二级子分类选择区域 (胶囊 Pills 风格) */}
+      {currentParentNode && currentParentNode.children.length > 0 && (
         <div className="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100 dark:border-neutral-700/50">
-          {currentSubCategories.map((sub) => {
+          {currentParentNode.children.map((sub) => {
             const isSubSelected = selectedCategoryId === sub.category_id;
             return (
               <button
@@ -121,8 +118,8 @@ export function CategoryPicker({
                 onClick={() => onSelectCategory(sub.category_id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
                   isSubSelected
-                    ? 'bg-neutral-700 dark:bg-neutral-200 text-white dark:text-neutral-900 shadow-xs'
-                    : 'bg-gray-100/80 dark:bg-neutral-800 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                    ? 'bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 shadow-xs'
+                    : 'bg-gray-100/90 dark:bg-neutral-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >
                 <CategoryIcon icon={sub.icon} className="w-3 h-3" />
@@ -135,3 +132,4 @@ export function CategoryPicker({
     </div>
   );
 }
+

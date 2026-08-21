@@ -5,32 +5,59 @@ import {
   UtensilsCrossed,
   Pizza,
   CupSoda,
+  Carrot,
+  Apple,
   Car,
   Train,
   Navigation,
   Fuel,
+  CircleParking,
+  Bike,
+  Plane,
   ShoppingBag,
   Package,
   Shirt,
   Smartphone,
+  Sparkles,
+  Truck,
   Film,
   Gamepad2,
   Dumbbell,
-  Plane,
+  PartyPopper,
   Home,
   Building,
+  Building2,
   Zap,
+  Wifi,
+  Sofa,
+  Wrench,
+  HeartPulse,
+  Pill,
+  Stethoscope,
+  Activity,
+  GraduationCap,
+  BookOpen,
+  PenTool,
+  Users,
+  Gift,
+  HeartHandshake,
+  Heart,
+  HelpCircle,
+  AlertCircle,
   Briefcase,
   Banknote,
   Coins,
   Laptop,
+  Award,
   TrendingUp,
   LineChart,
   PiggyBank,
-  Gift,
+  ShieldCheck,
   RotateCcw,
+  Store,
   Wallet,
   Tag,
+  type LucideIcon,
 } from 'lucide-react';
 
 interface CategoryIconProps {
@@ -39,81 +66,90 @@ interface CategoryIconProps {
   size?: number;
 }
 
+const ICON_MAP: Record<string, LucideIcon> = {
+  // 餐饮美食
+  Utensils,
+  Coffee,
+  UtensilsCrossed,
+  Pizza,
+  CupSoda,
+  Carrot,
+  Apple,
+
+  // 交通出行
+  Car,
+  Train,
+  Navigation,
+  Fuel,
+  CircleParking,
+  Bike,
+  Plane,
+
+  // 购物消费
+  ShoppingBag,
+  Package,
+  Shirt,
+  Smartphone,
+  Sparkles,
+  Truck,
+
+  // 休闲娱乐
+  Film,
+  Gamepad2,
+  Dumbbell,
+  PartyPopper,
+
+  // 居住生活
+  Home,
+  Building,
+  Building2,
+  Zap,
+  Wifi,
+  Sofa,
+  Wrench,
+
+  // 医疗保健
+  HeartPulse,
+  Pill,
+  Stethoscope,
+  Activity,
+
+  // 学习进修
+  GraduationCap,
+  BookOpen,
+  PenTool,
+
+  // 人情社交
+  Users,
+  Gift,
+  HeartHandshake,
+  Heart,
+
+  // 其他支出
+  HelpCircle,
+  AlertCircle,
+
+  // 职业收入
+  Briefcase,
+  Banknote,
+  Coins,
+  Laptop,
+  Award,
+
+  // 理财收益
+  TrendingUp,
+  LineChart,
+  PiggyBank,
+  ShieldCheck,
+
+  // 其他收入 / 通用
+  RotateCcw,
+  Store,
+  Wallet,
+  Tag,
+};
+
 export function CategoryIcon({ icon, className = 'w-4 h-4', size }: CategoryIconProps) {
-  const iconProps = { className, size };
-
-  switch (icon) {
-    // 餐饮
-    case 'Utensils':
-      return <Utensils {...iconProps} />;
-    case 'Coffee':
-      return <Coffee {...iconProps} />;
-    case 'UtensilsCrossed':
-      return <UtensilsCrossed {...iconProps} />;
-    case 'Pizza':
-      return <Pizza {...iconProps} />;
-    case 'CupSoda':
-      return <CupSoda {...iconProps} />;
-
-    // 交通
-    case 'Car':
-      return <Car {...iconProps} />;
-    case 'Train':
-      return <Train {...iconProps} />;
-    case 'Navigation':
-      return <Navigation {...iconProps} />;
-    case 'Fuel':
-      return <Fuel {...iconProps} />;
-
-    // 购物
-    case 'ShoppingBag':
-      return <ShoppingBag {...iconProps} />;
-    case 'Package':
-      return <Package {...iconProps} />;
-    case 'Shirt':
-      return <Shirt {...iconProps} />;
-    case 'Smartphone':
-      return <Smartphone {...iconProps} />;
-
-    // 娱乐
-    case 'Film':
-      return <Film {...iconProps} />;
-    case 'Gamepad2':
-      return <Gamepad2 {...iconProps} />;
-    case 'Dumbbell':
-      return <Dumbbell {...iconProps} />;
-    case 'Plane':
-      return <Plane {...iconProps} />;
-
-    // 居住
-    case 'Home':
-      return <Home {...iconProps} />;
-    case 'Building':
-      return <Building {...iconProps} />;
-    case 'Zap':
-      return <Zap {...iconProps} />;
-
-    // 收入
-    case 'Briefcase':
-      return <Briefcase {...iconProps} />;
-    case 'Banknote':
-      return <Banknote {...iconProps} />;
-    case 'Coins':
-      return <Coins {...iconProps} />;
-    case 'Laptop':
-      return <Laptop {...iconProps} />;
-    case 'TrendingUp':
-      return <TrendingUp {...iconProps} />;
-    case 'LineChart':
-      return <LineChart {...iconProps} />;
-    case 'PiggyBank':
-      return <PiggyBank {...iconProps} />;
-    case 'Gift':
-      return <Gift {...iconProps} />;
-    case 'RotateCcw':
-      return <RotateCcw {...iconProps} />;
-
-    default:
-      return <Tag {...iconProps} />;
-  }
+  const IconComponent = (icon && ICON_MAP[icon]) ? ICON_MAP[icon] : Tag;
+  return <IconComponent className={className} size={size} />;
 }

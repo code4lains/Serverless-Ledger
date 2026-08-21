@@ -35,6 +35,8 @@ import {
   calculateTotals,
   formatTime,
   formatDateKey,
+  getCategoryMeta,
+  getInitialCategoryId,
 } from '@ledger/shared';
 import { localDb, seedLocalCategories } from './db';
 import {
@@ -104,10 +106,7 @@ export function App() {
       await seedLocalCategories();
       const cats = await getCategories();
       setCategories(cats);
-      if (cats.length > 0) {
-        const defaultCat = cats.find((c) => c.type === 'expense' && !c.parent_id);
-        if (defaultCat) setSelectedCategory(defaultCat.category_id);
-      }
+      setSelectedCategory(getInitialCategoryId('expense', cats));
       await loadLocalData();
 
       // 验证并更新用户信息
@@ -117,6 +116,7 @@ export function App() {
       } else if (!userRes.success && getStoredUser()) {
         setCurrentUser(null);
       }
+
 
       // 检查后端 CF Workers + D1 连通性
       const health = await checkServerHealth();
@@ -221,35 +221,14 @@ export function App() {
     setSelectedTxForDetail(null);
   };
 
-  // 获取分类名称及完整路径 (大类 · 小类)
-  const getCategoryMeta = (catId?: string | null, type: TransactionType = 'expense') => {
-    if (!catId) {
-      return {
-        name: type === 'expense' ? '日常支出' : '日常收入',
-        icon: 'Tag',
-        fullPath: type === 'expense' ? '支出' : '收入',
-      };
-    }
-    const cat = categories.find((c) => c.category_id === catId);
-    if (!cat) {
-      return { name: '分类', icon: 'Tag', fullPath: '分类' };
-    }
-    if (cat.parent_id) {
-      const parent = categories.find((c) => c.category_id === cat.parent_id);
-      return {
-        name: cat.name,
-        icon: cat.icon || parent?.icon || 'Tag',
-        fullPath: `${parent?.name || '分类'} · ${cat.name}`,
-      };
-    }
-    return {
-      name: cat.name,
-      icon: cat.icon || 'Tag',
-      fullPath: cat.name,
-    };
+  // 记账 Tab 切换处理
+  const handleTabChange = (type: TransactionType) => {
+    setActiveTab(type);
+    setSelectedCategory(getInitialCategoryId(type, categories));
   };
 
   // 过滤后的流水列表
+
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
       // 类型筛选
@@ -259,11 +238,12 @@ export function App() {
       // 搜索关键词 (匹配备注或分类名)
       if (searchKeyword.trim()) {
         const kw = searchKeyword.trim().toLowerCase();
-        const catMeta = getCategoryMeta(t.category_id, t.type);
+        const catMeta = getCategoryMeta(t.category_id, categories, t.type);
         const matchRemark = t.remark && t.remark.toLowerCase().includes(kw);
         const matchCat = catMeta.fullPath.toLowerCase().includes(kw) || catMeta.name.toLowerCase().includes(kw);
         return matchRemark || matchCat;
       }
+
       return true;
     });
   }, [transactions, filterType, searchKeyword, categories]);
@@ -410,7 +390,7 @@ export function App() {
                 <button
                   key={type}
                   type="button"
-                  onClick={() => setActiveTab(type)}
+                  onClick={() => handleTabChange(type)}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all ${
                     isActive
                       ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-xs'
@@ -422,6 +402,7 @@ export function App() {
               );
             })}
           </div>
+
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
             {/* 金额输入框与快捷填充 */}
@@ -637,7 +618,7 @@ export function App() {
                   <div className="bg-gray-50/70 dark:bg-neutral-900/50 rounded-2xl p-1.5 flex flex-col divide-y divide-gray-100 dark:divide-neutral-800">
                     {group.transactions.map((tx) => {
                       const isExpense = tx.type === 'expense';
-                      const catMeta = getCategoryMeta(tx.category_id, tx.type);
+                      const catMeta = getCategoryMeta(tx.category_id, categories, tx.type);
 
                       return (
                         <div

@@ -22,6 +22,7 @@ import {
   toCents,
   formatRelativeDate,
   formatTime,
+  getCategoryMeta,
 } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPicker } from './CategoryPicker';
@@ -79,30 +80,9 @@ export function TransactionDetailModal({
 
   if (!isOpen || !transaction) return null;
 
-  // 获取分类名称及完整路径 (大类 · 小类)
-  const getCategoryDisplay = (catId?: string | null) => {
-    if (!catId) return { name: transaction.type === 'expense' ? '其他支出' : '其他收入', icon: 'Tag', fullPath: '' };
-    const current = categories.find((c) => c.category_id === catId);
-    if (!current) return { name: '默认分类', icon: 'Tag', fullPath: '默认分类' };
-
-    if (current.parent_id) {
-      const parent = categories.find((c) => c.category_id === current.parent_id);
-      return {
-        name: current.name,
-        icon: current.icon,
-        fullPath: `${parent?.name || '分类'} · ${current.name}`,
-      };
-    }
-
-    return {
-      name: current.name,
-      icon: current.icon,
-      fullPath: current.name,
-    };
-  };
-
-  const categoryInfo = getCategoryDisplay(transaction.category_id);
+  const categoryInfo = getCategoryMeta(transaction.category_id, categories, transaction.type);
   const isExpense = transaction.type === 'expense';
+
 
   // 保存编辑
   const handleSave = async (e: React.FormEvent) => {

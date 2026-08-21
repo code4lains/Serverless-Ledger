@@ -92,14 +92,49 @@ async function testPipeline() {
   assert.strictEqual(authMeJson.data.user_id, registeredUserId);
   assert.strictEqual(authMeJson.data.email, testEmail);
 
-  console.log('\n--- 7. Testing Categories Endpoint ---');
+  console.log('\n--- 7. Testing Categories Endpoints (Defaults, Type Filters & Tree Hierarchy) ---');
+  // 7.1 全部系统分类
   const catRes = await fetch(`${BASE}/api/categories`, {
     headers: { Authorization: `Bearer ${userToken}` },
   });
   assert.strictEqual(catRes.status, 200);
   const catJson = await catRes.json();
   console.log(`Categories returned: ${catJson.data.length} items`);
-  assert(catJson.data.length >= 10, 'Should return pre-seeded categories');
+  assert(catJson.data.length >= 40, 'Should return complete pre-seeded categories');
+
+  // 7.2 支出分类过滤
+  const expCatRes = await fetch(`${BASE}/api/categories?type=expense`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(expCatRes.status, 200);
+  const expCatJson = await expCatRes.json();
+  assert(expCatJson.data.every((c) => c.type === 'expense'));
+  console.log(`Expense categories filtered: ${expCatJson.data.length} items`);
+
+  // 7.3 收入分类过滤
+  const incCatRes = await fetch(`${BASE}/api/categories?type=income`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(incCatRes.status, 200);
+  const incCatJson = await incCatRes.json();
+  assert(incCatJson.data.every((c) => c.type === 'income'));
+  console.log(`Income categories filtered: ${incCatJson.data.length} items`);
+
+  // 7.4 树形结构接口 /api/categories/tree
+  const treeRes = await fetch(`${BASE}/api/categories/tree?type=expense`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(treeRes.status, 200);
+  const treeJson = await treeRes.json();
+  console.log(`Expense tree root categories: ${treeJson.data.length}`);
+  assert.strictEqual(treeJson.data.length, 9, 'Should return 9 expense parent categories');
+  assert(treeJson.data[0].children.length > 0, 'Parent category should contain children');
+
+  // 7.5 /api/categories/defaults 接口
+  const defaultsRes = await fetch(`${BASE}/api/categories/defaults`);
+  assert.strictEqual(defaultsRes.status, 200);
+  const defaultsJson = await defaultsRes.json();
+  assert(defaultsJson.data.length >= 40, 'Defaults endpoint should return static authoritative categories');
 
   console.log('\n--- 8. Testing Create Transaction with Authenticated JWT ---');
   const newTx = {

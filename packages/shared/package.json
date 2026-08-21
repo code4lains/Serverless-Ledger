@@ -15,7 +15,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "watch": "tsc --watch"
+    "watch": "tsc --watch",
+    "test": "tsc && node scripts/test-categories.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

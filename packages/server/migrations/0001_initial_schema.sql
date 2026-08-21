@@ -77,55 +77,95 @@ CREATE INDEX IF NOT EXISTS idx_transactions_ledger ON transactions (ledger_id);
 CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories (parent_id);
 CREATE INDEX IF NOT EXISTS idx_budgets_user_ledger ON budgets (user_id, ledger_id);
 
--- 预置系统默认基础分类 (大分类与小分类)
--- 支出大类
+-- 预置系统默认基础分类 (大分类与小分类，遵循白皮书3.2及7.1规范)
+-- 支出大类与小类
 INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+-- 1. 餐饮美食
 ('cat_exp_food', NULL, 'expense', NULL, '餐饮美食', 'Utensils', 10),
-('cat_exp_traffic', NULL, 'expense', NULL, '交通出行', 'Car', 20),
-('cat_exp_shopping', NULL, 'expense', NULL, '购物消费', 'ShoppingBag', 30),
-('cat_exp_entertain', NULL, 'expense', NULL, '休闲娱乐', 'Film', 40),
-('cat_exp_housing', NULL, 'expense', NULL, '居住生活', 'Home', 50);
-
--- 餐饮子分类
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
 ('cat_exp_food_bf', NULL, 'expense', 'cat_exp_food', '早餐', 'Coffee', 11),
 ('cat_exp_food_lunch', NULL, 'expense', 'cat_exp_food', '午餐', 'UtensilsCrossed', 12),
 ('cat_exp_food_dinner', NULL, 'expense', 'cat_exp_food', '晚餐', 'Pizza', 13),
-('cat_exp_food_drink', NULL, 'expense', 'cat_exp_food', '饮料零食', 'CupSoda', 14);
+('cat_exp_food_snack', NULL, 'expense', 'cat_exp_food', '饮料零食', 'CupSoda', 14),
+('cat_exp_food_grocery', NULL, 'expense', 'cat_exp_food', '买菜食材', 'Carrot', 15),
+('cat_exp_food_fruit', NULL, 'expense', 'cat_exp_food', '水果生鲜', 'Apple', 16),
+('cat_exp_food_takeout', NULL, 'expense', 'cat_exp_food', '外卖聚餐', 'Utensils', 17),
 
--- 交通子分类
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+-- 2. 交通出行
+('cat_exp_traffic', NULL, 'expense', NULL, '交通出行', 'Car', 20),
 ('cat_exp_tr_metro', NULL, 'expense', 'cat_exp_traffic', '公交地铁', 'Train', 21),
 ('cat_exp_tr_taxi', NULL, 'expense', 'cat_exp_traffic', '打车出租', 'Navigation', 22),
-('cat_exp_tr_gas', NULL, 'expense', 'cat_exp_traffic', '加油充电', 'Fuel', 23);
--- 购物子分类
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+('cat_exp_tr_gas', NULL, 'expense', 'cat_exp_traffic', '加油充电', 'Fuel', 23),
+('cat_exp_tr_parking', NULL, 'expense', 'cat_exp_traffic', '停车过路', 'CircleParking', 24),
+('cat_exp_tr_bike', NULL, 'expense', 'cat_exp_traffic', '单车电车', 'Bike', 25),
+('cat_exp_tr_flight', NULL, 'expense', 'cat_exp_traffic', '火车机票', 'Plane', 26),
+
+-- 3. 购物消费
+('cat_exp_shopping', NULL, 'expense', NULL, '购物消费', 'ShoppingBag', 30),
 ('cat_exp_sh_daily', NULL, 'expense', 'cat_exp_shopping', '日用百货', 'Package', 31),
 ('cat_exp_sh_cloth', NULL, 'expense', 'cat_exp_shopping', '服饰鞋包', 'Shirt', 32),
-('cat_exp_sh_digital', NULL, 'expense', 'cat_exp_shopping', '数码家电', 'Smartphone', 33);
+('cat_exp_sh_digital', NULL, 'expense', 'cat_exp_shopping', '数码家电', 'Smartphone', 33),
+('cat_exp_sh_beauty', NULL, 'expense', 'cat_exp_shopping', '美妆护肤', 'Sparkles', 34),
+('cat_exp_sh_express', NULL, 'expense', 'cat_exp_shopping', '快递邮寄', 'Truck', 35),
 
--- 娱乐子分类
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+-- 4. 休闲娱乐
+('cat_exp_entertain', NULL, 'expense', NULL, '休闲娱乐', 'Film', 40),
 ('cat_exp_ent_game', NULL, 'expense', 'cat_exp_entertain', '游戏娱乐', 'Gamepad2', 41),
 ('cat_exp_ent_sport', NULL, 'expense', 'cat_exp_entertain', '运动健身', 'Dumbbell', 42),
-('cat_exp_ent_travel', NULL, 'expense', 'cat_exp_entertain', '旅游度假', 'Plane', 43);
+('cat_exp_ent_travel', NULL, 'expense', 'cat_exp_entertain', '旅游度假', 'Plane', 43),
+('cat_exp_ent_movie', NULL, 'expense', 'cat_exp_entertain', '电影演出', 'Film', 44),
+('cat_exp_ent_party', NULL, 'expense', 'cat_exp_entertain', '聚会社交', 'PartyPopper', 45),
 
--- 居住子分类
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+-- 5. 居住生活
+('cat_exp_housing', NULL, 'expense', NULL, '居住生活', 'Home', 50),
 ('cat_exp_ho_rent', NULL, 'expense', 'cat_exp_housing', '房租物业', 'Building', 51),
-('cat_exp_ho_util', NULL, 'expense', 'cat_exp_housing', '水电燃气', 'Zap', 52);
+('cat_exp_ho_util', NULL, 'expense', 'cat_exp_housing', '水电燃气', 'Zap', 52),
+('cat_exp_ho_telecom', NULL, 'expense', 'cat_exp_housing', '宽带话费', 'Wifi', 53),
+('cat_exp_ho_furn', NULL, 'expense', 'cat_exp_housing', '家居家装', 'Sofa', 54),
+('cat_exp_ho_repair', NULL, 'expense', 'cat_exp_housing', '维修保养', 'Wrench', 55),
 
--- 收入大类与子分类
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+-- 6. 医疗保健
+('cat_exp_medical', NULL, 'expense', NULL, '医疗保健', 'HeartPulse', 60),
+('cat_exp_med_drug', NULL, 'expense', 'cat_exp_medical', '药品购买', 'Pill', 61),
+('cat_exp_med_treat', NULL, 'expense', 'cat_exp_medical', '诊疗挂号', 'Stethoscope', 62),
+('cat_exp_med_check', NULL, 'expense', 'cat_exp_medical', '体检保健', 'Activity', 63),
+
+-- 7. 学习进修
+('cat_exp_education', NULL, 'expense', NULL, '学习进修', 'GraduationCap', 70),
+('cat_exp_edu_book', NULL, 'expense', 'cat_exp_education', '书籍教材', 'BookOpen', 71),
+('cat_exp_edu_course', NULL, 'expense', 'cat_exp_education', '培训课程', 'GraduationCap', 72),
+('cat_exp_edu_office', NULL, 'expense', 'cat_exp_education', '文具办公', 'PenTool', 73),
+
+-- 8. 人情社交
+('cat_exp_social', NULL, 'expense', NULL, '人情社交', 'Users', 80),
+('cat_exp_soc_red', NULL, 'expense', 'cat_exp_social', '礼金红包', 'Gift', 81),
+('cat_exp_soc_gift', NULL, 'expense', 'cat_exp_social', '请客送礼', 'HeartHandshake', 82),
+('cat_exp_soc_elder', NULL, 'expense', 'cat_exp_social', '孝敬长辈', 'Heart', 83),
+
+-- 9. 其他支出
+('cat_exp_other', NULL, 'expense', NULL, '其他支出', 'HelpCircle', 90),
+('cat_exp_oth_loss', NULL, 'expense', 'cat_exp_other', '意外丢失', 'AlertCircle', 91),
+('cat_exp_oth_misc', NULL, 'expense', 'cat_exp_other', '其它消费', 'Tag', 92),
+
+-- 收入大类与小类
+-- 1. 职业收入
 ('cat_inc_salary', NULL, 'income', NULL, '职业收入', 'Briefcase', 100),
-('cat_inc_invest', NULL, 'income', NULL, '理财收益', 'TrendingUp', 110),
-('cat_inc_other', NULL, 'income', NULL, '其他收入', 'Gift', 120);
-
-INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
 ('cat_inc_sal_base', NULL, 'income', 'cat_inc_salary', '基本工资', 'Banknote', 101),
 ('cat_inc_sal_bonus', NULL, 'income', 'cat_inc_salary', '奖金补贴', 'Coins', 102),
 ('cat_inc_sal_part', NULL, 'income', 'cat_inc_salary', '兼职副业', 'Laptop', 103),
+('cat_inc_sal_annual', NULL, 'income', 'cat_inc_salary', '年终分红', 'Award', 104),
+
+-- 2. 理财收益
+('cat_inc_invest', NULL, 'income', NULL, '理财收益', 'TrendingUp', 110),
 ('cat_inc_inv_stock', NULL, 'income', 'cat_inc_invest', '基金股票', 'LineChart', 111),
 ('cat_inc_inv_interest', NULL, 'income', 'cat_inc_invest', '利息分红', 'PiggyBank', 112),
+('cat_inc_inv_rent', NULL, 'income', 'cat_inc_invest', '房租收益', 'Building2', 113),
+('cat_inc_inv_claim', NULL, 'income', 'cat_inc_invest', '保险理赔', 'ShieldCheck', 114),
+
+-- 3. 其他收入
+('cat_inc_other', NULL, 'income', NULL, '其他收入', 'Gift', 120),
 ('cat_inc_oth_red', NULL, 'income', 'cat_inc_other', '收到红包', 'Gift', 121),
-('cat_inc_oth_refund', NULL, 'income', 'cat_inc_other', '退款返还', 'RotateCcw', 122);
+('cat_inc_oth_refund', NULL, 'income', 'cat_inc_other', '退款返还', 'RotateCcw', 122),
+('cat_inc_oth_second', NULL, 'income', 'cat_inc_other', '闲置二手', 'Store', 123),
+('cat_inc_oth_windfall', NULL, 'income', 'cat_inc_other', '意外所得', 'Sparkles', 124),
+('cat_inc_oth_misc', NULL, 'income', 'cat_inc_other', '其它入账', 'Tag', 125);
+

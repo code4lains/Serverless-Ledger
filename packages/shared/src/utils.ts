@@ -1,4 +1,4 @@
-import { Transaction, TransactionDayGroup } from './models';
+import { Transaction, TransactionDayGroup } from './models.js';
 
 /**
  * 格式化日期为 YYYY-MM-DD
