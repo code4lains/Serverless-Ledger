@@ -1,0 +1,22 @@
+{
+  "name": "@ledger/server",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply serverless_ledger_db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply serverless_ledger_db --remote",
+    "test": "node scripts/test-pipeline.mjs"
+  },
+  "dependencies": {
+    "@ledger/shared": "*",
+    "hono": "^4.7.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "typescript": "^5.7.3",
+    "wrangler": "^3.111.0"
+  }
+}

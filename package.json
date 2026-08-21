@@ -1,0 +1,29 @@
+{
+  "name": "serverless-ledger-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "极简记账 APP - 基于 React + Capacitor/Tauri + Cloudflare Workers + D1 的跨端开发管线",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:client": "npm -w @ledger/client run dev",
+    "dev:server": "npm -w @ledger/server run dev",
+    "build": "npm -w @ledger/shared run build && npm -w @ledger/server run build && npm -w @ledger/client run build",
+    "build:client": "npm -w @ledger/client run build",
+    "build:server": "npm -w @ledger/server run build",
+    "build:shared": "npm -w @ledger/shared run build",
+    "db:migrate:local": "npm -w @ledger/server run db:migrate:local",
+    "db:migrate:remote": "npm -w @ledger/server run db:migrate:remote",
+    "cap:sync": "npm -w @ledger/client run cap:sync",
+    "tauri:dev": "npm -w @ledger/client run tauri:dev",
+    "tauri:build": "npm -w @ledger/client run tauri:build",
+    "test": "npm -w @ledger/server run test",
+    "test:pipeline": "npm -w @ledger/server run test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}
