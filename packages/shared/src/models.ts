@@ -131,12 +131,19 @@ export interface AuthResponse {
   expires_in: number;
 }
 
-export interface JwtPayload {
-  userId: string;
-  email: string;
-  exp: number;
-  iat?: number;
-  [key: string]: any;
+export interface TransactionFilter {
+  ledger_id?: string;
+  type?: TransactionType | 'all';
+  category_id?: string;
+  start_date?: string;
+  end_date?: string;
+  search?: string;
 }
 
-
+export interface TransactionDayGroup {
+  date: string; // YYYY-MM-DD
+  displayDate: string; // e.g. "今天 · 8月21日 星期五"
+  totalExpense: number; // 分
+  totalIncome: number; // 分
+  transactions: Transaction[];
+}

@@ -98,6 +98,22 @@ INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, i
 ('cat_exp_tr_metro', NULL, 'expense', 'cat_exp_traffic', '公交地铁', 'Train', 21),
 ('cat_exp_tr_taxi', NULL, 'expense', 'cat_exp_traffic', '打车出租', 'Navigation', 22),
 ('cat_exp_tr_gas', NULL, 'expense', 'cat_exp_traffic', '加油充电', 'Fuel', 23);
+-- 购物子分类
+INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+('cat_exp_sh_daily', NULL, 'expense', 'cat_exp_shopping', '日用百货', 'Package', 31),
+('cat_exp_sh_cloth', NULL, 'expense', 'cat_exp_shopping', '服饰鞋包', 'Shirt', 32),
+('cat_exp_sh_digital', NULL, 'expense', 'cat_exp_shopping', '数码家电', 'Smartphone', 33);
+
+-- 娱乐子分类
+INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+('cat_exp_ent_game', NULL, 'expense', 'cat_exp_entertain', '游戏娱乐', 'Gamepad2', 41),
+('cat_exp_ent_sport', NULL, 'expense', 'cat_exp_entertain', '运动健身', 'Dumbbell', 42),
+('cat_exp_ent_travel', NULL, 'expense', 'cat_exp_entertain', '旅游度假', 'Plane', 43);
+
+-- 居住子分类
+INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
+('cat_exp_ho_rent', NULL, 'expense', 'cat_exp_housing', '房租物业', 'Building', 51),
+('cat_exp_ho_util', NULL, 'expense', 'cat_exp_housing', '水电燃气', 'Zap', 52);
 
 -- 收入大类与子分类
 INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
@@ -107,4 +123,9 @@ INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, i
 
 INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, icon, sort_order) VALUES
 ('cat_inc_sal_base', NULL, 'income', 'cat_inc_salary', '基本工资', 'Banknote', 101),
-('cat_inc_sal_bonus', NULL, 'income', 'cat_inc_salary', '奖金补贴', 'Coins', 102);
+('cat_inc_sal_bonus', NULL, 'income', 'cat_inc_salary', '奖金补贴', 'Coins', 102),
+('cat_inc_sal_part', NULL, 'income', 'cat_inc_salary', '兼职副业', 'Laptop', 103),
+('cat_inc_inv_stock', NULL, 'income', 'cat_inc_invest', '基金股票', 'LineChart', 111),
+('cat_inc_inv_interest', NULL, 'income', 'cat_inc_invest', '利息分红', 'PiggyBank', 112),
+('cat_inc_oth_red', NULL, 'income', 'cat_inc_other', '收到红包', 'Gift', 121),
+('cat_inc_oth_refund', NULL, 'income', 'cat_inc_other', '退款返还', 'RotateCcw', 122);

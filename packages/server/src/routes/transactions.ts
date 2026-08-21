@@ -4,14 +4,36 @@ import { ApiResponse, Transaction, SyncBatchRequest, SyncBatchResponse } from '@
 
 const transactionsRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
+async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: string) {
+  const now = new Date().toISOString();
+  await db.prepare(
+    'INSERT OR IGNORE INTO users (user_id, email, created_at, updated_at) VALUES (?, ?, ?, ?)'
+  )
+    .bind(userId, `${userId}@serverless.dev`, now, now)
+    .run();
+
+  await db.prepare(
+    'INSERT OR IGNORE INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  )
+    .bind(ledgerId, userId, '日常账本', 'CNY', 1, now, now)
+    .run();
+}
+
 /**
- * 获取流水账单列表
+ * 获取流水账单列表 (支持按账本、类型、分类、日期区间与关键词搜索)
+ * GET /api/transactions
  */
 transactionsRouter.get('/', async (c) => {
   try {
     const authUser = c.get('user');
     const userId = authUser?.userId || c.req.query('userId') || 'default_user';
     const ledgerId = c.req.query('ledgerId');
+    const type = c.req.query('type');
+    const categoryId = c.req.query('categoryId');
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+    const search = c.req.query('search');
+    const limit = Math.min(parseInt(c.req.query('limit') || '200', 10), 500);
 
     let query = 'SELECT * FROM transactions WHERE user_id = ?';
     const params: any[] = [userId];
@@ -21,7 +43,33 @@ transactionsRouter.get('/', async (c) => {
       params.push(ledgerId);
     }
 
-    query += ' ORDER BY transaction_date DESC, created_at DESC LIMIT 100';
+    if (type && type !== 'all') {
+      query += ' AND type = ?';
+      params.push(type);
+    }
+
+    if (categoryId) {
+      query += ' AND category_id = ?';
+      params.push(categoryId);
+    }
+
+    if (startDate) {
+      query += ' AND transaction_date >= ?';
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ' AND transaction_date <= ?';
+      params.push(endDate);
+    }
+
+    if (search && search.trim()) {
+      query += ' AND remark LIKE ?';
+      params.push(`%${search.trim()}%`);
+    }
+
+    query += ' ORDER BY transaction_date DESC, created_at DESC LIMIT ?';
+    params.push(limit);
 
     const { results } = await c.env.DB.prepare(query)
       .bind(...params)
@@ -41,33 +89,57 @@ transactionsRouter.get('/', async (c) => {
   }
 });
 
-async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: string) {
-  const now = new Date().toISOString();
-  await db.prepare(
-    'INSERT OR IGNORE INTO users (user_id, email, created_at, updated_at) VALUES (?, ?, ?, ?)'
-  )
-    .bind(userId, `${userId}@serverless.dev`, now, now)
-    .run();
+/**
+ * 获取单条账单详情
+ * GET /api/transactions/:id
+ */
+transactionsRouter.get('/:id', async (c) => {
+  try {
+    const authUser = c.get('user');
+    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const id = c.req.param('id');
 
-  await db.prepare(
-    'INSERT OR IGNORE INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  )
-    .bind(ledgerId, userId, '日常账本', 'CNY', 1, now, now)
-    .run();
-}
+    const result = await c.env.DB.prepare(
+      'SELECT * FROM transactions WHERE transaction_id = ? AND user_id = ?'
+    )
+      .bind(id, userId)
+      .first<Transaction>();
+
+    if (!result) {
+      const res: ApiResponse = {
+        success: false,
+        error: '账单不存在',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse<Transaction> = {
+      success: true,
+      data: result,
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || 'Failed to get transaction detail',
+    };
+    return c.json(res, 500);
+  }
+});
 
 /**
  * 创建单条账单
+ * POST /api/transactions
  */
 transactionsRouter.post('/', async (c) => {
   try {
     const authUser = c.get('user');
     const body = await c.req.json<Partial<Transaction>>();
-    const transactionId = body.transaction_id || `tx_${Date.now()}`;
+    const transactionId = body.transaction_id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const userId = authUser?.userId || body.user_id || 'default_user';
     const ledgerId = body.ledger_id || 'default_ledger';
     const type = body.type || 'expense';
-    const amount = typeof body.amount === 'number' ? body.amount : 0;
+    const amount = typeof body.amount === 'number' ? Math.round(body.amount) : 0;
 
     const categoryId = body.category_id || null;
     const fromAccount = body.from_account || null;
@@ -134,19 +206,126 @@ transactionsRouter.post('/', async (c) => {
 });
 
 /**
+ * 更新单条账单
+ * PUT /api/transactions/:id
+ */
+transactionsRouter.put('/:id', async (c) => {
+  try {
+    const authUser = c.get('user');
+    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const id = c.req.param('id');
+    const body = await c.req.json<Partial<Transaction>>();
+
+    // 检查记录是否存在
+    const existing = await c.env.DB.prepare(
+      'SELECT * FROM transactions WHERE transaction_id = ? AND user_id = ?'
+    )
+      .bind(id, userId)
+      .first<Transaction>();
+
+    if (!existing) {
+      const res: ApiResponse = {
+        success: false,
+        error: '账单不存在或无权限修改',
+      };
+      return c.json(res, 404);
+    }
+
+    const type = body.type || existing.type;
+    const amount = typeof body.amount === 'number' ? Math.round(body.amount) : existing.amount;
+    const categoryId = body.category_id !== undefined ? body.category_id : existing.category_id;
+    const transactionDate = body.transaction_date || existing.transaction_date;
+    const remark = body.remark !== undefined ? body.remark : existing.remark;
+    const fromAccount = body.from_account !== undefined ? body.from_account : existing.from_account;
+    const toAccount = body.to_account !== undefined ? body.to_account : existing.to_account;
+    const now = new Date().toISOString();
+
+    await c.env.DB.prepare(
+      `UPDATE transactions SET
+        type = ?, amount = ?, category_id = ?, transaction_date = ?,
+        remark = ?, from_account = ?, to_account = ?, sync_status = 'synced', updated_at = ?
+      WHERE transaction_id = ? AND user_id = ?`
+    )
+      .bind(type, amount, categoryId, transactionDate, remark, fromAccount, toAccount, now, id, userId)
+      .run();
+
+    const updated: Transaction = {
+      ...existing,
+      type,
+      amount,
+      category_id: categoryId,
+      transaction_date: transactionDate,
+      remark,
+      from_account: fromAccount,
+      to_account: toAccount,
+      sync_status: 'synced',
+      updated_at: now,
+    };
+
+    const res: ApiResponse<Transaction> = {
+      success: true,
+      data: updated,
+      message: 'Transaction updated successfully',
+    };
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || 'Failed to update transaction',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 删除单条账单
+ * DELETE /api/transactions/:id
+ */
+transactionsRouter.delete('/:id', async (c) => {
+  try {
+    const authUser = c.get('user');
+    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const id = c.req.param('id');
+
+    const result = await c.env.DB.prepare(
+      'DELETE FROM transactions WHERE transaction_id = ? AND user_id = ?'
+    )
+      .bind(id, userId)
+      .run();
+
+    const res: ApiResponse = {
+      success: true,
+      message: 'Transaction deleted successfully',
+      data: { transaction_id: id },
+    };
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || 'Failed to delete transaction',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
  * 离线数据批量同步 (遵循 Last-Write-Wins 策略)
+ * POST /api/transactions/sync
  */
 transactionsRouter.post('/sync', async (c) => {
   try {
+    const authUser = c.get('user');
+    const userId = authUser?.userId;
     const body = await c.req.json<SyncBatchRequest>();
     const transactions = body.transactions || [];
     const syncedIds: string[] = [];
     const now = new Date().toISOString();
 
     if (transactions.length > 0) {
-      // 批量 upsert 进 D1
       for (const tx of transactions) {
-        await ensureUserAndLedger(c.env.DB, tx.user_id, tx.ledger_id);
+        const txUserId = userId || tx.user_id || 'default_user';
+        await ensureUserAndLedger(c.env.DB, txUserId, tx.ledger_id);
+
         await c.env.DB.prepare(
           `INSERT INTO transactions (
             transaction_id, user_id, ledger_id, type, amount, category_id,
@@ -166,7 +345,7 @@ transactionsRouter.post('/sync', async (c) => {
         )
           .bind(
             tx.transaction_id,
-            tx.user_id,
+            txUserId,
             tx.ledger_id,
             tx.type,
             tx.amount,
@@ -185,13 +364,17 @@ transactionsRouter.post('/sync', async (c) => {
     }
 
     // 获取增量更新给客户端
-    let query = 'SELECT * FROM transactions WHERE sync_status = "synced"';
+    let query = 'SELECT * FROM transactions WHERE 1=1';
     const params: any[] = [];
+    if (userId) {
+      query += ' AND user_id = ?';
+      params.push(userId);
+    }
     if (body.last_synced_at) {
       query += ' AND updated_at > ?';
       params.push(body.last_synced_at);
     }
-    query += ' ORDER BY updated_at ASC LIMIT 200';
+    query += ' ORDER BY updated_at ASC LIMIT 300';
 
     const stmt = params.length > 0 ? c.env.DB.prepare(query).bind(...params) : c.env.DB.prepare(query);
     const { results } = await stmt.all<Transaction>();

@@ -134,7 +134,40 @@ async function testPipeline() {
   console.log(`Transactions found for authenticated user: ${listJson.data.length}`);
   assert(listJson.data.some((t) => t.transaction_id === newTx.transaction_id));
 
-  console.log('\n--- 10. Testing Offline Batch Sync Endpoint ---');
+  console.log('\n--- 10. Testing Filter Transactions by Type ---');
+  const filterRes = await fetch(`${BASE}/api/transactions?type=expense`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(filterRes.status, 200);
+  const filterJson = await filterRes.json();
+  assert(filterJson.data.every((t) => t.type === 'expense'));
+
+  console.log('\n--- 11. Testing Get Single Transaction Detail ---');
+  const detailRes = await fetch(`${BASE}/api/transactions/${newTx.transaction_id}`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(detailRes.status, 200);
+  const detailJson = await detailRes.json();
+  assert.strictEqual(detailJson.data.transaction_id, newTx.transaction_id);
+
+  console.log('\n--- 12. Testing Update Transaction (PUT) ---');
+  const updateRes = await fetch(`${BASE}/api/transactions/${newTx.transaction_id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      amount: 6800, // modified to 68.00 CNY
+      remark: 'Updated Remark Content',
+    }),
+  });
+  assert.strictEqual(updateRes.status, 200);
+  const updateJson = await updateRes.json();
+  assert.strictEqual(updateJson.data.amount, 6800);
+  assert.strictEqual(updateJson.data.remark, 'Updated Remark Content');
+
+  console.log('\n--- 13. Testing Offline Batch Sync Endpoint ---');
   const syncBatch = {
     transactions: [
       {
@@ -162,6 +195,15 @@ async function testPipeline() {
   const syncJson = await syncRes.json();
   console.log('Sync Batch Response:', syncJson);
   assert.strictEqual(syncJson.data.synced_ids.length, 1);
+
+  console.log('\n--- 14. Testing Delete Transaction (DELETE) ---');
+  const deleteRes = await fetch(`${BASE}/api/transactions/${newTx.transaction_id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(deleteRes.status, 200);
+  const deleteJson = await deleteRes.json();
+  assert.strictEqual(deleteJson.success, true);
 
   console.log('\n🎉 ALL PIPELINE & JWT AUTHENTICATION INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉');
 }
