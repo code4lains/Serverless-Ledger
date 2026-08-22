@@ -22,6 +22,7 @@ import {
 import {
   Transaction,
   Category,
+  Ledger,
   TransactionType,
   LoanType,
   formatMoney,
@@ -30,14 +31,17 @@ import {
   formatRelativeDate,
   formatTime,
   getCategoryMeta,
+  getCurrencySymbol,
 } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPicker } from './CategoryPicker';
 import { AccountPicker } from './AccountPicker';
+import { Layers } from 'lucide-react';
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null;
   categories: Category[];
+  ledgers?: Ledger[];
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updatedTx: Transaction) => Promise<void>;
@@ -47,6 +51,7 @@ interface TransactionDetailModalProps {
 export function TransactionDetailModal({
   transaction,
   categories,
+  ledgers = [],
   isOpen,
   onClose,
   onUpdate,
@@ -57,6 +62,7 @@ export function TransactionDetailModal({
   const [isSaving, setIsSaving] = useState(false);
 
   // 编辑态表单
+  const [editLedgerId, setEditLedgerId] = useState<string>('');
   const [editType, setEditType] = useState<TransactionType>('expense');
   const [editAmountStr, setEditAmountStr] = useState<string>('');
   const [editCategoryId, setEditCategoryId] = useState<string>('');
@@ -69,6 +75,7 @@ export function TransactionDetailModal({
   // 同步初始化编辑数据
   useEffect(() => {
     if (transaction) {
+      setEditLedgerId(transaction.ledger_id || '');
       setEditType(transaction.type);
       setEditAmountStr(toYuan(transaction.amount).toString());
       setEditCategoryId(transaction.category_id || '');
@@ -106,6 +113,8 @@ export function TransactionDetailModal({
 
   if (!isOpen || !transaction) return null;
 
+  const currentLedger = ledgers.find((l) => l.ledger_id === transaction.ledger_id);
+  const curSymbol = getCurrencySymbol(currentLedger?.currency);
   const categoryInfo = getCategoryMeta(transaction.category_id, categories, transaction.type);
   const isExpense = transaction.type === 'expense';
   const isIncome = transaction.type === 'income';
@@ -138,6 +147,7 @@ export function TransactionDetailModal({
     try {
       const updatedTx: Transaction = {
         ...transaction,
+        ledger_id: editLedgerId || transaction.ledger_id,
         type: editType,
         amount: toCents(editAmountStr),
         category_id: editCategoryId || null,
@@ -363,6 +373,24 @@ export function TransactionDetailModal({
                 />
               </div>
 
+              {/* 所属账本选择 */}
+              {ledgers && ledgers.length > 0 && (
+                <div>
+                  <label className="text-[11px] font-medium text-gray-400 mb-1 block">所属账本</label>
+                  <select
+                    value={editLedgerId}
+                    onChange={(e) => setEditLedgerId(e.target.value)}
+                    className="w-full px-3 py-2 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none"
+                  >
+                    {ledgers.map((l) => (
+                      <option key={l.ledger_id} value={l.ledger_id}>
+                        {l.name} ({l.currency}) {l.is_default === 1 ? '★ 默认' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* 日期时间 */}
               <div>
                 <label className="text-[11px] font-medium text-gray-400 mb-1 block">记账时间</label>
@@ -425,7 +453,7 @@ export function TransactionDetailModal({
                   }`}
                 >
                   {isExpense ? '-' : isIncome ? '+' : isTransfer ? '↔ ' : isLoanInflow ? '+ ' : '- '}
-                  {formatMoney(transaction.amount)}
+                  {formatMoney(transaction.amount, curSymbol)}
                 </div>
               </div>
 
@@ -456,6 +484,16 @@ export function TransactionDetailModal({
 
               {/* 信息项列表 */}
               <div className="flex flex-col gap-2.5 bg-gray-50 dark:bg-neutral-900/60 rounded-2xl p-3.5 text-xs">
+                {/* 账本归属 */}
+                <div className="flex justify-between items-center text-gray-500 dark:text-gray-400">
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-indigo-500" /> 所属账本
+                  </span>
+                  <span className="font-medium text-gray-800 dark:text-gray-200">
+                    {currentLedger ? `${currentLedger.name} (${currentLedger.currency})` : '默认账本'}
+                  </span>
+                </div>
+
                 <div className="flex justify-between items-center text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1.5">
                     <Calendar className="w-3.5 h-3.5" /> 记账日期

@@ -29,10 +29,15 @@ import {
   HandCoins,
   RotateCcw,
   BadgeDollarSign,
+  BookOpen,
+  Tag,
+  Settings,
+  Plus,
 } from 'lucide-react';
 import {
   Transaction,
   Category,
+  Ledger,
   TransactionType,
   LoanType,
   AuthUser,
@@ -44,16 +49,19 @@ import {
   formatDateKey,
   getCategoryMeta,
   getInitialCategoryId,
+  getCurrencySymbol,
 } from '@ledger/shared';
-import { localDb, seedLocalCategories } from './db';
+import { localDb, seedLocalCategories, seedLocalLedgers, DEFAULT_LOCAL_LEDGER_ID } from './db';
 import {
   checkServerHealth,
   getCategories,
+  getLedgers,
   createTransaction,
   updateTransaction,
   deleteTransaction,
   syncPendingTransactions,
   pullAndMergeServerTransactions,
+  pullAndMergeServerLedgers,
   getStoredUser,
   fetchCurrentUser,
   clearSession,
@@ -64,7 +72,7 @@ import { CategoryPicker } from './components/CategoryPicker';
 import { AccountPicker } from './components/AccountPicker';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
 import { CategoryManagementModal } from './components/CategoryManagementModal';
-import { Tag, Settings } from 'lucide-react';
+import { LedgerManagementModal } from './components/LedgerManagementModal';
 
 export function App() {
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -73,7 +81,13 @@ export function App() {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
+  const [isLedgerModalOpen, setIsLedgerModalOpen] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
+
+  // 账本状态 (多账本体系)
+  const [ledgers, setLedgers] = useState<Ledger[]>([]);
+  const [activeLedgerId, setActiveLedgerId] = useState<string>('all'); // 'all' or specific ledger_id
+  const [selectedLedgerForRecord, setSelectedLedgerForRecord] = useState<string>(DEFAULT_LOCAL_LEDGER_ID);
 
   // 记账表单状态
   const [activeTab, setActiveTab] = useState<TransactionType>('expense');
@@ -106,12 +120,27 @@ export function App() {
     }
   }, [darkMode]);
 
-  // 从本地 Dexie 加载数据
+  // 从本地 Dexie 加载流水与待同步状态
   const loadLocalData = async () => {
     const list = await localDb.transactions.orderBy('transaction_date').reverse().toArray();
     setTransactions(list);
     const pending = await localDb.transactions.where('sync_status').equals('pending').count();
     setPendingCount(pending);
+  };
+
+  // 刷新账本列表
+  const refreshLedgers = async () => {
+    const leds = await getLedgers();
+    setLedgers(leds);
+
+    // 确保 selectedLedgerForRecord 指向有效账本
+    const defaultLed = leds.find((l) => l.is_default === 1) || leds[0];
+    if (defaultLed && !leds.some((l) => l.ledger_id === selectedLedgerForRecord)) {
+      setSelectedLedgerForRecord(defaultLed.ledger_id);
+    }
+    if (activeLedgerId !== 'all' && !leds.some((l) => l.ledger_id === activeLedgerId)) {
+      setActiveLedgerId(defaultLed ? defaultLed.ledger_id : 'all');
+    }
   };
 
   // 刷新分类列表
@@ -126,13 +155,28 @@ export function App() {
   // 初始化应用
   useEffect(() => {
     const init = async () => {
+      // 1. 初始化预置分类与账本
       await seedLocalCategories();
+      await seedLocalLedgers(currentUser?.user_id);
+
+      // 2. 加载分类
       const cats = await getCategories();
       setCategories(cats);
       setSelectedCategory(getInitialCategoryId('expense', cats));
+
+      // 3. 加载账本
+      const leds = await getLedgers();
+      setLedgers(leds);
+      const defaultLed = leds.find((l) => l.is_default === 1) || leds[0];
+      if (defaultLed) {
+        setActiveLedgerId(defaultLed.ledger_id);
+        setSelectedLedgerForRecord(defaultLed.ledger_id);
+      }
+
+      // 4. 加载本地账单
       await loadLocalData();
 
-      // 验证并更新用户信息
+      // 5. 验证并更新用户信息
       const userRes = await fetchCurrentUser();
       if (userRes.success && userRes.data) {
         setCurrentUser(userRes.data);
@@ -140,20 +184,40 @@ export function App() {
         setCurrentUser(null);
       }
 
-
-      // 检查后端 CF Workers + D1 连通性
+      // 6. 检查后端 CF Workers + D1 连通性并拉取增量
       const health = await checkServerHealth();
       setServerStatus(health);
 
-      // 自动尝试后台拉取最新数据
       if (health.ok) {
+        await pullAndMergeServerLedgers();
         await pullAndMergeServerTransactions();
+        await refreshLedgers();
         await loadLocalData();
       }
     };
 
     init();
   }, []);
+
+  // 计算当前处于激活状态的账本对象
+  const activeLedger = useMemo(() => {
+    if (activeLedgerId === 'all') return null;
+    return ledgers.find((l) => l.ledger_id === activeLedgerId) || null;
+  }, [ledgers, activeLedgerId]);
+
+  // 账本映射字典
+  const ledgerMap = useMemo(() => {
+    const map = new Map<string, Ledger>();
+    for (const l of ledgers) {
+      map.set(l.ledger_id, l);
+    }
+    return map;
+  }, [ledgers]);
+
+  // 当前视图对应的币种符号
+  const currentCurrencySymbol = useMemo(() => {
+    return getCurrencySymbol(activeLedger?.currency);
+  }, [activeLedger]);
 
   // 计算记账时间 ISO 字符串
   const getCalculatedTransactionDate = (): string => {
@@ -213,13 +277,20 @@ export function App() {
     const amountInCents = toCents(amountStr);
     const txId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const userId = currentUser?.user_id || 'default_user';
-    const ledgerId = currentUser?.default_ledger_id || 'default_ledger';
+
+    // 确定目标账本
+    let targetLedgerId = selectedLedgerForRecord;
+    if (!targetLedgerId || targetLedgerId === 'all') {
+      const defaultLed = ledgers.find((l) => l.is_default === 1) || ledgers[0];
+      targetLedgerId = defaultLed?.ledger_id || DEFAULT_LOCAL_LEDGER_ID;
+    }
+
     const txDate = getCalculatedTransactionDate();
 
     const txData: any = {
       transaction_id: txId,
       user_id: userId,
-      ledger_id: ledgerId,
+      ledger_id: targetLedgerId,
       type: activeTab,
       amount: amountInCents,
       category_id: selectedCategory || null,
@@ -246,6 +317,7 @@ export function App() {
     await syncPendingTransactions();
     const health = await checkServerHealth();
     setServerStatus(health);
+    await refreshLedgers();
     await loadLocalData();
     setIsSyncing(false);
   };
@@ -290,9 +362,17 @@ export function App() {
     }
   };
 
-  // 过滤后的流水列表
+  // 账本隔离流水列表 (针对当前选择的账本或全部账本)
+  const activeLedgerTransactions = useMemo(() => {
+    if (activeLedgerId === 'all') {
+      return transactions;
+    }
+    return transactions.filter((t) => t.ledger_id === activeLedgerId);
+  }, [transactions, activeLedgerId]);
+
+  // 过滤后的流水列表 (类型筛选 + 搜索关键词)
   const filteredTransactions = useMemo(() => {
-    return transactions.filter((t) => {
+    return activeLedgerTransactions.filter((t) => {
       // 类型筛选
       if (filterType !== 'all' && t.type !== filterType) {
         return false;
@@ -310,18 +390,25 @@ export function App() {
 
       return true;
     });
-  }, [transactions, filterType, searchKeyword, categories]);
+  }, [activeLedgerTransactions, filterType, searchKeyword, categories]);
 
-  // 全量收支与结余统计
+  // 独立账本核算：收支与结余统计
   const totals = useMemo(() => {
-    return calculateTotals(transactions);
-  }, [transactions]);
-
+    return calculateTotals(activeLedgerTransactions);
+  }, [activeLedgerTransactions]);
 
   // 按天分组的流水明细
   const dayGroups = useMemo(() => {
     return groupTransactionsByDay(filteredTransactions);
   }, [filteredTransactions]);
+
+  // 切换账本
+  const handleSwitchLedger = (ledgerId: string) => {
+    setActiveLedgerId(ledgerId);
+    if (ledgerId !== 'all') {
+      setSelectedLedgerForRecord(ledgerId);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-[#F7F6F2] dark:bg-[#18191A] text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 font-sans">
@@ -334,7 +421,7 @@ export function App() {
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight">极简记账</h1>
-              <p className="text-[11px] text-gray-400">Serverless Ledger · Phase 1</p>
+              <p className="text-[11px] text-gray-400">Serverless Ledger</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -362,6 +449,18 @@ export function App() {
               </button>
             )}
             <button
+              onClick={() => setIsLedgerModalOpen(true)}
+              title="账本管理中心 (多账本体系)"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative"
+            >
+              <BookOpen className="w-4 h-4 text-emerald-500" />
+              {ledgers.length > 1 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center">
+                  {ledgers.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setIsCategoryModalOpen(true)}
               title="自定义分类与分类排序"
               className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300"
@@ -385,11 +484,70 @@ export function App() {
           </div>
         </header>
 
+        {/* 快捷多账本切换胶囊栏 */}
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5">
+          {/* 全部账本透视 */}
+          <button
+            type="button"
+            onClick={() => handleSwitchLedger('all')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+              activeLedgerId === 'all'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
+            }`}
+          >
+            <span>全部账本</span>
+            <span className={`text-[10px] px-1 py-0.2 rounded-full ${
+              activeLedgerId === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-100 dark:bg-neutral-700 text-gray-400'
+            }`}>
+              {transactions.length}
+            </span>
+          </button>
+
+          {/* 各独立账本 */}
+          {ledgers.map((led) => {
+            const isCur = activeLedgerId === led.ledger_id;
+            const ledCurSymbol = getCurrencySymbol(led.currency);
+            return (
+              <button
+                key={led.ledger_id}
+                type="button"
+                onClick={() => handleSwitchLedger(led.ledger_id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                  isCur
+                    ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-xs'
+                    : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
+                }`}
+              >
+                <span>{led.name}</span>
+                {led.is_default === 1 && (
+                  <span className="text-[10px] text-amber-400" title="默认日常账本">★</span>
+                )}
+                <span className={`text-[10px] font-normal ${
+                  isCur ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400'
+                }`}>
+                  {led.currency}
+                </span>
+              </button>
+            );
+          })}
+
+          {/* 新建/管理账本快捷入口 */}
+          <button
+            type="button"
+            onClick={() => setIsLedgerModalOpen(true)}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/60 hover:bg-emerald-100 transition-colors flex items-center gap-1 shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>管理/新建</span>
+          </button>
+        </div>
+
         {/* 全栈开发管线连通状态面板 */}
         <div className="bg-white dark:bg-neutral-800/80 rounded-2xl p-3.5 shadow-sm border border-gray-100 dark:border-neutral-700/60 backdrop-blur-sm">
           <div className="flex items-center justify-between text-xs font-medium text-gray-500 dark:text-gray-400 mb-2.5">
             <span className="flex items-center gap-1.5 font-semibold text-gray-700 dark:text-gray-200">
-              <Layers className="w-3.5 h-3.5 text-indigo-500" /> 单账本架构已就绪
+              <Layers className="w-3.5 h-3.5 text-indigo-500" /> 多账本体系已就绪 ({ledgers.length}个账本)
             </span>
             <div className="flex items-center gap-1.5">
               <span title="Web PWA"><Globe className="w-3 h-3 text-emerald-500" /></span>
@@ -423,14 +581,19 @@ export function App() {
           )}
         </div>
 
-        {/* 概览卡片 (单账本收支与转账借贷汇总) */}
+        {/* 概览卡片 (独立账本核算与结余汇总) */}
         <div className="bg-gradient-to-br from-neutral-800 to-neutral-900 text-white rounded-3xl p-5 shadow-md">
           <div className="flex justify-between items-center text-xs text-neutral-400 mb-1">
-            <span>默认日常账本 · 结余 (CNY)</span>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-700 text-neutral-300">单账本模式</span>
+            <span className="flex items-center gap-1 font-medium">
+              <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+              {activeLedger ? `${activeLedger.name} · 结余 (${activeLedger.currency})` : '全部账本 · 汇总结余 (CNY)'}
+            </span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-700 text-neutral-300">
+              {activeLedger ? (activeLedger.is_default === 1 ? '★ 默认账本' : '独立核算') : '全局汇总透视'}
+            </span>
           </div>
           <div className="text-2xl font-extrabold tracking-tight mb-3">
-            {formatMoney(totals.balance)}
+            {formatMoney(totals.balance, currentCurrencySymbol)}
           </div>
 
           {/* 收支统计 */}
@@ -439,13 +602,17 @@ export function App() {
               <div className="text-neutral-400 flex items-center gap-1">
                 <ArrowDownLeft className="w-3.5 h-3.5 text-[#D08770]" /> 总支出
               </div>
-              <div className="text-sm font-semibold mt-0.5 text-[#D08770]">{formatMoney(totals.totalExpense)}</div>
+              <div className="text-sm font-semibold mt-0.5 text-[#D08770]">
+                {formatMoney(totals.totalExpense, currentCurrencySymbol)}
+              </div>
             </div>
             <div>
               <div className="text-neutral-400 flex items-center gap-1">
                 <ArrowUpRight className="w-3.5 h-3.5 text-[#A3BE8C]" /> 总收入
               </div>
-              <div className="text-sm font-semibold mt-0.5 text-[#A3BE8C]">{formatMoney(totals.totalIncome)}</div>
+              <div className="text-sm font-semibold mt-0.5 text-[#A3BE8C]">
+                {formatMoney(totals.totalIncome, currentCurrencySymbol)}
+              </div>
             </div>
           </div>
 
@@ -456,16 +623,18 @@ export function App() {
                 <div className="text-neutral-400 flex items-center gap-1">
                   <ArrowRightLeft className="w-3 h-3 text-blue-400" /> 内部转账
                 </div>
-                <div className="font-medium mt-0.5 text-blue-300">{formatMoney(totals.totalTransfer)}</div>
+                <div className="font-medium mt-0.5 text-blue-300">
+                  {formatMoney(totals.totalTransfer, currentCurrencySymbol)}
+                </div>
               </div>
               <div>
                 <div className="text-neutral-400 flex items-center gap-1">
                   <Landmark className="w-3 h-3 text-purple-400" /> 借贷流动
                 </div>
                 <div className="font-medium mt-0.5 text-purple-300 flex items-center gap-1.5">
-                  <span>出: {formatMoney(totals.totalLoanLent + totals.totalLoanRepaid)}</span>
+                  <span>出: {formatMoney(totals.totalLoanLent + totals.totalLoanRepaid, currentCurrencySymbol)}</span>
                   <span>·</span>
-                  <span>入: {formatMoney(totals.totalLoanBorrowed + totals.totalLoanCollected)}</span>
+                  <span>入: {formatMoney(totals.totalLoanBorrowed + totals.totalLoanCollected, currentCurrencySymbol)}</span>
                 </div>
               </div>
             </div>
@@ -533,7 +702,9 @@ export function App() {
             {/* 金额输入框与快捷填充 */}
             <div className="flex flex-col gap-1.5">
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-400">¥</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xl font-bold text-gray-400">
+                  {currentCurrencySymbol}
+                </span>
                 <input
                   type="number"
                   step="0.01"
@@ -571,6 +742,27 @@ export function App() {
                 )}
               </div>
             </div>
+
+            {/* 目标记账账本选择器 (多账本支持) */}
+            {ledgers.length > 0 && (
+              <div className="flex items-center justify-between px-1 py-1 rounded-xl bg-gray-50 dark:bg-neutral-900/60 text-xs">
+                <span className="text-[11px] text-gray-400 flex items-center gap-1">
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
+                  记入账本
+                </span>
+                <select
+                  value={selectedLedgerForRecord}
+                  onChange={(e) => setSelectedLedgerForRecord(e.target.value)}
+                  className="bg-white dark:bg-neutral-800 text-xs font-semibold px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200 focus:outline-none"
+                >
+                  {ledgers.map((l) => (
+                    <option key={l.ledger_id} value={l.ledger_id}>
+                      {l.name} ({l.currency}) {l.is_default === 1 ? '★ 默认' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* 转账账户选择器 (仅转账类型显示) */}
             {activeTab === 'transfer' && (
@@ -757,7 +949,7 @@ export function App() {
           <div className="flex flex-col gap-2.5 pb-2 border-b border-gray-100 dark:border-neutral-700/60">
             <div className="flex justify-between items-center">
               <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                流水明细列表
+                {activeLedger ? `【${activeLedger.name}】流水明细` : '全账本流水明细'}
               </h2>
               <span className="text-[11px] text-gray-400">共 {filteredTransactions.length} 笔记录</span>
             </div>
@@ -809,7 +1001,7 @@ export function App() {
           {dayGroups.length === 0 ? (
             <div className="py-12 text-center text-xs text-gray-400 flex flex-col items-center gap-2">
               <Inbox className="w-8 h-8 text-gray-300 dark:text-neutral-600" />
-              <span>{searchKeyword ? '没有找到匹配的记账明细' : '暂无流水记录，快在上方记一笔吧'}</span>
+              <span>{searchKeyword ? '没有找到匹配的记账明细' : '当前账本暂无流水记录，快在上方记一笔吧'}</span>
             </div>
           ) : (
             <div className="flex flex-col gap-4">
@@ -822,13 +1014,13 @@ export function App() {
                     </span>
                     <div className="flex items-center gap-2 text-[10px]">
                       {group.totalExpense > 0 && (
-                        <span>支: <strong className="text-[#D08770]">{formatMoney(group.totalExpense)}</strong></span>
+                        <span>支: <strong className="text-[#D08770]">{formatMoney(group.totalExpense, currentCurrencySymbol)}</strong></span>
                       )}
                       {group.totalIncome > 0 && (
-                        <span>收: <strong className="text-[#A3BE8C]">{formatMoney(group.totalIncome)}</strong></span>
+                        <span>收: <strong className="text-[#A3BE8C]">{formatMoney(group.totalIncome, currentCurrencySymbol)}</strong></span>
                       )}
                       {group.totalTransfer > 0 && (
-                        <span>转: <strong className="text-blue-500">{formatMoney(group.totalTransfer)}</strong></span>
+                        <span>转: <strong className="text-blue-500">{formatMoney(group.totalTransfer, currentCurrencySymbol)}</strong></span>
                       )}
                     </div>
                   </div>
@@ -842,6 +1034,8 @@ export function App() {
                       const isLoan = tx.type === 'loan';
                       const isLoanInflow = isLoan && (tx.category_id === 'cat_loan_borrow' || tx.category_id === 'cat_loan_collect');
                       const catMeta = getCategoryMeta(tx.category_id, categories, tx.type);
+                      const txLedger = ledgerMap.get(tx.ledger_id);
+                      const txCurrencySymbol = getCurrencySymbol(txLedger?.currency);
 
                       // 构造副标题描述
                       const getSubtitle = () => {
@@ -884,10 +1078,18 @@ export function App() {
                               <CategoryIcon icon={catMeta.icon} className="w-4 h-4" />
                             </div>
                             <div>
-                              <div className="text-xs font-semibold text-gray-800 dark:text-gray-200">
-                                {isTransfer
-                                  ? `${catMeta.name} · ${tx.from_account || '转出'} ➔ ${tx.to_account || '转入'}`
-                                  : catMeta.fullPath}
+                              <div className="text-xs font-semibold text-gray-800 dark:text-gray-200 flex items-center gap-1.5">
+                                <span>
+                                  {isTransfer
+                                    ? `${catMeta.name} · ${tx.from_account || '转出'} ➔ ${tx.to_account || '转入'}`
+                                    : catMeta.fullPath}
+                                </span>
+                                {/* 全局视图或多账本时显示所属账本徽标 */}
+                                {activeLedgerId === 'all' && txLedger && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-gray-200 dark:bg-neutral-700 text-gray-600 dark:text-gray-300 font-normal">
+                                    {txLedger.name}
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[10px] text-gray-400 flex items-center gap-1.5">
                                 <span>{subtitleParts[0]}</span>
@@ -926,7 +1128,7 @@ export function App() {
                                   : isLoanInflow
                                   ? '+ '
                                   : '- '}
-                                {formatMoney(tx.amount)}
+                                {formatMoney(tx.amount, txCurrencySymbol)}
                               </div>
                             </div>
                             {tx.sync_status === 'synced' ? (
@@ -949,12 +1151,22 @@ export function App() {
           )}
         </div>
 
-
         {/* 登录/注册 弹窗 */}
         <AuthModal
           isOpen={isAuthModalOpen}
           onClose={() => setIsAuthModalOpen(false)}
           onSuccess={handleAuthSuccess}
+        />
+
+        {/* 多账本管理与创建 弹窗 */}
+        <LedgerManagementModal
+          isOpen={isLedgerModalOpen}
+          ledgers={ledgers}
+          transactions={transactions}
+          activeLedgerId={activeLedgerId}
+          onClose={() => setIsLedgerModalOpen(false)}
+          onSelectLedger={handleSwitchLedger}
+          onLedgersChanged={refreshLedgers}
         />
 
         {/* 分类管理与排序 弹窗 */}
@@ -971,6 +1183,7 @@ export function App() {
           isOpen={!!selectedTxForDetail}
           transaction={selectedTxForDetail}
           categories={categories}
+          ledgers={ledgers}
           onClose={() => setSelectedTxForDetail(null)}
           onUpdate={handleUpdateTransaction}
           onDelete={handleDeleteTransaction}

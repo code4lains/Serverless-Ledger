@@ -47,3 +47,27 @@ export async function seedLocalCategories() {
   }
 }
 
+export const DEFAULT_LOCAL_LEDGER_ID = 'default_ledger';
+
+/**
+ * 预置本地默认日常账本 (确保未登录或离线首次冷启动时拥有可用账本)
+ */
+export async function seedLocalLedgers(userId?: string) {
+  const effectiveUserId = userId || 'default_user';
+  const existingCount = await localDb.ledgers.count();
+
+  if (existingCount === 0) {
+    const now = new Date().toISOString();
+    const defaultLedger: Ledger = {
+      ledger_id: DEFAULT_LOCAL_LEDGER_ID,
+      user_id: effectiveUserId,
+      name: '默认日常账本',
+      currency: 'CNY',
+      is_default: 1,
+      created_at: now,
+      updated_at: now,
+    };
+    await localDb.ledgers.put(defaultLedger);
+  }
+}
+

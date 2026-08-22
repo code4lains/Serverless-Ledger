@@ -34,6 +34,58 @@ export interface Ledger {
   updated_at: string;
 }
 
+export interface CreateLedgerRequest {
+  ledger_id?: string;
+  name: string;
+  currency?: string;
+  is_default?: number;
+}
+
+export interface UpdateLedgerRequest {
+  name?: string;
+  currency?: string;
+  is_default?: number;
+}
+
+export interface LedgerSummary {
+  ledger: Ledger;
+  transaction_count: number;
+  totalExpense: number; // 分
+  totalIncome: number; // 分
+  balance: number; // 分
+}
+
+export interface CurrencyInfo {
+  code: string;
+  name: string;
+  symbol: string;
+}
+
+export const SUPPORTED_CURRENCIES: CurrencyInfo[] = [
+  { code: 'CNY', name: '人民币 (CNY)', symbol: '¥' },
+  { code: 'USD', name: '美元 (USD)', symbol: '$' },
+  { code: 'EUR', name: '欧元 (EUR)', symbol: '€' },
+  { code: 'GBP', name: '英镑 (GBP)', symbol: '£' },
+  { code: 'JPY', name: '日元 (JPY)', symbol: '¥' },
+  { code: 'HKD', name: '港币 (HKD)', symbol: 'HK$' },
+];
+
+export interface LedgerTemplate {
+  name: string;
+  icon: string;
+  description: string;
+  currency: string;
+}
+
+export const LEDGER_TEMPLATES: LedgerTemplate[] = [
+  { name: '日常账本', icon: 'BookOpen', description: '日常餐饮、交通与日用消费', currency: 'CNY' },
+  { name: '家庭账本', icon: 'Home', description: '家庭共同开销与水电柴米', currency: 'CNY' },
+  { name: '旅游账本', icon: 'Plane', description: '旅行出游、机票酒店专账', currency: 'CNY' },
+  { name: '装修账本', icon: 'Hammer', description: '新房建材、家电软装预算专账', currency: 'CNY' },
+  { name: '生意账本', icon: 'Briefcase', description: '副业进货、店铺周转经营账', currency: 'CNY' },
+  { name: '借贷专账', icon: 'Landmark', description: '应收应付、人情借款明细', currency: 'CNY' },
+];
+
 /**
  * 3. 分类表模型 (支持大类/小类二级结构)
  */

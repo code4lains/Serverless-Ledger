@@ -271,6 +271,155 @@ async function testPipeline() {
   assert.strictEqual(delParentRes.status, 200, 'Delete custom parent category should return 200');
   console.log('Custom Category CRUD & Reorder Verified Successfully!');
 
+  console.log('\n--- 7.9 Testing Multi-Ledger System (Whitepaper 7.2 & 3.3) ---');
+  // 1. 获取初始账本列表 (注册时已创建默认账本)
+  const initialLedgersRes = await fetch(`${BASE}/api/ledgers`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(initialLedgersRes.status, 200);
+  const initialLedgersJson = await initialLedgersRes.json();
+  console.log('Initial User Ledgers:', initialLedgersJson.data);
+  assert.strictEqual(initialLedgersJson.data.length, 1);
+  assert.strictEqual(initialLedgersJson.data[0].is_default, 1);
+  const defaultLedgerId = initialLedgersJson.data[0].ledger_id;
+
+  // 2. 创建多个新账本 (例如：旅游账本 USD、装修账本 CNY)
+  const travelLedgerRes = await fetch(`${BASE}/api/ledgers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: '旅游账本',
+      currency: 'USD',
+      is_default: 0,
+    }),
+  });
+  assert.strictEqual(travelLedgerRes.status, 201);
+  const travelLedgerJson = await travelLedgerRes.json();
+  console.log('Created Travel Ledger (USD):', travelLedgerJson.data);
+  assert.strictEqual(travelLedgerJson.data.name, '旅游账本');
+  assert.strictEqual(travelLedgerJson.data.currency, 'USD');
+  assert.strictEqual(travelLedgerJson.data.is_default, 0);
+  const travelLedgerId = travelLedgerJson.data.ledger_id;
+
+  const renoLedgerRes = await fetch(`${BASE}/api/ledgers`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: '新房装修账本',
+      currency: 'CNY',
+      is_default: 0,
+    }),
+  });
+  assert.strictEqual(renoLedgerRes.status, 201);
+  const renoLedgerJson = await renoLedgerRes.json();
+  const renoLedgerId = renoLedgerJson.data.ledger_id;
+
+  // 3. 验证多账本列表与统计汇总 /api/ledgers?withSummary=true
+  const multiLedgersRes = await fetch(`${BASE}/api/ledgers?withSummary=true`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(multiLedgersRes.status, 200);
+  const multiLedgersJson = await multiLedgersRes.json();
+  console.log('Multi-Ledgers with Summary:', multiLedgersJson.data);
+  assert.strictEqual(multiLedgersJson.data.length, 3, 'Should have 3 ledgers now');
+
+  // 4. 修改账本 (PUT /api/ledgers/:id)
+  const updateLedgerRes = await fetch(`${BASE}/api/ledgers/${renoLedgerId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: '别墅装修奢华账本',
+      currency: 'CNY',
+    }),
+  });
+  assert.strictEqual(updateLedgerRes.status, 200);
+  const updateLedgerJson = await updateLedgerRes.json();
+  assert.strictEqual(updateLedgerJson.data.name, '别墅装修奢华账本');
+
+  // 5. 设置默认账本及互斥性测试 (PUT /api/ledgers/:id/default)
+  const setDefaultRes = await fetch(`${BASE}/api/ledgers/${travelLedgerId}/default`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(setDefaultRes.status, 200);
+
+  // 重新获取账本列表并验证 travelLedger 为 1，其余为 0
+  const afterDefaultRes = await fetch(`${BASE}/api/ledgers`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const afterDefaultJson = await afterDefaultRes.json();
+  const defaultItems = afterDefaultJson.data.filter((l) => l.is_default === 1);
+  assert.strictEqual(defaultItems.length, 1, 'Only one ledger can be default');
+  assert.strictEqual(defaultItems[0].ledger_id, travelLedgerId);
+
+  // 切回原默认日常账本
+  await fetch(`${BASE}/api/ledgers/${defaultLedgerId}/default`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+
+  // 6. 测试向特定账本记账与数据隔离
+  const travelTx = {
+    transaction_id: `tx_travel_${Date.now()}`,
+    ledger_id: travelLedgerId,
+    type: 'expense',
+    amount: 15000, // $150.00
+    category_id: 'cat_exp_ent_travel',
+    transaction_date: new Date().toISOString(),
+    remark: '夏威夷度假机票',
+  };
+  const createTravelTxRes = await fetch(`${BASE}/api/transactions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify(travelTx),
+  });
+  assert.strictEqual(createTravelTxRes.status, 201);
+
+  // 过滤旅游账本的流水
+  const listTravelTxRes = await fetch(`${BASE}/api/transactions?ledgerId=${travelLedgerId}`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const listTravelTxJson = await listTravelTxRes.json();
+  assert.strictEqual(listTravelTxJson.data.length, 1);
+  assert.strictEqual(listTravelTxJson.data[0].transaction_id, travelTx.transaction_id);
+
+  // 7. 测试删除账本及级联清理 (DELETE /api/ledgers/:id)
+  const delTravelLedgerRes = await fetch(`${BASE}/api/ledgers/${travelLedgerId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delTravelLedgerRes.status, 200);
+
+  // 验证旅游账本关联的流水也已被清理
+  const checkTravelTxRes = await fetch(`${BASE}/api/transactions/${travelTx.transaction_id}`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(checkTravelTxRes.status, 404);
+
+  // 8. 测试保护机制：删除装修账本后，只剩唯一默认账本时，禁止删除唯一账本
+  await fetch(`${BASE}/api/ledgers/${renoLedgerId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const delOnlyLedgerRes = await fetch(`${BASE}/api/ledgers/${defaultLedgerId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delOnlyLedgerRes.status, 400, 'Deleting only remaining ledger should be blocked');
+  console.log('Multi-Ledger System Verified Successfully!');
+
   console.log('\n--- 8. Testing Create Transaction with Authenticated JWT (Expense, Transfer & Loan) ---');
   const newTx = {
     transaction_id: `tx_${Date.now()}`,

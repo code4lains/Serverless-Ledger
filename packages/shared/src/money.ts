@@ -41,3 +41,22 @@ export function formatMoney(cents: number, currencySymbol: string = '¥'): strin
   });
   return `${currencySymbol}${formatted}`;
 }
+
+const CURRENCY_SYMBOL_MAP: Record<string, string> = {
+  CNY: '¥',
+  RMB: '¥',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  HKD: 'HK$',
+};
+
+/**
+ * 根据币种代码获取对应的货币符号
+ */
+export function getCurrencySymbol(currencyCode?: string): string {
+  if (!currencyCode) return '¥';
+  const upper = currencyCode.toUpperCase();
+  return CURRENCY_SYMBOL_MAP[upper] || '¥';
+}

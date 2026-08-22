@@ -7,6 +7,9 @@ import {
   ReorderCategoryItem,
   ReorderCategoriesRequest,
   Ledger,
+  CreateLedgerRequest,
+  UpdateLedgerRequest,
+  LedgerSummary,
   Transaction,
   TransactionFilter,
   SyncBatchResponse,
@@ -333,6 +336,244 @@ export async function reorderCategories(items: ReorderCategoryItem[]): Promise<b
 }
 
 /**
+ * 获取账本列表 (优先拉取服务端并同步至本地 Dexie，离线时读取本地)
+ */
+export async function getLedgers(withSummary = false): Promise<Ledger[]> {
+  try {
+    const url = `${API_BASE}/ledgers${withSummary ? '?withSummary=true' : ''}`;
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Ledger[] | LedgerSummary[]>;
+      if (json.success && json.data && Array.isArray(json.data) && json.data.length > 0) {
+        const rawLedgers: Ledger[] = withSummary
+          ? (json.data as LedgerSummary[]).map((s) => s.ledger)
+          : (json.data as Ledger[]);
+        await localDb.ledgers.bulkPut(rawLedgers);
+        return rawLedgers;
+      }
+    }
+  } catch {
+    // 离线降级
+  }
+  return await localDb.ledgers.orderBy('is_default').reverse().toArray();
+}
+
+/**
+ * 创建新账本 (离线优先：写入本地 Dexie，若在线同步至 D1)
+ */
+export async function createLedger(req: CreateLedgerRequest): Promise<Ledger> {
+  const user = getStoredUser();
+  const userId = user?.user_id || 'default_user';
+  const ledgerId = req.ledger_id || `led_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const now = new Date().toISOString();
+
+  const count = await localDb.ledgers.count();
+  const isDefault = count === 0 ? 1 : (req.is_default ? 1 : 0);
+
+  // 若设为默认账本，重置本地其他账本
+  if (isDefault === 1) {
+    const existing = await localDb.ledgers.toArray();
+    for (const item of existing) {
+      if (item.is_default === 1) {
+        await localDb.ledgers.update(item.ledger_id, { is_default: 0, updated_at: now });
+      }
+    }
+  }
+
+  const newLedger: Ledger = {
+    ledger_id: ledgerId,
+    user_id: userId,
+    name: req.name.trim(),
+    currency: (req.currency || 'CNY').trim().toUpperCase(),
+    is_default: isDefault,
+    created_at: now,
+    updated_at: now,
+  };
+
+  await localDb.ledgers.put(newLedger);
+
+  try {
+    const res = await fetch(`${API_BASE}/ledgers`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(newLedger),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Ledger>;
+      if (json.success && json.data) {
+        await localDb.ledgers.put(json.data);
+        return json.data;
+      }
+    }
+  } catch {
+    console.log('离线模式：新账本已保存到本地。');
+  }
+
+  return newLedger;
+}
+
+/**
+ * 修改账本 (离线优先)
+ */
+export async function updateLedger(
+  ledgerId: string,
+  updates: UpdateLedgerRequest
+): Promise<Ledger | null> {
+  const existing = await localDb.ledgers.get(ledgerId);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const isDefault = updates.is_default !== undefined ? (updates.is_default ? 1 : 0) : existing.is_default;
+
+  // 若更新为默认账本，重置本地其余账本
+  if (isDefault === 1 && existing.is_default === 0) {
+    const all = await localDb.ledgers.toArray();
+    for (const item of all) {
+      if (item.ledger_id !== ledgerId && item.is_default === 1) {
+        await localDb.ledgers.update(item.ledger_id, { is_default: 0, updated_at: now });
+      }
+    }
+  }
+
+  const updatedLedger: Ledger = {
+    ...existing,
+    name: updates.name !== undefined ? updates.name.trim() : existing.name,
+    currency: updates.currency !== undefined ? updates.currency.trim().toUpperCase() : existing.currency,
+    is_default: isDefault,
+    updated_at: now,
+  };
+
+  await localDb.ledgers.put(updatedLedger);
+
+  try {
+    const res = await fetch(`${API_BASE}/ledgers/${ledgerId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Ledger>;
+      if (json.success && json.data) {
+        await localDb.ledgers.put(json.data);
+        return json.data;
+      }
+    }
+  } catch {
+    console.log('离线模式：账本修改已暂存本地。');
+  }
+
+  return updatedLedger;
+}
+
+/**
+ * 设为默认账本 (离线优先)
+ */
+export async function setDefaultLedger(ledgerId: string): Promise<boolean> {
+  const existing = await localDb.ledgers.get(ledgerId);
+  if (!existing) return false;
+
+  const now = new Date().toISOString();
+  const all = await localDb.ledgers.toArray();
+  for (const item of all) {
+    await localDb.ledgers.update(item.ledger_id, {
+      is_default: item.ledger_id === ledgerId ? 1 : 0,
+      updated_at: now,
+    });
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/ledgers/${ledgerId}/default`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    console.log('离线模式：默认账本已在本地更新。');
+    return true;
+  }
+}
+
+/**
+ * 删除账本 (离线优先：级联删除本地该账本下的账单流水)
+ */
+export async function deleteLedger(ledgerId: string): Promise<{ success: boolean; error?: string }> {
+  const totalCount = await localDb.ledgers.count();
+  if (totalCount <= 1) {
+    return { success: false, error: '至少需保留一个账本，无法删除唯一账本' };
+  }
+
+  const existing = await localDb.ledgers.get(ledgerId);
+  if (!existing) return { success: false, error: '账本不存在' };
+
+  // 若删除默认账本，先提升另一个账本为默认
+  if (existing.is_default === 1) {
+    const another = await localDb.ledgers.filter((l) => l.ledger_id !== ledgerId).first();
+    if (another) {
+      await localDb.ledgers.update(another.ledger_id, { is_default: 1, updated_at: new Date().toISOString() });
+    }
+  }
+
+  // 本地级联删除该账本下的所有流水
+  const relatedTxs = await localDb.transactions.where('ledger_id').equals(ledgerId).toArray();
+  for (const tx of relatedTxs) {
+    await localDb.transactions.delete(tx.transaction_id);
+  }
+
+  // 本地删除账本
+  await localDb.ledgers.delete(ledgerId);
+
+  // 服务端同步删除
+  try {
+    const res = await fetch(`${API_BASE}/ledgers/${ledgerId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) {
+      const json = (await res.json()) as ApiResponse;
+      return { success: false, error: json.error || '删除失败' };
+    }
+    return { success: true };
+  } catch {
+    console.log('离线模式：账本及关联流水已在本地删除。');
+    return { success: true };
+  }
+}
+
+/**
+ * 从服务器拉取最新账本并与本地合并
+ */
+export async function pullAndMergeServerLedgers(): Promise<number> {
+  try {
+    const res = await fetch(`${API_BASE}/ledgers`, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Ledger[]>;
+      if (json.success && Array.isArray(json.data)) {
+        const serverLedgers = json.data;
+        if (serverLedgers.length > 0) {
+          for (const sLed of serverLedgers) {
+            await localDb.ledgers.put(sLed);
+          }
+          return serverLedgers.length;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('拉取服务端账本数据失败 (可能离线):', err);
+  }
+  return 0;
+}
+
+/**
  * 创建新账单流水 (离线优先策略：先写入本地 IndexedDB，若在线则静默推送到 D1)
  */
 export async function createTransaction(
@@ -495,7 +736,8 @@ export async function syncPendingTransactions(): Promise<{ syncedCount: number; 
       }
     }
 
-    // 双向拉取服务端增量
+    // 双向拉取服务端账本与流水增量
+    await pullAndMergeServerLedgers();
     await pullAndMergeServerTransactions();
     return { syncedCount: pendingList.length, success: true };
   } catch (err) {
