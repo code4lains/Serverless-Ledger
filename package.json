@@ -11,7 +11,7 @@
     "dev:client": "npm -w @ledger/client run dev",
     "dev:server": "npm -w @ledger/server run dev",
     "build": "npm -w @ledger/shared run build && npm -w @ledger/server run build && npm -w @ledger/client run build",
-    "build:client": "npm -w @ledger/client run build",
+    "build:client": "npm -w @ledger/shared run build && npm -w @ledger/client run build",
     "build:server": "npm -w @ledger/server run build",
     "build:shared": "npm -w @ledger/shared run build",
     "db:migrate:local": "npm -w @ledger/server run db:migrate:local",
