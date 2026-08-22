@@ -7,6 +7,7 @@ import {
   Sun,
   ShieldCheck,
   LogOut,
+  LogIn,
   ChevronRight,
   Database,
   Cloud,
@@ -30,6 +31,7 @@ interface ProfileViewProps {
   onSync: () => Promise<void>;
   onOpenLedgerModal: () => void;
   onLogout: () => void;
+  onOpenAuthModal?: () => void;
 }
 
 export function ProfileView({
@@ -44,6 +46,7 @@ export function ProfileView({
   onSync,
   onOpenLedgerModal,
   onLogout,
+  onOpenAuthModal,
 }: ProfileViewProps) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
@@ -53,34 +56,66 @@ export function ProfileView({
 
   return (
     <div className="flex flex-col gap-4 animate-fadeIn">
-      {/* 1. 用户信息卡片 */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex items-center justify-between">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center font-black text-lg shadow-sm">
-            {currentUser?.email ? currentUser.email[0].toUpperCase() : <UserIcon className="w-6 h-6" />}
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-base text-gray-900 dark:text-white truncate max-w-[180px]">
-                {currentUser?.email?.split('@')[0] || '我的账号'}
-              </h3>
-              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-0.5">
-                <ShieldCheck className="w-3 h-3" />
-                <span>已加密</span>
-              </span>
+      {/* 1. 用户信息卡片 (适配已登录与访客模式) */}
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center font-black text-lg shadow-sm">
+              {currentUser?.email ? currentUser.email[0].toUpperCase() : <UserIcon className="w-6 h-6 text-gray-400 dark:text-gray-600" />}
             </div>
-            <p className="text-xs text-gray-400 mt-0.5">{currentUser?.email || '未绑定邮箱'}</p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base text-gray-900 dark:text-white truncate max-w-[180px]">
+                  {currentUser?.email ? currentUser.email.split('@')[0] : '访客体验模式'}
+                </h3>
+                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold flex items-center gap-0.5 ${
+                  currentUser
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400'
+                }`}>
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>{currentUser ? '已加密' : '未登录'}</span>
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {currentUser?.email || '当前处于免登录浏览模式'}
+              </p>
+            </div>
           </div>
+
+          {currentUser ? (
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              title="退出登录"
+              className="p-2 rounded-2xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenAuthModal}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold shadow-xs hover:opacity-90 active:scale-95 transition-all"
+            >
+              <LogIn className="w-3.5 h-3.5" />
+              <span>登录/注册</span>
+            </button>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => setShowLogoutConfirm(true)}
-          title="退出登录"
-          className="p-2 rounded-2xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all"
-        >
-          <LogOut className="w-4 h-4" />
-        </button>
+        {!currentUser && (
+          <div className="pt-2 border-t border-gray-100 dark:border-neutral-700/60 flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+            <span>登录后开启多端数据同步与云端加密备份</span>
+            <button
+              type="button"
+              onClick={onOpenAuthModal}
+              className="text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
+            >
+              立即登录 ➔
+            </button>
+          </div>
+        )}
       </div>
 
       {/* 2. 多账本管理中心 */}

@@ -38,24 +38,30 @@ import { CategoryPicker } from './CategoryPicker';
 import { AccountPicker } from './AccountPicker';
 import { Layers } from 'lucide-react';
 
+import { AuthUser } from '@ledger/shared';
+
 interface TransactionDetailModalProps {
   transaction: Transaction | null;
   categories: Category[];
   ledgers?: Ledger[];
+  currentUser?: AuthUser | null;
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updatedTx: Transaction) => Promise<void>;
   onDelete: (transactionId: string) => Promise<void>;
+  onRequireAuth?: () => void;
 }
 
 export function TransactionDetailModal({
   transaction,
   categories,
   ledgers = [],
+  currentUser,
   isOpen,
   onClose,
   onUpdate,
   onDelete,
+  onRequireAuth,
 }: TransactionDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -558,7 +564,13 @@ export function TransactionDetailModal({
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setIsDeleting(true)}
+                  onClick={() => {
+                    if (!currentUser) {
+                      onRequireAuth?.();
+                      return;
+                    }
+                    setIsDeleting(true);
+                  }}
                   className="flex-1 py-2 rounded-xl text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -566,7 +578,13 @@ export function TransactionDetailModal({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    if (!currentUser) {
+                      onRequireAuth?.();
+                      return;
+                    }
+                    setIsEditing(true);
+                  }}
                   className="flex-1 py-2 rounded-xl text-xs font-medium text-gray-800 dark:text-gray-100 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 transition-colors flex items-center justify-center gap-1.5"
                 >
                   <Edit3 className="w-3.5 h-3.5" />

@@ -176,9 +176,7 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn ${
-        !closable ? 'cursor-default' : ''
-      }`}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn"
       onClick={() => {
         if (closable) onClose();
       }}
@@ -187,8 +185,25 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
         className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700 overflow-hidden transform transition-all"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* 顶部体验提示条 */}
+        <div className="bg-indigo-50/70 dark:bg-indigo-950/40 px-4 py-2 border-b border-indigo-100 dark:border-indigo-900/40 flex items-center justify-between text-[11px] text-indigo-700 dark:text-indigo-300">
+          <span className="flex items-center gap-1 font-medium">
+            <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+            <span>登录/注册即可保存记录并同步至云端</span>
+          </span>
+          {closable && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs text-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-200"
+            >
+              稍后登录
+            </button>
+          )}
+        </div>
+
         {/* 标题栏与关闭按钮 */}
-        <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-xl bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 flex items-center justify-center font-bold text-xs">
               {tab === 'login' ? <LogIn className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}

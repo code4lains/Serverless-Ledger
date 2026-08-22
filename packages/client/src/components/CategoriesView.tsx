@@ -33,16 +33,22 @@ import {
   reorderCategories,
 } from '../api/client';
 
+import { AuthUser } from '@ledger/shared';
+
 interface CategoriesViewProps {
   categories: Category[];
   initialType?: CategoryType;
+  currentUser?: AuthUser | null;
   onCategoriesChanged: () => Promise<void>;
+  onRequireAuth?: () => void;
 }
 
 export function CategoriesView({
   categories,
   initialType = 'expense',
+  currentUser,
   onCategoriesChanged,
+  onRequireAuth,
 }: CategoriesViewProps) {
   const [activeTab, setActiveTab] = useState<CategoryType>(initialType);
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
@@ -72,16 +78,20 @@ export function CategoriesView({
     return categories.filter((c) => c.type === activeTab && !c.parent_id);
   }, [categories, activeTab]);
 
-  // 展开/折叠大分类
+  // 展开/折叠大分类 (默认折叠)
   const toggleCollapse = (parentId: string) => {
     setCollapsedParents((prev) => ({
       ...prev,
-      [parentId]: !prev[parentId],
+      [parentId]: prev[parentId] !== undefined ? !prev[parentId] : false,
     }));
   };
 
   // 打开新增分类弹窗
   const handleOpenAdd = (parentId: string | null = null) => {
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
     setEditingCategory(null);
     setFormName('');
     setFormType(activeTab);
@@ -94,6 +104,10 @@ export function CategoriesView({
 
   // 打开编辑分类弹窗
   const handleOpenEdit = (cat: Category) => {
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
     setEditingCategory(cat);
     setFormName(cat.name);
     setFormType(cat.type);
@@ -151,6 +165,11 @@ export function CategoriesView({
   // 确认删除分类
   const handleConfirmDelete = async () => {
     if (!deletingCategory) return;
+    if (!currentUser) {
+      setDeletingCategory(null);
+      onRequireAuth?.();
+      return;
+    }
     setIsDeleting(true);
     try {
       const ok = await deleteCategory(deletingCategory.category_id);
@@ -173,6 +192,10 @@ export function CategoriesView({
     currentIndex: number,
     direction: 'up' | 'down'
   ) => {
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     if (targetIndex < 0 || targetIndex >= list.length) return;
 
@@ -247,7 +270,7 @@ export function CategoriesView({
         ) : (
           categoryTree.map((node, parentIdx) => {
             const parent = node.category;
-            const isCollapsed = collapsedParents[parent.category_id] ?? false;
+            const isCollapsed = collapsedParents[parent.category_id] ?? true;
             const isCustom = !!parent.user_id;
 
             return (
