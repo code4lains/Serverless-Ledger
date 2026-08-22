@@ -1,23 +1,115 @@
-import React, { useState } from 'react';
-import { X, Mail, Lock, LogIn, UserPlus, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Mail, Lock, LogIn, UserPlus, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
 import { AuthUser } from '@ledger/shared';
 import { loginUser, registerUser } from '../api/client';
 
 interface AuthModalProps {
   isOpen: boolean;
+  closable?: boolean;
   onClose: () => void;
   onSuccess: (user: AuthUser) => void;
 }
 
-export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
+export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthModalProps) {
   const [tab, setTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string>('');
+
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+
+  // 初始化与渲染 Cloudflare Turnstile 验证控件
+  useEffect(() => {
+    if (!isOpen || !siteKey) return;
+
+    let isMounted = true;
+
+    const renderWidget = () => {
+      if (!isMounted || !turnstileContainerRef.current || !window.turnstile) return;
+
+      // 清除前一个实例
+      if (turnstileWidgetIdRef.current) {
+        try {
+          window.turnstile.remove(turnstileWidgetIdRef.current);
+        } catch {}
+        turnstileWidgetIdRef.current = null;
+      }
+
+      setTurnstileToken('');
+
+      try {
+        const widgetId = window.turnstile.render(turnstileContainerRef.current, {
+          sitekey: siteKey,
+          theme: 'auto',
+          size: 'flexible',
+          callback: (token: string) => {
+            if (isMounted) {
+              setTurnstileToken(token);
+              setErrorMsg('');
+            }
+          },
+          'expired-callback': () => {
+            if (isMounted) setTurnstileToken('');
+          },
+          'error-callback': () => {
+            if (isMounted) setTurnstileToken('');
+          },
+        });
+        turnstileWidgetIdRef.current = widgetId;
+      } catch (err) {
+        console.warn('Turnstile render warning:', err);
+      }
+    };
+
+    if (window.turnstile) {
+      // 延迟一帧等待 DOM 挂载完毕
+      const timer = setTimeout(renderWidget, 50);
+      return () => clearTimeout(timer);
+    } else {
+      const scriptId = 'cf-turnstile-script';
+      let script = document.getElementById(scriptId) as HTMLScriptElement;
+      if (!script) {
+        script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          if (isMounted) renderWidget();
+        };
+        document.head.appendChild(script);
+      } else {
+        script.addEventListener('load', renderWidget);
+      }
+    }
+
+    return () => {
+      isMounted = false;
+      if (turnstileWidgetIdRef.current && window.turnstile) {
+        try {
+          window.turnstile.remove(turnstileWidgetIdRef.current);
+        } catch {}
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, [isOpen, tab, siteKey]);
 
   if (!isOpen) return null;
+
+  const resetTurnstile = () => {
+    if (turnstileWidgetIdRef.current && window.turnstile) {
+      try {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+      } catch {}
+    }
+    setTurnstileToken('');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,37 +131,60 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       return;
     }
 
+    if (siteKey && !turnstileToken) {
+      setErrorMsg('请先完成人机安全验证');
+      return;
+    }
+
     setLoading(true);
 
     try {
       if (tab === 'login') {
-        const res = await loginUser({ email: trimmedEmail, password });
+        const res = await loginUser({
+          email: trimmedEmail,
+          password,
+          turnstile_token: turnstileToken || undefined,
+        });
         if (res.success && res.data) {
           onSuccess(res.data.user);
-          onClose();
+          if (closable) onClose();
         } else {
           setErrorMsg(res.error || '登录失败，请检查账号密码');
+          resetTurnstile();
         }
       } else {
-        const res = await registerUser({ email: trimmedEmail, password });
+        const res = await registerUser({
+          email: trimmedEmail,
+          password,
+          turnstile_token: turnstileToken || undefined,
+        });
         if (res.success && res.data) {
           onSuccess(res.data.user);
-          onClose();
+          if (closable) onClose();
         } else {
           setErrorMsg(res.error || '注册失败，请稍后重试');
+          resetTurnstile();
         }
       }
     } catch (err: any) {
       setErrorMsg(err.message || '网络请求错误，请稍后重试');
+      resetTurnstile();
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-fadeIn">
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn ${
+        !closable ? 'cursor-default' : ''
+      }`}
+      onClick={() => {
+        if (closable) onClose();
+      }}
+    >
       <div
-        className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-xl border border-gray-100 dark:border-neutral-700 overflow-hidden transform transition-all"
+        className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700 overflow-hidden transform transition-all"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏与关闭按钮 */}
@@ -82,13 +197,15 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
               {tab === 'login' ? '用户登录' : '新用户注册'}
             </h3>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {closable && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Tab 切换 */}
@@ -197,10 +314,17 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             </div>
           )}
 
+          {/* Cloudflare Turnstile 人机验证挂载容器 */}
+          {siteKey && (
+            <div className="flex flex-col gap-1 py-1 items-center justify-center min-h-[65px]">
+              <div ref={turnstileContainerRef} className="w-full flex justify-center" />
+            </div>
+          )}
+
           <div className="pt-2">
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (!!siteKey && !turnstileToken)}
               className="w-full py-2.5 rounded-xl bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 font-semibold text-xs shadow-sm active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
             >
               {loading ? (
@@ -216,10 +340,9 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             </button>
           </div>
 
-          <div className="text-center">
-            <p className="text-[10px] text-gray-400">
-              数据完全私有掌控 · 基于 Cloudflare Serverless
-            </p>
+          <div className="text-center flex items-center justify-center gap-1 text-[10px] text-gray-400">
+            <ShieldCheck className="w-3 h-3 text-emerald-500" />
+            <span>数据完全私有掌控 · Cloudflare Serverless D1</span>
           </div>
         </form>
       </div>

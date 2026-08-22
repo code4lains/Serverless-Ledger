@@ -2,7 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import { Transaction, Category, Ledger, Budget, getDefaultCategories } from '@ledger/shared';
 
 /**
- * 极简记账 - 本地 IndexedDB 数据库 (基于 Dexie.js)
+ * 账盾 - 本地 IndexedDB 数据库 (基于 Dexie.js)
  * 践行《白皮书 6.1 离线优先 Offline-First》规范
  */
 export class LedgerLocalDatabase extends Dexie {

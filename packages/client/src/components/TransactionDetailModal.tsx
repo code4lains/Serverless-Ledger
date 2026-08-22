@@ -141,7 +141,8 @@ export function TransactionDetailModal({
   // 保存编辑
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editAmountStr || parseFloat(editAmountStr) <= 0) return;
+    const parsedAmount = parseFloat(editAmountStr);
+    if (!editAmountStr || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     setIsSaving(true);
     try {
@@ -320,9 +321,20 @@ export function TransactionDetailModal({
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     required
+                    placeholder="0.00"
                     value={editAmountStr}
-                    onChange={(e) => setEditAmountStr(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === '-' || e.key === '+' || e.key === 'e' || e.key === 'E') {
+                        e.preventDefault();
+                      }
+                    }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.includes('-')) return;
+                      setEditAmountStr(val);
+                    }}
                     className="w-full pl-8 pr-3 py-2 text-lg font-bold rounded-xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none"
                   />
                 </div>

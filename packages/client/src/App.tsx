@@ -33,6 +33,8 @@ import {
   Tag,
   Settings,
   Plus,
+  PieChart,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Transaction,
@@ -73,8 +75,14 @@ import { AccountPicker } from './components/AccountPicker';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
 import { CategoryManagementModal } from './components/CategoryManagementModal';
 import { LedgerManagementModal } from './components/LedgerManagementModal';
+import { StatisticsView } from './components/StatisticsView';
+import { CategoriesView } from './components/CategoriesView';
+import { ProfileView } from './components/ProfileView';
+
+export type NavigationTab = 'record' | 'stats' | 'category' | 'profile';
 
 export function App() {
+  const [navTab, setNavTab] = useState<NavigationTab>('record');
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
@@ -121,10 +129,21 @@ export function App() {
   }, [darkMode]);
 
   // 从本地 Dexie 加载流水与待同步状态
-  const loadLocalData = async () => {
-    const list = await localDb.transactions.orderBy('transaction_date').reverse().toArray();
+  const loadLocalData = async (user?: AuthUser | null) => {
+    const effectiveUser = user !== undefined ? user : currentUser;
+    if (!effectiveUser) {
+      setTransactions([]);
+      setPendingCount(0);
+      return;
+    }
+    const list = await localDb.transactions.where('user_id').equals(effectiveUser.user_id).sortBy('transaction_date');
+    list.reverse();
     setTransactions(list);
-    const pending = await localDb.transactions.where('sync_status').equals('pending').count();
+    const pending = await localDb.transactions
+      .where('user_id')
+      .equals(effectiveUser.user_id)
+      .and((t) => t.sync_status === 'pending')
+      .count();
     setPendingCount(pending);
   };
 
@@ -152,47 +171,55 @@ export function App() {
     }
   };
 
+  // 载入并同步当前用户数据
+  const loadUserData = async (user: AuthUser) => {
+    await seedLocalCategories();
+    await seedLocalLedgers(user.user_id);
+
+    const cats = await getCategories();
+    setCategories(cats);
+    setSelectedCategory(getInitialCategoryId(activeTab, cats));
+
+    const leds = await getLedgers();
+    setLedgers(leds);
+    const defaultLed = leds.find((l) => l.is_default === 1) || leds[0];
+    if (defaultLed) {
+      setActiveLedgerId(defaultLed.ledger_id);
+      setSelectedLedgerForRecord(defaultLed.ledger_id);
+    }
+
+    await loadLocalData(user);
+
+    const health = await checkServerHealth();
+    setServerStatus(health);
+
+    if (health.ok) {
+      await pullAndMergeServerLedgers();
+      await pullAndMergeServerTransactions();
+      await refreshLedgers();
+      await loadLocalData(user);
+    }
+  };
+
   // 初始化应用
   useEffect(() => {
     const init = async () => {
-      // 1. 初始化预置分类与账本
-      await seedLocalCategories();
-      await seedLocalLedgers(currentUser?.user_id);
-
-      // 2. 加载分类
-      const cats = await getCategories();
-      setCategories(cats);
-      setSelectedCategory(getInitialCategoryId('expense', cats));
-
-      // 3. 加载账本
-      const leds = await getLedgers();
-      setLedgers(leds);
-      const defaultLed = leds.find((l) => l.is_default === 1) || leds[0];
-      if (defaultLed) {
-        setActiveLedgerId(defaultLed.ledger_id);
-        setSelectedLedgerForRecord(defaultLed.ledger_id);
+      // 验证当前 Token
+      const stored = getStoredUser();
+      if (!stored) {
+        setCurrentUser(null);
+        setIsAuthModalOpen(true);
+        return;
       }
 
-      // 4. 加载本地账单
-      await loadLocalData();
-
-      // 5. 验证并更新用户信息
       const userRes = await fetchCurrentUser();
       if (userRes.success && userRes.data) {
         setCurrentUser(userRes.data);
-      } else if (!userRes.success && getStoredUser()) {
+        await loadUserData(userRes.data);
+      } else {
+        clearSession();
         setCurrentUser(null);
-      }
-
-      // 6. 检查后端 CF Workers + D1 连通性并拉取增量
-      const health = await checkServerHealth();
-      setServerStatus(health);
-
-      if (health.ok) {
-        await pullAndMergeServerLedgers();
-        await pullAndMergeServerTransactions();
-        await refreshLedgers();
-        await loadLocalData();
+        setIsAuthModalOpen(true);
       }
     };
 
@@ -272,11 +299,19 @@ export function App() {
   // 提交记账 (3秒快速极简记账)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amountStr || parseFloat(amountStr) <= 0) return;
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const parsedAmount = parseFloat(amountStr);
+    if (!amountStr || isNaN(parsedAmount) || parsedAmount <= 0) return;
 
     const amountInCents = toCents(amountStr);
+    if (amountInCents <= 0) return;
+
     const txId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const userId = currentUser?.user_id || 'default_user';
+    const userId = currentUser.user_id;
 
     // 确定目标账本
     let targetLedgerId = selectedLedgerForRecord;
@@ -313,6 +348,10 @@ export function App() {
 
   // 手动触发同步
   const handleSync = async () => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true);
+      return;
+    }
     setIsSyncing(true);
     await syncPendingTransactions();
     const health = await checkServerHealth();
@@ -326,12 +365,16 @@ export function App() {
   const handleLogout = () => {
     clearSession();
     setCurrentUser(null);
+    setTransactions([]);
+    setLedgers([]);
+    setIsAuthModalOpen(true);
   };
 
   // 登录/注册成功回调
   const handleAuthSuccess = async (user: AuthUser) => {
     setCurrentUser(user);
-    await handleSync();
+    setIsAuthModalOpen(false);
+    await loadUserData(user);
   };
 
   // 流水修改回调
@@ -411,16 +454,16 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2] dark:bg-[#18191A] text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 font-sans">
+    <div className="min-h-screen bg-[#F7F6F2] dark:bg-[#18191A] text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 pb-24 font-sans">
       <div className="w-full max-w-md flex flex-col gap-4">
         {/* 顶部导航与状态栏 */}
         <header className="flex justify-between items-center py-2 px-1">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 flex items-center justify-center font-bold text-sm shadow-sm">
-              ￥
+            <div className="w-8 h-8 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center font-bold text-sm shadow-sm">
+              <ShieldCheck className="w-4 h-4 text-emerald-500 dark:text-emerald-600" />
             </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight">极简记账</h1>
+              <h1 className="text-base font-bold tracking-tight">账盾</h1>
               <p className="text-[11px] text-gray-400">Serverless Ledger</p>
             </div>
           </div>
@@ -461,13 +504,6 @@ export function App() {
               )}
             </button>
             <button
-              onClick={() => setIsCategoryModalOpen(true)}
-              title="自定义分类与分类排序"
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300"
-            >
-              <Tag className="w-4 h-4 text-indigo-500" />
-            </button>
-            <button
               onClick={handleSync}
               disabled={isSyncing}
               title="双向同步数据至 Cloudflare D1"
@@ -484,8 +520,11 @@ export function App() {
           </div>
         </header>
 
-        {/* 快捷多账本切换胶囊栏 */}
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5">
+        {/* 1. 【记账】板块 (默认页) */}
+        {navTab === 'record' && (
+          <div className="flex flex-col gap-4">
+            {/* 快捷多账本切换胶囊栏 */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5">
           {/* 全部账本透视 */}
           <button
             type="button"
@@ -708,9 +747,19 @@ export function App() {
                 <input
                   type="number"
                   step="0.01"
+                  min="0.01"
                   placeholder="0.00"
                   value={amountStr}
-                  onChange={(e) => setAmountStr(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === '-' || e.key === '+' || e.key === 'e' || e.key === 'E') {
+                      e.preventDefault();
+                    }
+                  }}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.includes('-')) return;
+                    setAmountStr(val);
+                  }}
                   className="w-full pl-9 pr-4 py-2.5 text-xl font-bold rounded-2xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none transition-all"
                   autoFocus
                 />
@@ -1150,10 +1199,51 @@ export function App() {
             </div>
           )}
         </div>
+      </div>
+    )}
+
+        {/* 2. 【统计】板块 */}
+        {navTab === 'stats' && (
+          <StatisticsView
+            transactions={transactions}
+            categories={categories}
+            ledgers={ledgers}
+            activeLedgerId={activeLedgerId}
+            onSelectLedger={handleSwitchLedger}
+            onSelectTransaction={setSelectedTxForDetail}
+          />
+        )}
+
+        {/* 3. 【分类】板块 */}
+        {navTab === 'category' && (
+          <CategoriesView
+            categories={categories}
+            initialType={activeTab}
+            onCategoriesChanged={refreshCategories}
+          />
+        )}
+
+        {/* 4. 【我的】板块 */}
+        {navTab === 'profile' && (
+          <ProfileView
+            currentUser={currentUser}
+            ledgers={ledgers}
+            transactions={transactions}
+            serverStatus={serverStatus}
+            pendingCount={pendingCount}
+            isSyncing={isSyncing}
+            darkMode={darkMode}
+            onToggleDarkMode={() => setDarkMode(!darkMode)}
+            onSync={handleSync}
+            onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
+            onLogout={handleLogout}
+          />
+        )}
 
         {/* 登录/注册 弹窗 */}
         <AuthModal
-          isOpen={isAuthModalOpen}
+          isOpen={isAuthModalOpen || !currentUser}
+          closable={!!currentUser}
           onClose={() => setIsAuthModalOpen(false)}
           onSuccess={handleAuthSuccess}
         />
@@ -1169,7 +1259,7 @@ export function App() {
           onLedgersChanged={refreshLedgers}
         />
 
-        {/* 分类管理与排序 弹窗 */}
+        {/* 分类管理与排序 弹窗 (供快捷弹窗调用) */}
         <CategoryManagementModal
           isOpen={isCategoryModalOpen}
           categories={categories}
@@ -1188,6 +1278,44 @@ export function App() {
           onUpdate={handleUpdateTransaction}
           onDelete={handleDeleteTransaction}
         />
+      </div>
+
+      {/* 底部固定导航栏 (Bottom Navigation Bar) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/85 dark:bg-neutral-900/85 backdrop-blur-lg border-t border-gray-200/80 dark:border-neutral-800 shadow-lg">
+        <div className="max-w-md mx-auto flex items-center justify-around py-1.5 px-3">
+          {[
+            { id: 'record', label: '记账', icon: BookOpen },
+            { id: 'stats', label: '统计', icon: PieChart },
+            { id: 'category', label: '分类', icon: Tag },
+            { id: 'profile', label: '我的', icon: UserIcon },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isActive = navTab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setNavTab(item.id as NavigationTab)}
+                className={`flex flex-col items-center gap-1 py-1 px-3.5 rounded-2xl transition-all ${
+                  isActive
+                    ? 'text-gray-900 dark:text-white font-bold scale-105'
+                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-medium'
+                }`}
+              >
+                <div
+                  className={`p-1.5 rounded-xl transition-all ${
+                    isActive
+                      ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-xs'
+                      : 'bg-transparent text-gray-400'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                </div>
+                <span className="text-[11px] leading-none">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

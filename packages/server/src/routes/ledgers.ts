@@ -1,8 +1,12 @@
 import { Hono } from 'hono';
 import { Env, AppVariables } from '../types';
+import { requireAuth } from '../middleware/auth';
 import { ApiResponse, Ledger, LedgerSummary, CreateLedgerRequest, UpdateLedgerRequest } from '@ledger/shared';
 
 const ledgersRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
+
+// 所有账本接口均需通过 JWT 认证
+ledgersRouter.use('*', requireAuth);
 
 /**
  * 获取用户的账本列表 (支持附带各账本收支汇总)
@@ -10,8 +14,8 @@ const ledgersRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
  */
 ledgersRouter.get('/', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const withSummary = c.req.query('withSummary') === 'true';
 
     const { results: ledgers } = await c.env.DB.prepare(
@@ -76,8 +80,8 @@ ledgersRouter.get('/', async (c) => {
  */
 ledgersRouter.get('/:id', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
 
     const ledger = await c.env.DB.prepare(
@@ -134,9 +138,9 @@ ledgersRouter.get('/:id', async (c) => {
  */
 ledgersRouter.post('/', async (c) => {
   try {
-    const authUser = c.get('user');
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const body = await c.req.json<CreateLedgerRequest>();
-    const userId = authUser?.userId || 'default_user';
     const name = (body.name || '新建账本').trim();
     const currency = (body.currency || 'CNY').trim().toUpperCase();
     const ledgerId = body.ledger_id || `led_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -207,8 +211,8 @@ ledgersRouter.post('/', async (c) => {
  */
 ledgersRouter.put('/:id', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
     const body = await c.req.json<UpdateLedgerRequest>();
 
@@ -283,8 +287,8 @@ ledgersRouter.put('/:id', async (c) => {
  */
 ledgersRouter.put('/:id/default', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
     const now = new Date().toISOString();
 
@@ -343,8 +347,8 @@ ledgersRouter.put('/:id/default', async (c) => {
  */
 ledgersRouter.delete('/:id', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
     const now = new Date().toISOString();
 

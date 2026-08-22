@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { Env, AppVariables } from '../types';
+import { requireAuth } from '../middleware/auth';
 import {
   ApiResponse,
   Category,
@@ -42,7 +43,7 @@ categoriesRouter.get('/defaults', async (c) => {
 categoriesRouter.get('/tree', async (c) => {
   try {
     const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || null;
+    const userId = authUser?.userId || null;
     const type = c.req.query('type') as CategoryType | undefined;
 
     let query = 'SELECT * FROM categories WHERE (user_id IS NULL';
@@ -91,7 +92,7 @@ categoriesRouter.get('/tree', async (c) => {
 categoriesRouter.get('/', async (c) => {
   try {
     const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || null;
+    const userId = authUser?.userId || null;
     const type = c.req.query('type') as CategoryType | undefined;
     const format = c.req.query('format');
 
@@ -150,7 +151,7 @@ categoriesRouter.get('/', async (c) => {
 /**
  * 批量更新分类排序权重 (PUT /api/categories/reorder)
  */
-categoriesRouter.put('/reorder', async (c) => {
+categoriesRouter.put('/reorder', requireAuth, async (c) => {
   try {
     const body = (await c.req.json()) as ReorderCategoriesRequest;
     if (!body || !Array.isArray(body.items) || body.items.length === 0) {
@@ -188,9 +189,9 @@ categoriesRouter.put('/reorder', async (c) => {
  * 创建自定义分类 (POST /api/categories)
  * 支持创建大分类 (parent_id 为空) 或子分类 (parent_id 为父大类 ID)
  */
-categoriesRouter.post('/', async (c) => {
+categoriesRouter.post('/', requireAuth, async (c) => {
   try {
-    const authUser = c.get('user');
+    const authUser = c.get('user')!;
     const body = (await c.req.json()) as CreateCategoryRequest;
 
     if (!body.name || !body.name.trim()) {
@@ -210,7 +211,7 @@ categoriesRouter.post('/', async (c) => {
       return c.json(res, 400);
     }
 
-    const userId = authUser?.userId || 'default_user';
+    const userId = authUser.userId;
     const categoryId = body.category_id || `cat_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const name = body.name.trim();
     const icon = body.icon || 'Tag';
@@ -313,9 +314,9 @@ categoriesRouter.post('/', async (c) => {
 /**
  * 修改分类 (PUT /api/categories/:id)
  */
-categoriesRouter.put('/:id', async (c) => {
+categoriesRouter.put('/:id', requireAuth, async (c) => {
   try {
-    const authUser = c.get('user');
+    const authUser = c.get('user')!;
     const categoryId = c.req.param('id');
     const body = (await c.req.json()) as UpdateCategoryRequest;
 
@@ -332,7 +333,7 @@ categoriesRouter.put('/:id', async (c) => {
     }
 
     // 校验权限 (如果是系统预置分类，允许修改个性化名称/图标/颜色/排序或作为普通更新)
-    if (existing.user_id && authUser && existing.user_id !== authUser.userId) {
+    if (existing.user_id && existing.user_id !== authUser.userId) {
       const res: ApiResponse = {
         success: false,
         error: '无权修改其他用户的自定义分类',
@@ -398,9 +399,9 @@ categoriesRouter.put('/:id', async (c) => {
 /**
  * 删除分类 (DELETE /api/categories/:id)
  */
-categoriesRouter.delete('/:id', async (c) => {
+categoriesRouter.delete('/:id', requireAuth, async (c) => {
   try {
-    const authUser = c.get('user');
+    const authUser = c.get('user')!;
     const categoryId = c.req.param('id');
 
     const existing = await c.env.DB.prepare(
@@ -425,7 +426,7 @@ categoriesRouter.delete('/:id', async (c) => {
     }
 
     // 校验权限
-    if (authUser && existing.user_id !== authUser.userId) {
+    if (existing.user_id !== authUser.userId) {
       const res: ApiResponse = {
         success: false,
         error: '无权删除其他用户的自定义分类',

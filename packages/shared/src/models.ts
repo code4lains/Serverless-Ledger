@@ -1,5 +1,5 @@
 /**
- * 极简记账 - 数据模型与类型定义
+ * 账盾 - 数据模型与类型定义
  * 遵循《项目技术白皮书》规范
  */
 
@@ -201,11 +201,13 @@ export interface RegisterRequest {
   email: string;
   password: string;
   name?: string;
+  turnstile_token?: string;
 }
 
 export interface LoginRequest {
   email: string;
   password: string;
+  turnstile_token?: string;
 }
 
 export interface AuthResponse {

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.ledger.serverless',
-  appName: '极简记账',
+  appName: '账盾',
   webDir: 'dist',
   server: {
     androidScheme: 'https',

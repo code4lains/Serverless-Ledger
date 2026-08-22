@@ -1,8 +1,12 @@
 import { Hono } from 'hono';
 import { Env, AppVariables } from '../types';
+import { requireAuth } from '../middleware/auth';
 import { ApiResponse, Transaction, SyncBatchRequest, SyncBatchResponse } from '@ledger/shared';
 
 const transactionsRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
+
+// 所有流水接口均需通过 JWT 认证
+transactionsRouter.use('*', requireAuth);
 
 async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: string) {
   const now = new Date().toISOString();
@@ -15,8 +19,19 @@ async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: str
   await db.prepare(
     'INSERT OR IGNORE INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
   )
-    .bind(ledgerId, userId, '日常账本', 'CNY', 1, now, now)
+    .bind(ledgerId, userId, '默认账本', 'CNY', 1, now, now)
     .run();
+}
+
+/**
+ * 校验 category_id 是否存在于 categories 表中，若不存在则降级为 null 避免触发外键约束异常
+ */
+async function resolveValidCategoryId(db: D1Database, categoryId?: string | null): Promise<string | null> {
+  if (!categoryId) return null;
+  const existing = await db.prepare('SELECT category_id FROM categories WHERE category_id = ?')
+    .bind(categoryId)
+    .first<{ category_id: string }>();
+  return existing ? categoryId : null;
 }
 
 /**
@@ -25,8 +40,8 @@ async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: str
  */
 transactionsRouter.get('/', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const ledgerId = c.req.query('ledgerId');
     const type = c.req.query('type');
     const categoryId = c.req.query('categoryId');
@@ -96,8 +111,8 @@ transactionsRouter.get('/', async (c) => {
  */
 transactionsRouter.get('/:id', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
@@ -134,15 +149,25 @@ transactionsRouter.get('/:id', async (c) => {
  */
 transactionsRouter.post('/', async (c) => {
   try {
-    const authUser = c.get('user');
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const body = await c.req.json<Partial<Transaction>>();
     const transactionId = body.transaction_id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const userId = authUser?.userId || body.user_id || 'default_user';
     const ledgerId = body.ledger_id || 'default_ledger';
     const type = body.type || 'expense';
     const amount = typeof body.amount === 'number' ? Math.round(body.amount) : 0;
 
-    const categoryId = body.category_id || null;
+    // 严格金额校验：金额必须为大于 0 的正数
+    if (!amount || amount <= 0 || isNaN(amount)) {
+      const res: ApiResponse = {
+        success: false,
+        error: '金额必须为大于 0 的有效数值',
+      };
+      return c.json(res, 400);
+    }
+
+    const rawCategoryId = body.category_id || null;
+    const categoryId = await resolveValidCategoryId(c.env.DB, rawCategoryId);
     const fromAccount = body.from_account || null;
     const toAccount = body.to_account || null;
     const transactionDate = body.transaction_date || new Date().toISOString();
@@ -212,8 +237,8 @@ transactionsRouter.post('/', async (c) => {
  */
 transactionsRouter.put('/:id', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
     const body = await c.req.json<Partial<Transaction>>();
 
@@ -232,9 +257,21 @@ transactionsRouter.put('/:id', async (c) => {
       return c.json(res, 404);
     }
 
+    if (body.amount !== undefined) {
+      const amountCheck = typeof body.amount === 'number' ? Math.round(body.amount) : 0;
+      if (amountCheck <= 0 || isNaN(amountCheck)) {
+        const res: ApiResponse = {
+          success: false,
+          error: '金额必须为大于 0 的有效数值',
+        };
+        return c.json(res, 400);
+      }
+    }
+
     const type = body.type || existing.type;
     const amount = typeof body.amount === 'number' ? Math.round(body.amount) : existing.amount;
-    const categoryId = body.category_id !== undefined ? body.category_id : existing.category_id;
+    const rawCategoryId = body.category_id !== undefined ? body.category_id : existing.category_id;
+    const categoryId = await resolveValidCategoryId(c.env.DB, rawCategoryId);
     const transactionDate = body.transaction_date || existing.transaction_date;
     const remark = body.remark !== undefined ? body.remark : existing.remark;
     const fromAccount = body.from_account !== undefined ? body.from_account : existing.from_account;
@@ -284,8 +321,8 @@ transactionsRouter.put('/:id', async (c) => {
  */
 transactionsRouter.delete('/:id', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId || c.req.query('userId') || 'default_user';
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const id = c.req.param('id');
 
     const result = await c.env.DB.prepare(
@@ -315,8 +352,8 @@ transactionsRouter.delete('/:id', async (c) => {
  */
 transactionsRouter.post('/sync', async (c) => {
   try {
-    const authUser = c.get('user');
-    const userId = authUser?.userId;
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const body = await c.req.json<SyncBatchRequest>();
     const transactions = body.transactions || [];
     const syncedIds: string[] = [];
@@ -324,8 +361,15 @@ transactionsRouter.post('/sync', async (c) => {
 
     if (transactions.length > 0) {
       for (const tx of transactions) {
-        const txUserId = userId || tx.user_id || 'default_user';
-        await ensureUserAndLedger(c.env.DB, txUserId, tx.ledger_id);
+        // 校验金额
+        const amount = typeof tx.amount === 'number' ? Math.round(tx.amount) : 0;
+        if (amount <= 0 || isNaN(amount)) {
+          continue; // 跳过非法金额记录
+        }
+
+        const ledgerId = tx.ledger_id || 'default_ledger';
+        await ensureUserAndLedger(c.env.DB, userId, ledgerId);
+        const validCatId = await resolveValidCategoryId(c.env.DB, tx.category_id);
 
         await c.env.DB.prepare(
           `INSERT INTO transactions (
@@ -346,11 +390,11 @@ transactionsRouter.post('/sync', async (c) => {
         )
           .bind(
             tx.transaction_id,
-            txUserId,
-            tx.ledger_id,
+            userId,
+            ledgerId,
             tx.type,
-            tx.amount,
-            tx.category_id || null,
+            amount,
+            validCatId,
             tx.from_account || null,
             tx.to_account || null,
             tx.transaction_date,
@@ -364,20 +408,16 @@ transactionsRouter.post('/sync', async (c) => {
       }
     }
 
-    // 获取增量更新给客户端
-    let query = 'SELECT * FROM transactions WHERE 1=1';
-    const params: any[] = [];
-    if (userId) {
-      query += ' AND user_id = ?';
-      params.push(userId);
-    }
+    // 获取当前用户在服务端的增量更新给客户端
+    let query = 'SELECT * FROM transactions WHERE user_id = ?';
+    const params: any[] = [userId];
     if (body.last_synced_at) {
       query += ' AND updated_at > ?';
       params.push(body.last_synced_at);
     }
     query += ' ORDER BY updated_at ASC LIMIT 300';
 
-    const stmt = params.length > 0 ? c.env.DB.prepare(query).bind(...params) : c.env.DB.prepare(query);
+    const stmt = c.env.DB.prepare(query).bind(...params);
     const { results } = await stmt.all<Transaction>();
 
     const res: ApiResponse<SyncBatchResponse> = {

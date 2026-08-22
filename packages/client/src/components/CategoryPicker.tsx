@@ -1,5 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
-import { Settings, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Category, TransactionType, buildCategoryTree } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -111,19 +111,6 @@ export function CategoryPicker({
             </button>
           );
         })}
-
-        {/* 快捷管理入口 */}
-        {onOpenManage && (
-          <button
-            type="button"
-            onClick={onOpenManage}
-            title="分类管理与排序"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gray-100 dark:bg-neutral-800/80 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-dashed border-gray-300 dark:border-neutral-700 whitespace-nowrap text-xs shrink-0 transition-all"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>管理</span>
-          </button>
-        )}
       </div>
 
       {/* 2. 二级子分类选择区域 (胶囊 Pills 风格) */}

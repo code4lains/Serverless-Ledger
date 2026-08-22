@@ -420,7 +420,50 @@ async function testPipeline() {
   assert.strictEqual(delOnlyLedgerRes.status, 400, 'Deleting only remaining ledger should be blocked');
   console.log('Multi-Ledger System Verified Successfully!');
 
-  console.log('\n--- 8. Testing Create Transaction with Authenticated JWT (Expense, Transfer & Loan) ---');
+  console.log('\n--- 8. Testing Protected Endpoint Rejection (requireAuth) & Negative Amount Rejection ---');
+  // 8.1 Unauthenticated access to /api/transactions
+  const unauthTxRes = await fetch(`${BASE}/api/transactions`);
+  assert.strictEqual(unauthTxRes.status, 401, 'Accessing /api/transactions without token must return 401');
+
+  // 8.2 Unauthenticated access to /api/ledgers
+  const unauthLedRes = await fetch(`${BASE}/api/ledgers`);
+  assert.strictEqual(unauthLedRes.status, 401, 'Accessing /api/ledgers without token must return 401');
+
+  // 8.3 Reject negative amount (-5.00 CNY -> -500 cents)
+  const negTxRes = await fetch(`${BASE}/api/transactions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      type: 'expense',
+      amount: -500,
+      category_id: 'cat_exp_food_dinner',
+      transaction_date: new Date().toISOString(),
+    }),
+  });
+  assert.strictEqual(negTxRes.status, 400, 'Creating transaction with negative amount must return 400');
+  console.log('Negative amount rejection verified: 400 Bad Request');
+
+  // 8.4 Reject zero amount
+  const zeroTxRes = await fetch(`${BASE}/api/transactions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      type: 'expense',
+      amount: 0,
+      category_id: 'cat_exp_food_dinner',
+      transaction_date: new Date().toISOString(),
+    }),
+  });
+  assert.strictEqual(zeroTxRes.status, 400, 'Creating transaction with zero amount must return 400');
+  console.log('Zero amount rejection verified: 400 Bad Request');
+
+  console.log('\n--- 8.5 Testing Create Transaction with Authenticated JWT (Expense, Transfer & Loan) ---');
   const newTx = {
     transaction_id: `tx_${Date.now()}`,
     type: 'expense',

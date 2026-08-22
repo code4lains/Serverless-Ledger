@@ -2,7 +2,7 @@
   "name": "serverless-ledger-monorepo",
   "version": "1.0.0",
   "private": true,
-  "description": "极简记账 APP - 基于 React + Capacitor/Tauri + Cloudflare Workers + D1 的跨端开发管线",
+  "description": "账盾 - 基于 React + Capacitor/Tauri + Cloudflare Workers + D1 的跨端开发管线",
   "workspaces": [
     "packages/*"
   ],

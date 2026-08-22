@@ -1,6 +1,6 @@
-# 极简记账 (Serverless Ledger) 开发管线手册
+# 账盾 (Serverless Ledger) 开发管线手册
 
-本项目为《极简记账 APP 项目技术白皮书》规划的跨端极简记账应用。采用 **一套前端代码多端交付**（Web PWA、Android、iOS、Windows、macOS）与 **Cloudflare Serverless + D1 SQLite 数据库** 架构。
+本项目为 **账盾 (Serverless Ledger)** 跨端个人财务与记账应用。采用 **一套前端代码多端交付**（Web PWA、Android、iOS、Windows、macOS）与 **Cloudflare Serverless + D1 SQLite 数据库** 架构，提供四大模块（记账、统计、分类、我的）与离线优先体验。
 
 ---
 
@@ -30,7 +30,8 @@ Serverless-Ledger/
 │       ├── src/
 │       │   ├── api/           # API 客户端 (支持离线优先 + 自动增量同步)
 │       │   ├── db/            # Dexie.js 本地 IndexedDB 数据库 (离线优先)
-│       │   ├── App.tsx        # 极简记账交互 (3秒记账流、莫兰迪色系、Dark Mode)
+│       │   ├── components/    # 统计(StatisticsView)、分类(CategoriesView)、我的(ProfileView)与各弹窗
+│       │   ├── App.tsx        # 底部四大板块导航 (记账、统计、分类、我的)
 │       │   └── main.tsx
 │       ├── capacitor.config.ts # Capacitor 跨端打包配置 (Android/iOS)
 │       ├── src-tauri/         # Tauri 桌面端与跨平台打包配置
@@ -116,18 +117,30 @@ npm run dev
      ```
 5. 点击底部的 **Save and Deploy（保存并部署）**。
 
-### 4.3 第三步：绑定 D1 数据库与密钥
+### 4.3 第三步：绑定 D1 数据库与环境变量
 1. 首次部署完成后，进入该 Pages 项目的管理详情页。
 2. 点击顶部导航栏 **Settings（设置）** ➔ 左侧侧边栏选择 **Functions（函数）**。
 3. 向下滚动找到 **D1 Database Bindings（D1 数据库绑定）**，点击 **Add binding（添加绑定）**：
    - **Variable name（变量名称）**：填 `DB`（必须大写）
    - **D1 database（数据库）**：在下拉列表中选中第 4.1 步创建的 `serverless_ledger_db`
    - 点击 **Save（保存）**。
-4. *(可选)* 在同一页面的 **Environment Variables（环境变量）** 中添加：
-   - **Variable name**：`JWT_SECRET`
-   - **Value**：输入一段自定义的随机强密钥（用于 JWT 鉴权加签）。
-5. **重试部署使绑定生效**：
-   - 切换到 **Deployments（部署）** 页面，在最近一条部署记录右侧点击 **`...` ➔ Retry deployment（重试部署）**。
+4. 在 **Settings（设置）** ➔ **Environment Variables（环境变量）** 中添加以下变量：
+   - **`JWT_SECRET`**：输入一段自定义的随机强密钥（用于 JWT 鉴权加签）。
+   - **`TURNSTILE_SECRET_KEY`**：Cloudflare Turnstile 人机验证 Secret Key（用于服务端校验）。
+   - **`VITE_TURNSTILE_SITE_KEY`**：Cloudflare Turnstile 人机验证 Site Key（用于前端渲染验证组件）。
+
+### 4.4 第四步：申请与配置 Cloudflare Turnstile 人机验证 (可选但推荐)
+1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/)，在左侧侧边栏进入 **Turnstile**。
+2. 点击 **Add site（添加站点）**：
+   - **Site name（站点名称）**：填入 `serverless-ledger`
+   - **Domain（域名）**：添加你的 Pages 分配域名（如 `serverless-ledger.pages.dev`）以及本地联调域名 `localhost`、`127.0.0.1`。
+   - **Widget Mode（微件模式）**：选择 **Managed（托管）** 或 **Non-interactive（非交互）**。
+   - 点击 **Create**。
+3. 创建完成后复制 **Site Key** 与 **Secret Key**：
+   - 将 **Site Key** 配置到 Pages 环境变量中的 **`VITE_TURNSTILE_SITE_KEY`**（本地开发可写入 `packages/client/.env`）。
+   - 将 **Secret Key** 配置到 Pages 环境变量中的 **`TURNSTILE_SECRET_KEY`**。
+4. **重试部署使绑定与环境变量生效**：
+   - 切换到 Pages 的 **Deployments（部署）** 页面，在最近一条部署记录右侧点击 **`...` ➔ Retry deployment（重试部署）**。
 
 部署完成后，打开 Pages 分配的域名（形如 `https://serverless-ledger.pages.dev`）即可直接开始使用！
 

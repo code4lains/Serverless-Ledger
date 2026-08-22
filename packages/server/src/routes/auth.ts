@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { Env, AppVariables } from '../types';
 import { hashPassword, verifyPassword, generateJwtToken, DEFAULT_JWT_SECRET, TOKEN_EXPIRY_SECONDS } from '../utils/auth';
+import { verifyTurnstileToken } from '../utils/turnstile';
 import { requireAuth } from '../middleware/auth';
 import { ApiResponse, AuthResponse, AuthUser, RegisterRequest, LoginRequest, User, Ledger } from '@ledger/shared';
 
@@ -21,6 +22,17 @@ authRouter.post('/register', async (c) => {
     const body = await c.req.json<RegisterRequest>();
     const email = body.email?.trim().toLowerCase();
     const password = body.password;
+
+    // 1. Cloudflare Turnstile 人机验证
+    const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for');
+    const turnstileCheck = await verifyTurnstileToken(c.env.TURNSTILE_SECRET_KEY, body.turnstile_token, clientIp);
+    if (!turnstileCheck.success) {
+      const res: ApiResponse = {
+        success: false,
+        error: turnstileCheck.message || '人机验证失败，请重试',
+      };
+      return c.json(res, 400);
+    }
 
     if (!email || !isValidEmail(email)) {
       const res: ApiResponse = {
@@ -88,7 +100,7 @@ authRouter.post('/register', async (c) => {
         token,
         expires_in: TOKEN_EXPIRY_SECONDS,
       },
-      message: '注册成功，欢迎使用极简记账',
+      message: '注册成功，欢迎使用账盾',
     };
 
     return c.json(res, 201);
@@ -110,6 +122,17 @@ authRouter.post('/login', async (c) => {
     const body = await c.req.json<LoginRequest>();
     const email = body.email?.trim().toLowerCase();
     const password = body.password;
+
+    // 1. Cloudflare Turnstile 人机验证
+    const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for');
+    const turnstileCheck = await verifyTurnstileToken(c.env.TURNSTILE_SECRET_KEY, body.turnstile_token, clientIp);
+    if (!turnstileCheck.success) {
+      const res: ApiResponse = {
+        success: false,
+        error: turnstileCheck.message || '人机验证失败，请重试',
+      };
+      return c.json(res, 400);
+    }
 
     if (!email || !password) {
       const res: ApiResponse = {

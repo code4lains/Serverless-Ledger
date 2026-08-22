@@ -1,5 +1,5 @@
 /**
- * 极简记账 - 金额精度转换与处理工具
+ * 账盾 - 金额精度转换与处理工具
  * 遵循《项目技术白皮书 6.2 金额精度问题》：
  * 前后端交互及 D1 数据库存储一律将金额放大100倍以整数 (Integer) 存储。
  */
@@ -11,10 +11,10 @@
 export function toCents(yuan: number | string): number {
   if (typeof yuan === 'string') {
     const parsed = parseFloat(yuan);
-    if (isNaN(parsed)) return 0;
+    if (isNaN(parsed) || parsed <= 0) return 0;
     return Math.round(parsed * 100);
   }
-  if (isNaN(yuan)) return 0;
+  if (isNaN(yuan) || yuan <= 0) return 0;
   return Math.round(yuan * 100);
 }
 
