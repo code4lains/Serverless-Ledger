@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useState } from 'react';
+import { Settings, Plus } from 'lucide-react';
 import { Category, TransactionType, buildCategoryTree } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -7,6 +8,7 @@ interface CategoryPickerProps {
   type: TransactionType;
   selectedCategoryId: string;
   onSelectCategory: (categoryId: string) => void;
+  onOpenManage?: () => void;
 }
 
 export function CategoryPicker({
@@ -14,6 +16,7 @@ export function CategoryPicker({
   type,
   selectedCategoryId,
   onSelectCategory,
+  onOpenManage,
 }: CategoryPickerProps) {
   const targetType = type;
 
@@ -85,7 +88,7 @@ export function CategoryPicker({
   return (
     <div className="flex flex-col gap-2.5">
       {/* 1. 一级大分类横向切换导航 */}
-      <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
         {categoryTree.map(({ category: parent }) => {
           const isParentActive = currentParentNode?.category.category_id === parent.category_id;
           return (
@@ -93,22 +96,39 @@ export function CategoryPicker({
               key={parent.category_id}
               type="button"
               onClick={() => handleSelectParent(parent.category_id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl whitespace-nowrap transition-all text-xs font-medium border ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl whitespace-nowrap transition-all text-xs font-medium border shrink-0 ${
                 isParentActive
                   ? 'bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-800 dark:border-gray-100 shadow-sm'
                   : 'bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-neutral-700/80 hover:bg-gray-100 dark:hover:bg-neutral-800'
               }`}
             >
-              <CategoryIcon icon={parent.icon} className="w-3.5 h-3.5" />
+              <CategoryIcon
+                icon={parent.icon}
+                className="w-3.5 h-3.5"
+                color={isParentActive ? undefined : (parent.color || undefined)}
+              />
               <span>{parent.name}</span>
             </button>
           );
         })}
+
+        {/* 快捷管理入口 */}
+        {onOpenManage && (
+          <button
+            type="button"
+            onClick={onOpenManage}
+            title="分类管理与排序"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gray-100 dark:bg-neutral-800/80 text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 border border-dashed border-gray-300 dark:border-neutral-700 whitespace-nowrap text-xs shrink-0 transition-all"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>管理</span>
+          </button>
+        )}
       </div>
 
       {/* 2. 二级子分类选择区域 (胶囊 Pills 风格) */}
       {currentParentNode && currentParentNode.children.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 pt-1 border-t border-gray-100 dark:border-neutral-700/50">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100 dark:border-neutral-700/50">
           {currentParentNode.children.map((sub) => {
             const isSubSelected = selectedCategoryId === sub.category_id;
             return (
@@ -122,14 +142,29 @@ export function CategoryPicker({
                     : 'bg-gray-100/90 dark:bg-neutral-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >
-                <CategoryIcon icon={sub.icon} className="w-3 h-3" />
+                <CategoryIcon
+                  icon={sub.icon}
+                  className="w-3 h-3"
+                  color={isSubSelected ? undefined : (sub.color || undefined)}
+                />
                 <span>{sub.name}</span>
               </button>
             );
           })}
+
+          {onOpenManage && (
+            <button
+              type="button"
+              onClick={onOpenManage}
+              title="添加或调整子分类"
+              className="flex items-center gap-0.5 px-2 py-0.8 rounded-lg text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border border-dashed border-gray-300 dark:border-neutral-700 transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>加小类</span>
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
-

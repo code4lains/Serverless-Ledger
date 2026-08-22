@@ -156,6 +156,121 @@ async function testPipeline() {
   assert(loanCatJson.data.every((c) => c.type === 'loan'));
   console.log(`Loan categories filtered: ${loanCatJson.data.length} items`);
 
+  // 7.8 测试自定义分类创建 (大分类与小分类)、修改、排序与删除 (白皮书 7.2 规范)
+  console.log('\n--- 7.8 Testing Custom Categories CRUD & Reordering ---');
+  // 1. 创建自定义大分类
+  const customParentRes = await fetch(`${BASE}/api/categories`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: '数码极客',
+      type: 'expense',
+      icon: 'Laptop',
+      color: '#3B82F6',
+      sort_order: 1, // 排在大类最前
+    }),
+  });
+  assert.strictEqual(customParentRes.status, 201, 'Create custom parent category should return 201');
+  const customParentJson = await customParentRes.json();
+  console.log('Created Custom Parent Category:', customParentJson.data);
+  assert.strictEqual(customParentJson.data.name, '数码极客');
+  assert.strictEqual(customParentJson.data.color, '#3B82F6');
+  const customParentId = customParentJson.data.category_id;
+
+  // 2. 创建自定义子分类
+  const customSubRes = await fetch(`${BASE}/api/categories`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: 'Switch游戏',
+      type: 'expense',
+      parent_id: customParentId,
+      icon: 'Gamepad2',
+      color: '#EC4899',
+      sort_order: 1,
+    }),
+  });
+  assert.strictEqual(customSubRes.status, 201, 'Create custom subcategory should return 201');
+  const customSubJson = await customSubRes.json();
+  console.log('Created Custom Subcategory:', customSubJson.data);
+  assert.strictEqual(customSubJson.data.name, 'Switch游戏');
+  assert.strictEqual(customSubJson.data.parent_id, customParentId);
+  const customSubId = customSubJson.data.category_id;
+
+  // 3. 修改自定义分类 (PUT)
+  const updateCatRes = await fetch(`${BASE}/api/categories/${customSubId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: '任天堂Switch游戏',
+      color: '#F43F5E',
+    }),
+  });
+  assert.strictEqual(updateCatRes.status, 200, 'Update category should return 200');
+  const updateCatJson = await updateCatRes.json();
+  console.log('Updated Custom Category:', updateCatJson.data);
+  assert.strictEqual(updateCatJson.data.name, '任天堂Switch游戏');
+  assert.strictEqual(updateCatJson.data.color, '#F43F5E');
+
+  // 4. 批量更新分类排序 (PUT /reorder)
+  const reorderRes = await fetch(`${BASE}/api/categories/reorder`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      items: [
+        { category_id: customParentId, sort_order: 999 },
+        { category_id: customSubId, sort_order: 10 },
+      ],
+    }),
+  });
+  assert.strictEqual(reorderRes.status, 200, 'Reorder categories should return 200');
+  const reorderJson = await reorderRes.json();
+  console.log('Reorder Response:', reorderJson);
+
+  // 5. 验证树结构中的排序反映
+  const customTreeRes = await fetch(`${BASE}/api/categories/tree?type=expense`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const customTreeJson = await customTreeRes.json();
+  const foundParentInTree = customTreeJson.data.find((n) => n.category.category_id === customParentId);
+  assert(foundParentInTree, 'Custom parent category must appear in tree');
+  assert.strictEqual(foundParentInTree.category.sort_order, 999, 'Sort order should reflect 999');
+  assert(foundParentInTree.children.some((c) => c.category_id === customSubId), 'Custom subcategory must be under custom parent in tree');
+
+  // 6. 系统预置分类删除保护
+  const delSysRes = await fetch(`${BASE}/api/categories/cat_exp_food`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delSysRes.status, 400, 'Deleting system category should return 400');
+
+  // 7. 删除自定义小分类
+  const delSubRes = await fetch(`${BASE}/api/categories/${customSubId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delSubRes.status, 200, 'Delete custom subcategory should return 200');
+
+  // 8. 删除自定义大分类 (级联删除)
+  const delParentRes = await fetch(`${BASE}/api/categories/${customParentId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delParentRes.status, 200, 'Delete custom parent category should return 200');
+  console.log('Custom Category CRUD & Reorder Verified Successfully!');
+
   console.log('\n--- 8. Testing Create Transaction with Authenticated JWT (Expense, Transfer & Loan) ---');
   const newTx = {
     transaction_id: `tx_${Date.now()}`,

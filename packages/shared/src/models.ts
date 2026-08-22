@@ -44,9 +44,37 @@ export interface Category {
   parent_id?: string | null; // null 为大分类，有值为小分类
   name: string;
   icon?: string;
+  color?: string | null; // 分类个性化强调颜色
   sort_order: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreateCategoryRequest {
+  category_id?: string;
+  name: string;
+  type: CategoryType;
+  parent_id?: string | null;
+  icon?: string | null;
+  color?: string | null;
+  sort_order?: number;
+}
+
+export interface UpdateCategoryRequest {
+  name?: string;
+  icon?: string | null;
+  color?: string | null;
+  parent_id?: string | null;
+  sort_order?: number;
+}
+
+export interface ReorderCategoryItem {
+  category_id: string;
+  sort_order: number;
+}
+
+export interface ReorderCategoriesRequest {
+  items: ReorderCategoryItem[];
 }
 
 /**

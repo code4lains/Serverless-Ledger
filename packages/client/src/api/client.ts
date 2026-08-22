@@ -1,6 +1,11 @@
 import {
   ApiResponse,
   Category,
+  CategoryType,
+  CreateCategoryRequest,
+  UpdateCategoryRequest,
+  ReorderCategoryItem,
+  ReorderCategoriesRequest,
   Ledger,
   Transaction,
   TransactionFilter,
@@ -161,6 +166,170 @@ export async function getCategories(): Promise<Category[]> {
     // 离线环境降级
   }
   return await localDb.categories.orderBy('sort_order').toArray();
+}
+
+/**
+ * 创建自定义分类 (离线优先：写入本地 Dexie，若在线同步推送到 D1)
+ */
+export async function createCategory(req: CreateCategoryRequest): Promise<Category> {
+  const user = getStoredUser();
+  const userId = user?.user_id || 'default_user';
+  const categoryId = req.category_id || `cat_cust_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const now = new Date().toISOString();
+
+  // 若未指定 sort_order，计算本地同层级分类的最大 sort_order
+  let sortOrder = req.sort_order;
+  if (sortOrder === undefined || sortOrder === null) {
+    if (req.parent_id) {
+      const subCats = await localDb.categories.where('parent_id').equals(req.parent_id).toArray();
+      const maxSort = subCats.reduce((max, c) => Math.max(max, c.sort_order), 0);
+      sortOrder = maxSort + 1;
+    } else {
+      const parentCats = await localDb.categories.filter((c) => c.type === req.type && !c.parent_id).toArray();
+      const maxSort = parentCats.reduce((max, c) => Math.max(max, c.sort_order), 0);
+      sortOrder = maxSort + 10;
+    }
+  }
+
+  const newCat: Category = {
+    category_id: categoryId,
+    user_id: userId,
+    type: req.type,
+    parent_id: req.parent_id || null,
+    name: req.name.trim(),
+    icon: req.icon || 'Tag',
+    color: req.color || null,
+    sort_order: sortOrder,
+    created_at: now,
+    updated_at: now,
+  };
+
+  // 1. 本地持久化
+  await localDb.categories.put(newCat);
+
+  // 2. 尝试向服务端推送
+  try {
+    const res = await fetch(`${API_BASE}/categories`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(newCat),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Category>;
+      if (json.success && json.data) {
+        await localDb.categories.put(json.data);
+        return json.data;
+      }
+    }
+  } catch {
+    console.log('离线模式：自定义分类已保存到本地。');
+  }
+
+  return newCat;
+}
+
+/**
+ * 修改分类 (离线优先)
+ */
+export async function updateCategory(
+  categoryId: string,
+  updates: UpdateCategoryRequest
+): Promise<Category | null> {
+  const existing = await localDb.categories.get(categoryId);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const updatedCat: Category = {
+    ...existing,
+    name: updates.name !== undefined ? updates.name.trim() : existing.name,
+    icon: updates.icon !== undefined ? (updates.icon || undefined) : existing.icon,
+    color: updates.color !== undefined ? updates.color : existing.color,
+    parent_id: updates.parent_id !== undefined ? updates.parent_id : existing.parent_id,
+    sort_order: updates.sort_order !== undefined ? updates.sort_order : existing.sort_order,
+    updated_at: now,
+  };
+
+  await localDb.categories.put(updatedCat);
+
+  try {
+    const res = await fetch(`${API_BASE}/categories/${categoryId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Category>;
+      if (json.success && json.data) {
+        await localDb.categories.put(json.data);
+        return json.data;
+      }
+    }
+  } catch {
+    console.log('离线模式：分类修改已暂存本地。');
+  }
+
+  return updatedCat;
+}
+
+/**
+ * 删除分类 (离线优先)
+ */
+export async function deleteCategory(categoryId: string): Promise<boolean> {
+  const existing = await localDb.categories.get(categoryId);
+  if (!existing) return false;
+
+  // 1. 如果是大分类，级联删除本地子分类
+  if (!existing.parent_id) {
+    const children = await localDb.categories.where('parent_id').equals(categoryId).toArray();
+    for (const child of children) {
+      await localDb.categories.delete(child.category_id);
+    }
+  }
+
+  // 2. 本地删除
+  await localDb.categories.delete(categoryId);
+
+  // 3. 服务端同步删除
+  try {
+    const res = await fetch(`${API_BASE}/categories/${categoryId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    console.log('离线模式：分类已在本地删除。');
+    return true;
+  }
+}
+
+/**
+ * 批量更新分类排序 (离线优先)
+ */
+export async function reorderCategories(items: ReorderCategoryItem[]): Promise<boolean> {
+  // 1. 本地更新
+  for (const item of items) {
+    await localDb.categories.update(item.category_id, {
+      sort_order: item.sort_order,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
+  // 2. 服务端批量更新
+  try {
+    const res = await fetch(`${API_BASE}/categories/reorder`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ items }),
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    console.log('离线模式：分类排序已暂存本地。');
+    return true;
+  }
 }
 
 /**

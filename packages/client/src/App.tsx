@@ -63,6 +63,8 @@ import { CategoryIcon } from './components/CategoryIcon';
 import { CategoryPicker } from './components/CategoryPicker';
 import { AccountPicker } from './components/AccountPicker';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
+import { CategoryManagementModal } from './components/CategoryManagementModal';
+import { Tag, Settings } from 'lucide-react';
 
 export function App() {
   const [darkMode, setDarkMode] = useState<boolean>(() => {
@@ -70,6 +72,7 @@ export function App() {
   });
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
   // 记账表单状态
@@ -109,6 +112,15 @@ export function App() {
     setTransactions(list);
     const pending = await localDb.transactions.where('sync_status').equals('pending').count();
     setPendingCount(pending);
+  };
+
+  // 刷新分类列表
+  const refreshCategories = async () => {
+    const cats = await getCategories();
+    setCategories(cats);
+    if (!cats.some((c) => c.category_id === selectedCategory)) {
+      setSelectedCategory(getInitialCategoryId(activeTab, cats));
+    }
   };
 
   // 初始化应用
@@ -349,6 +361,13 @@ export function App() {
                 <span>登录/注册</span>
               </button>
             )}
+            <button
+              onClick={() => setIsCategoryModalOpen(true)}
+              title="自定义分类与分类排序"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300"
+            >
+              <Tag className="w-4 h-4 text-indigo-500" />
+            </button>
             <button
               onClick={handleSync}
               disabled={isSyncing}
@@ -620,12 +639,23 @@ export function App() {
 
             {/* 大类 + 小类二级联动分类选择器 */}
             <div className="flex flex-col gap-1">
-              <div className="text-[11px] font-medium text-gray-400 px-0.5">分类选择</div>
+              <div className="flex justify-between items-center text-[11px] font-medium text-gray-400 px-0.5">
+                <span>分类选择</span>
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(true)}
+                  className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-normal"
+                >
+                  <Settings className="w-3 h-3" />
+                  <span>管理分类</span>
+                </button>
+              </div>
               <CategoryPicker
                 categories={categories}
                 type={activeTab}
                 selectedCategoryId={selectedCategory}
                 onSelectCategory={setSelectedCategory}
+                onOpenManage={() => setIsCategoryModalOpen(true)}
               />
             </div>
 
@@ -925,6 +955,15 @@ export function App() {
           isOpen={isAuthModalOpen}
           onClose={() => setIsAuthModalOpen(false)}
           onSuccess={handleAuthSuccess}
+        />
+
+        {/* 分类管理与排序 弹窗 */}
+        <CategoryManagementModal
+          isOpen={isCategoryModalOpen}
+          categories={categories}
+          initialType={activeTab}
+          onClose={() => setIsCategoryModalOpen(false)}
+          onCategoriesChanged={refreshCategories}
         />
 
         {/* 流水明细详情、编辑与删除弹窗 */}

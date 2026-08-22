@@ -15,6 +15,7 @@ export interface CategoryMeta {
   category_id: string;
   name: string;
   icon: string;
+  color?: string | null;
   type: CategoryType;
   parent_id?: string | null;
   parentName?: string;
@@ -219,17 +220,27 @@ export function buildCategoryTree(categories: Category[], type?: CategoryType): 
     }
   }
 
-  // 3. 排序 (按 sort_order 升序)
-  parentNodes.sort((a, b) => a.category.sort_order - b.category.sort_order);
+  // 3. 排序 (按 sort_order 升序，相同时按创建时间升序)
+  parentNodes.sort((a, b) => {
+    if (a.category.sort_order !== b.category.sort_order) {
+      return a.category.sort_order - b.category.sort_order;
+    }
+    return (a.category.created_at || '').localeCompare(b.category.created_at || '');
+  });
   for (const node of parentNodes) {
-    node.children.sort((a, b) => a.sort_order - b.sort_order);
+    node.children.sort((a, b) => {
+      if (a.sort_order !== b.sort_order) {
+        return a.sort_order - b.sort_order;
+      }
+      return (a.created_at || '').localeCompare(b.created_at || '');
+    });
   }
 
   return parentNodes;
 }
 
 /**
- * 根据 ID 解析分类的完整元数据（包含大类名称、路径、图标等）
+ * 根据 ID 解析分类的完整元数据（包含大类名称、路径、图标、颜色等）
  */
 export function getCategoryMeta(
   categoryId?: string | null,
@@ -259,6 +270,7 @@ export function getCategoryMeta(
       category_id: '',
       name,
       icon,
+      color: null,
       type: fallbackType,
       fullPath: name,
       isParent: true,
@@ -271,6 +283,7 @@ export function getCategoryMeta(
       category_id: categoryId,
       name: '分类',
       icon: defaultIcons[fallbackType] || 'Tag',
+      color: null,
       type: fallbackType,
       fullPath: '分类',
       isParent: false,
@@ -284,6 +297,7 @@ export function getCategoryMeta(
       category_id: current.category_id,
       name: current.name,
       icon: current.icon || parent?.icon || defaultIcons[current.type] || 'Tag',
+      color: current.color || parent?.color || null,
       type: current.type,
       parent_id: current.parent_id,
       parentName,
@@ -296,6 +310,7 @@ export function getCategoryMeta(
     category_id: current.category_id,
     name: current.name,
     icon: current.icon || defaultIcons[current.type] || 'Tag',
+    color: current.color || null,
     type: current.type,
     fullPath: current.name,
     isParent: true,
