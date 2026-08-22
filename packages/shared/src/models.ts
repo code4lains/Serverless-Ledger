@@ -163,6 +163,54 @@ export interface Budget {
   updated_at: string;
 }
 
+export interface CreateBudgetRequest {
+  budget_id?: string;
+  ledger_id: string;
+  category_id?: string | null;
+  period: BudgetPeriod;
+  amount: number;
+}
+
+export interface UpdateBudgetRequest {
+  amount?: number;
+  period?: BudgetPeriod;
+}
+
+export interface SetBudgetItem {
+  category_id?: string | null; // null 表示账本总预算，有值为大分类 ID
+  amount: number; // 单位：分
+}
+
+export interface BatchSetBudgetRequest {
+  ledger_id: string;
+  period: BudgetPeriod;
+  budgets: SetBudgetItem[];
+}
+
+export type BudgetStatus = 'normal' | 'warning' | 'exceeded';
+
+export interface BudgetProgressItem {
+  budget_id?: string;
+  category_id: string | null; // null: 账本总预算, string: 大分类 ID
+  category_name: string;
+  category_icon?: string;
+  category_color?: string | null;
+  is_total: boolean;
+  budget_amount: number; // 预算金额 (分)
+  spent_amount: number;  // 已花费金额 (分)
+  remaining_amount: number; // 剩余金额 (分, 超支时为负)
+  percentage: number; // 百分比 (0 ~ 100+%)
+  status: BudgetStatus; // normal: <80%, warning: 80%~100%, exceeded: >100%
+}
+
+export interface BudgetOverview {
+  totalBudget: BudgetProgressItem | null;
+  categoryBudgets: BudgetProgressItem[];
+  hasAnyBudget: boolean;
+  totalCategoryBudgetSum: number; // 分类预算之和 (分)
+  period: BudgetPeriod;
+}
+
 /**
  * 标准通用 API 响应
  */

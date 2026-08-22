@@ -16,6 +16,7 @@ import {
   Info,
   Layers,
   Sparkles,
+  Target,
 } from 'lucide-react';
 import { AuthUser, Ledger, Transaction } from '@ledger/shared';
 
@@ -30,6 +31,7 @@ interface ProfileViewProps {
   onToggleDarkMode: () => void;
   onSync: () => Promise<void>;
   onOpenLedgerModal: () => void;
+  onOpenBudgetModal?: () => void;
   onLogout: () => void;
   onOpenAuthModal?: () => void;
 }
@@ -45,6 +47,7 @@ export function ProfileView({
   onToggleDarkMode,
   onSync,
   onOpenLedgerModal,
+  onOpenBudgetModal,
   onLogout,
   onOpenAuthModal,
 }: ProfileViewProps) {
@@ -170,6 +173,31 @@ export function ProfileView({
         </div>
       </div>
 
+      {/* 2.5 月度预算管理中心 */}
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
+              <Target className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">预算管理中心</h4>
+              <p className="text-[10px] text-gray-400">设置月度总预算与各分类支出上限</p>
+            </div>
+          </div>
+          {onOpenBudgetModal && (
+            <button
+              type="button"
+              onClick={onOpenBudgetModal}
+              className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
+            >
+              <span>预算设置</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* 3. 云端存储与双向同步 */}
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
         <div className="flex items-center justify-between">
@@ -254,7 +282,7 @@ export function ProfileView({
           <span>账盾 · Serverless Ledger</span>
         </div>
         <p className="text-[11px] text-gray-400">
-          数据私有掌控 · 纯净无广告 · 基于 Cloudflare Workers & D1 全球边缘计算
+          数据私有掌控 · 纯净无广告 · 基于 Cloudflare 全球边缘计算
         </p>
         <p className="text-[10px] text-gray-400">版本 v1.0.0</p>
       </div>

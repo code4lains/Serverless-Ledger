@@ -54,18 +54,22 @@ import {
   getCategoryMeta,
   getInitialCategoryId,
   getCurrencySymbol,
+  Budget,
+  calculateBudgetOverview,
 } from '@ledger/shared';
 import { localDb, seedLocalCategories, seedLocalLedgers, DEFAULT_LOCAL_LEDGER_ID } from './db';
 import {
   checkServerHealth,
   getCategories,
   getLedgers,
+  getBudgets,
   createTransaction,
   updateTransaction,
   deleteTransaction,
   syncPendingTransactions,
   pullAndMergeServerTransactions,
   pullAndMergeServerLedgers,
+  pullAndMergeServerBudgets,
   getStoredUser,
   fetchCurrentUser,
   clearSession,
@@ -77,6 +81,8 @@ import { AccountPicker } from './components/AccountPicker';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
 import { CategoryManagementModal } from './components/CategoryManagementModal';
 import { LedgerManagementModal } from './components/LedgerManagementModal';
+import { BudgetManagementModal } from './components/BudgetManagementModal';
+import { BudgetProgressCard } from './components/BudgetProgressCard';
 import { StatisticsView } from './components/StatisticsView';
 import { CategoriesView } from './components/CategoriesView';
 import { ProfileView } from './components/ProfileView';
@@ -92,6 +98,7 @@ export function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState<boolean>(false);
+  const [isBudgetModalOpen, setIsBudgetModalOpen] = useState<boolean>(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
@@ -114,6 +121,7 @@ export function App() {
   // 数据列表与服务端状态
   const [categories, setCategories] = useState<Category[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
   const [serverStatus, setServerStatus] = useState<{ ok: boolean; data?: any }>({ ok: false });
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [pendingCount, setPendingCount] = useState<number>(0);
@@ -174,6 +182,12 @@ export function App() {
     }
   };
 
+  // 刷新预算列表
+  const refreshBudgets = async () => {
+    const bList = await getBudgets();
+    setBudgets(bList);
+  };
+
   // 载入访客默认数据 (免登录浏览模式)
   const loadGuestData = async () => {
     await seedLocalCategories();
@@ -191,6 +205,7 @@ export function App() {
       setSelectedLedgerForRecord((prev) => (leds.some((l) => l.ledger_id === prev) ? prev : defaultLed.ledger_id));
     }
 
+    await refreshBudgets();
     await loadLocalData(null);
 
     const health = await checkServerHealth();
@@ -214,6 +229,7 @@ export function App() {
       setSelectedLedgerForRecord((prev) => (leds.some((l) => l.ledger_id === prev) ? prev : defaultLed.ledger_id));
     }
 
+    await refreshBudgets();
     await loadLocalData(user);
 
     const health = await checkServerHealth();
@@ -222,7 +238,9 @@ export function App() {
     if (health.ok) {
       await pullAndMergeServerLedgers();
       await pullAndMergeServerTransactions();
+      await pullAndMergeServerBudgets();
       await refreshLedgers();
+      await refreshBudgets();
       await loadLocalData(user);
     }
   };
@@ -383,6 +401,7 @@ export function App() {
     const health = await checkServerHealth();
     setServerStatus(health);
     await refreshLedgers();
+    await refreshBudgets();
     await loadLocalData();
     setIsSyncing(false);
   };
@@ -469,6 +488,14 @@ export function App() {
   const totals = useMemo(() => {
     return calculateTotals(activeLedgerTransactions);
   }, [activeLedgerTransactions]);
+
+  // 独立账本月度总预算与各大分类预算消耗进度计算 (支持小分类消费归集与 80% 预警)
+  const budgetOverview = useMemo(() => {
+    return calculateBudgetOverview(budgets, activeLedgerTransactions, categories, {
+      ledgerId: activeLedgerId,
+      period: 'monthly',
+    });
+  }, [budgets, activeLedgerTransactions, categories, activeLedgerId]);
 
   // 按天分组的流水明细
   const dayGroups = useMemo(() => {
@@ -675,6 +702,14 @@ export function App() {
                 </div>
               )}
             </div>
+
+            {/* 月度总预算及大分类预算进度条看板 */}
+            <BudgetProgressCard
+              overview={budgetOverview}
+              currencySymbol={currentCurrencySymbol}
+              onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+              ledgerName={activeLedger ? activeLedger.name : '全部账本'}
+            />
 
             {/* 账单流水明细列表 */}
             <div className="bg-white dark:bg-neutral-800 rounded-3xl p-4 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
@@ -1236,6 +1271,14 @@ export function App() {
                 </div>
               </form>
             </div>
+
+            {/* 首页月度总预算与大分类预算进度条看板 */}
+            <BudgetProgressCard
+              overview={budgetOverview}
+              currencySymbol={currentCurrencySymbol}
+              onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+              ledgerName={activeLedger ? activeLedger.name : undefined}
+            />
           </div>
         )}
 
@@ -1263,6 +1306,7 @@ export function App() {
             onToggleDarkMode={() => setDarkMode(!darkMode)}
             onSync={handleSync}
             onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
+            onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
             onLogout={handleRequestLogout}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
           />
@@ -1287,6 +1331,19 @@ export function App() {
           onSelectLedger={handleSwitchLedger}
           onLedgersChanged={refreshLedgers}
           onRequireAuth={() => setIsAuthModalOpen(true)}
+        />
+
+        {/* 月度预算设置与各大分类预算管理 弹窗 */}
+        <BudgetManagementModal
+          isOpen={isBudgetModalOpen}
+          onClose={() => setIsBudgetModalOpen(false)}
+          ledgers={ledgers}
+          activeLedgerId={activeLedgerId}
+          categories={categories}
+          budgets={budgets}
+          onBudgetsChanged={refreshBudgets}
+          onRequireAuth={() => setIsAuthModalOpen(true)}
+          currentUser={currentUser}
         />
 
         {/* 分类管理与排序 弹窗 (供快捷弹窗调用) */}

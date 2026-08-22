@@ -9,6 +9,7 @@ import authRouter from './routes/auth';
 import categoriesRouter from './routes/categories';
 import ledgersRouter from './routes/ledgers';
 import transactionsRouter from './routes/transactions';
+import budgetsRouter from './routes/budgets';
 import { ApiResponse } from '@ledger/shared';
 
 const app = new Hono<{ Bindings: Env; Variables: AppVariables }>();
@@ -32,6 +33,7 @@ app.route('/api/auth', authRouter);
 app.route('/api/categories', categoriesRouter);
 app.route('/api/ledgers', ledgersRouter);
 app.route('/api/transactions', transactionsRouter);
+app.route('/api/budgets', budgetsRouter);
 
 
 // 根路由

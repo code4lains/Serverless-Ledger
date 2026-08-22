@@ -27,6 +27,8 @@ export function toYuan(cents: number): number {
   return cents / 100;
 }
 
+export const fromCents = toYuan;
+
 /**
  * 格式化金额（分）为展示字符串
  * @param cents 存储的整数分

@@ -669,7 +669,104 @@ async function testPipeline() {
   const deleteJson = await deleteRes.json();
   assert.strictEqual(deleteJson.success, true);
 
-  console.log('\n🎉 ALL PIPELINE & JWT AUTHENTICATION INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉');
+  console.log('\n--- 15. Testing Budget Endpoints (Whitepaper 3.4 & 7.2 Monthly & Category Budgets) ---');
+  // 15.1 未认证拦截
+  const unauthBudgetRes = await fetch(`${BASE}/api/budgets`);
+  assert.strictEqual(unauthBudgetRes.status, 401, 'Accessing /api/budgets without token must return 401');
+
+  // 15.2 非法金额拦截
+  const negBudgetRes = await fetch(`${BASE}/api/budgets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      ledger_id: defaultLedgerId,
+      period: 'monthly',
+      amount: -1000,
+    }),
+  });
+  assert.strictEqual(negBudgetRes.status, 400, 'Negative budget amount should return 400');
+
+  // 15.3 创建单个总预算 (5000 元 -> 500000 分)
+  const createTotalBudgetRes = await fetch(`${BASE}/api/budgets`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      ledger_id: defaultLedgerId,
+      period: 'monthly',
+      category_id: null,
+      amount: 500000,
+    }),
+  });
+  assert.strictEqual(createTotalBudgetRes.status, 201, 'Create total budget should return 201');
+  const createTotalBudgetJson = await createTotalBudgetRes.json();
+  console.log('Created Total Budget in D1:', createTotalBudgetJson.data);
+  assert.strictEqual(createTotalBudgetJson.data.amount, 500000);
+  assert.strictEqual(createTotalBudgetJson.data.category_id, null);
+  const createdBudgetId = createTotalBudgetJson.data.budget_id;
+
+  // 15.4 批量设置月度总预算与大分类预算 (PUT /api/budgets/batch)
+  const batchBudgetsPayload = {
+    ledger_id: defaultLedgerId,
+    period: 'monthly',
+    budgets: [
+      { category_id: null, amount: 600000 }, // 修改总预算为 6000元
+      { category_id: 'cat_exp_food', amount: 200000 }, // 餐饮美食大类 2000元
+      { category_id: 'cat_exp_traffic', amount: 50000 }, // 交通出行大类 500元
+      { category_id: 'cat_exp_shopping', amount: 150000 }, // 购物消费大类 1500元
+    ],
+  };
+
+  const batchBudgetRes = await fetch(`${BASE}/api/budgets/batch`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify(batchBudgetsPayload),
+  });
+  assert.strictEqual(batchBudgetRes.status, 200, 'Batch budget update should return 200');
+  const batchBudgetJson = await batchBudgetRes.json();
+  console.log('Batch Budget Save Response:', batchBudgetJson.data);
+  assert.strictEqual(batchBudgetJson.data.length, 4, 'Should have saved 4 budget records');
+
+  // 15.5 查询当前账本月度预算列表 (GET /api/budgets?ledgerId=...&period=monthly)
+  const getBudgetsRes = await fetch(`${BASE}/api/budgets?ledgerId=${defaultLedgerId}&period=monthly`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(getBudgetsRes.status, 200);
+  const getBudgetsJson = await getBudgetsRes.json();
+  console.log(`Fetched budgets for default ledger: ${getBudgetsJson.data.length} items`);
+  assert.strictEqual(getBudgetsJson.data.length, 4);
+  const fetchedTotal = getBudgetsJson.data.find((b) => !b.category_id);
+  assert(fetchedTotal);
+  assert.strictEqual(fetchedTotal.amount, 600000);
+
+  const fetchedFood = getBudgetsJson.data.find((b) => b.category_id === 'cat_exp_food');
+  assert(fetchedFood);
+  assert.strictEqual(fetchedFood.amount, 200000);
+
+  // 15.6 删除单项预算 (DELETE /api/budgets/:id)
+  const delBudgetRes = await fetch(`${BASE}/api/budgets/${fetchedFood.budget_id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delBudgetRes.status, 200);
+
+  // 验证删除后数量为 3
+  const afterDelBudgetsRes = await fetch(`${BASE}/api/budgets?ledgerId=${defaultLedgerId}&period=monthly`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const afterDelBudgetsJson = await afterDelBudgetsRes.json();
+  assert.strictEqual(afterDelBudgetsJson.data.length, 3);
+  console.log('Budget Module Verification Passed Successfully!');
+
+  console.log('\n🎉 ALL PIPELINE, MULTI-LEDGER & BUDGET INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉');
 }
 
 testPipeline().catch((err) => {

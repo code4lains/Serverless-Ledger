@@ -17,6 +17,10 @@ import {
   LoginRequest,
   AuthResponse,
   AuthUser,
+  Budget,
+  BudgetPeriod,
+  SetBudgetItem,
+  BatchSetBudgetRequest,
 } from '@ledger/shared';
 import { localDb } from '../db';
 
@@ -736,12 +740,162 @@ export async function syncPendingTransactions(): Promise<{ syncedCount: number; 
       }
     }
 
-    // 双向拉取服务端账本与流水增量
+    // 双向拉取服务端账本、流水与预算增量
     await pullAndMergeServerLedgers();
     await pullAndMergeServerTransactions();
+    await pullAndMergeServerBudgets();
     return { syncedCount: pendingList.length, success: true };
   } catch (err) {
     console.warn('Sync failed:', err);
     return { syncedCount: 0, success: false };
   }
+}
+
+/**
+ * 获取预算配置列表 (优先拉取服务端并同步至本地 Dexie，离线时读取本地)
+ */
+export async function getBudgets(ledgerId?: string, period: BudgetPeriod = 'monthly'): Promise<Budget[]> {
+  try {
+    let url = `${API_BASE}/budgets?period=${period}`;
+    if (ledgerId && ledgerId !== 'all') {
+      url += `&ledgerId=${ledgerId}`;
+    }
+    const res = await fetch(url, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Budget[]>;
+      if (json.success && Array.isArray(json.data)) {
+        const serverBudgets = json.data;
+        if (serverBudgets.length > 0) {
+          await localDb.budgets.bulkPut(serverBudgets);
+        }
+        return serverBudgets;
+      }
+    }
+  } catch {
+    // 离线降级
+  }
+
+  // 从本地 Dexie 读取
+  const allLocal = await localDb.budgets.toArray();
+  return allLocal.filter((b) => {
+    if (b.period !== period) return false;
+    if (ledgerId && ledgerId !== 'all' && b.ledger_id !== ledgerId) return false;
+    return true;
+  });
+}
+
+/**
+ * 批量设置预算 (离线优先：写入本地 Dexie，若在线同步推送到 Cloudflare D1)
+ */
+export async function saveBatchBudgets(
+  ledgerId: string,
+  period: BudgetPeriod,
+  budgets: SetBudgetItem[]
+): Promise<Budget[]> {
+  const user = getStoredUser();
+  const userId = user?.user_id || 'default_user';
+  const now = new Date().toISOString();
+
+  // 1. 本地清空该账本同周期的旧预算
+  const oldBudgets = await localDb.budgets.toArray();
+  for (const ob of oldBudgets) {
+    if (ob.ledger_id === ledgerId && ob.period === period) {
+      await localDb.budgets.delete(ob.budget_id);
+    }
+  }
+
+  // 2. 本地写入新预算
+  const localList: Budget[] = [];
+  for (const item of budgets) {
+    const amount = typeof item.amount === 'number' ? Math.round(item.amount) : 0;
+    if (amount <= 0 || isNaN(amount)) continue;
+
+    const bId = `bud_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const newBudget: Budget = {
+      budget_id: bId,
+      user_id: userId,
+      ledger_id: ledgerId,
+      category_id: item.category_id || null,
+      period,
+      amount,
+      created_at: now,
+      updated_at: now,
+    };
+    await localDb.budgets.put(newBudget);
+    localList.push(newBudget);
+  }
+
+  // 3. 尝试向服务端同步
+  try {
+    const res = await fetch(`${API_BASE}/budgets/batch`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        ledger_id: ledgerId,
+        period,
+        budgets,
+      } as BatchSetBudgetRequest),
+      signal: AbortSignal.timeout(3000),
+    });
+
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Budget[]>;
+      if (json.success && Array.isArray(json.data)) {
+        await localDb.budgets.bulkPut(json.data);
+        return json.data;
+      }
+    }
+  } catch {
+    console.log('离线模式：预算配置已保存在本地 IndexedDB。');
+  }
+
+  return localList;
+}
+
+/**
+ * 删除预算
+ */
+export async function deleteBudget(budgetId: string): Promise<boolean> {
+  await localDb.budgets.delete(budgetId);
+  try {
+    const res = await fetch(`${API_BASE}/budgets/${budgetId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    return res.ok;
+  } catch {
+    console.log('离线模式：本地预算已删除。');
+    return true;
+  }
+}
+
+/**
+ * 从服务器拉取最新预算数据并与本地合并
+ */
+export async function pullAndMergeServerBudgets(): Promise<number> {
+  try {
+    const res = await fetch(`${API_BASE}/budgets`, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const json = (await res.json()) as ApiResponse<Budget[]>;
+      if (json.success && Array.isArray(json.data)) {
+        const serverBudgets = json.data;
+        if (serverBudgets.length > 0) {
+          for (const b of serverBudgets) {
+            await localDb.budgets.put(b);
+          }
+          return serverBudgets.length;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('拉取服务端预算数据失败 (可能离线):', err);
+  }
+  return 0;
 }
