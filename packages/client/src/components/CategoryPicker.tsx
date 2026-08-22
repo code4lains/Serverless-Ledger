@@ -98,7 +98,7 @@ export function CategoryPicker({
               onClick={() => handleSelectParent(parent.category_id)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl whitespace-nowrap transition-all text-xs font-medium border shrink-0 ${
                 isParentActive
-                  ? 'bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 border-gray-800 dark:border-gray-100 shadow-sm'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                   : 'bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-neutral-700/80 hover:bg-gray-100 dark:hover:bg-neutral-800'
               }`}
             >
@@ -125,7 +125,7 @@ export function CategoryPicker({
                 onClick={() => onSelectCategory(sub.category_id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
                   isSubSelected
-                    ? 'bg-neutral-800 dark:bg-neutral-200 text-white dark:text-neutral-900 shadow-xs'
+                    ? 'bg-indigo-600 text-white shadow-xs'
                     : 'bg-gray-100/90 dark:bg-neutral-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
                 }`}
               >

@@ -36,6 +36,7 @@ import {
   Plus,
   PieChart,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   Transaction,
@@ -91,6 +92,7 @@ export function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState<boolean>(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
 
   // 账本状态 (多账本体系)
@@ -385,8 +387,14 @@ export function App() {
     setIsSyncing(false);
   };
 
-  // 退出登录
-  const handleLogout = async () => {
+  // 触发退出登录请求 (前置检查未同步数据)
+  const handleRequestLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  // 确认退出登录
+  const handleConfirmLogout = async () => {
+    setShowLogoutConfirm(false);
     clearSession();
     setCurrentUser(null);
     await loadGuestData();
@@ -481,8 +489,8 @@ export function App() {
         {/* 顶部导航与状态栏 */}
         <header className="flex justify-between items-center py-2 px-1">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center font-bold text-sm shadow-sm">
-              <ShieldCheck className="w-4 h-4 text-emerald-500 dark:text-emerald-600" />
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shadow-indigo-500/20">
+              <ShieldCheck className="w-4 h-4 text-white" />
             </div>
             <div>
               <h1 className="text-base font-bold tracking-tight">账盾</h1>
@@ -492,12 +500,12 @@ export function App() {
           <div className="flex items-center gap-2">
             {currentUser ? (
               <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 text-xs">
-                <UserIcon className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                <UserIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <span className="font-medium max-w-[90px] truncate text-gray-700 dark:text-gray-200" title={currentUser.email}>
                   {currentUser.email.split('@')[0]}
                 </span>
                 <button
-                  onClick={handleLogout}
+                  onClick={handleRequestLogout}
                   title="退出登录"
                   className="p-0.5 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg text-gray-400 hover:text-red-500 transition-colors"
                 >
@@ -507,31 +515,36 @@ export function App() {
             ) : (
               <button
                 onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold shadow-sm hover:opacity-90 active:scale-95 transition-all"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>登录/注册</span>
               </button>
             )}
             <button
-              onClick={() => setIsLedgerModalOpen(true)}
-              title="账本管理中心 (多账本体系)"
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative"
-            >
-              <BookOpen className="w-4 h-4 text-emerald-500" />
-              {ledgers.length > 1 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold flex items-center justify-center">
-                  {ledgers.length}
-                </span>
-              )}
-            </button>
-            <button
               onClick={handleSync}
               disabled={isSyncing}
-              title="双向同步数据至 Cloudflare D1"
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300"
+              title={
+                isSyncing
+                  ? '正在双向同步中...'
+                  : pendingCount > 0
+                  ? `存在 ${pendingCount} 笔未同步记录，点击立即同步`
+                  : '数据已完全同步至云端'
+              }
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative"
             >
-              <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-blue-500' : ''}`} />
+              <RefreshCw
+                className={`w-4 h-4 transition-colors ${
+                  isSyncing
+                    ? 'animate-spin text-indigo-500'
+                    : pendingCount > 0
+                    ? 'text-amber-500 dark:text-amber-400'
+                    : 'text-emerald-500 dark:text-emerald-400'
+                }`}
+              />
+              {pendingCount > 0 && !isSyncing && (
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              )}
             </button>
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -575,7 +588,7 @@ export function App() {
                     onClick={() => handleSwitchLedger(led.ledger_id)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
                       isCur
-                        ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-xs'
+                        ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
                     }`}
                   >
@@ -584,7 +597,7 @@ export function App() {
                       <span className="text-[10px] text-amber-400" title="默认日常账本">★</span>
                     )}
                     <span className={`text-[10px] font-normal ${
-                      isCur ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400'
+                      isCur ? 'text-indigo-200' : 'text-gray-400'
                     }`}>
                       {led.currency}
                     </span>
@@ -604,35 +617,35 @@ export function App() {
             </div>
 
             {/* 概览卡片 (独立账本核算与结余汇总) */}
-            <div className="bg-gradient-to-br from-neutral-800 to-neutral-900 text-white rounded-3xl p-5 shadow-md">
-              <div className="flex justify-between items-center text-xs text-neutral-400 mb-1">
+            <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-800 text-white rounded-3xl p-5 shadow-lg shadow-indigo-600/15 dark:from-neutral-800 dark:via-neutral-850 dark:to-neutral-900 dark:shadow-none">
+              <div className="flex justify-between items-center text-xs text-indigo-100 dark:text-neutral-400 mb-1">
                 <span className="flex items-center gap-1 font-medium">
-                  <BookOpen className="w-3.5 h-3.5 text-indigo-400" />
+                  <BookOpen className="w-3.5 h-3.5 text-indigo-200 dark:text-indigo-400" />
                   {activeLedger ? `${activeLedger.name} · 结余 (${activeLedger.currency})` : '全部账本 · 汇总结余 (CNY)'}
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-700 text-neutral-300">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 dark:bg-neutral-700 text-white dark:text-neutral-300 font-medium backdrop-blur-xs">
                   {activeLedger ? (activeLedger.is_default === 1 ? '★ 默认账本' : '独立核算') : '全局汇总透视'}
                 </span>
               </div>
-              <div className="text-2xl font-extrabold tracking-tight mb-3">
+              <div className="text-2xl font-extrabold tracking-tight mb-3 text-white">
                 {formatMoney(totals.balance, currentCurrencySymbol)}
               </div>
 
               {/* 收支统计 */}
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-neutral-700/60 text-xs">
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/15 dark:border-neutral-700/60 text-xs">
                 <div>
-                  <div className="text-neutral-400 flex items-center gap-1">
-                    <ArrowDownLeft className="w-3.5 h-3.5 text-[#D08770]" /> 总支出
+                  <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
+                    <ArrowDownLeft className="w-3.5 h-3.5 text-orange-300 dark:text-[#D08770]" /> 总支出
                   </div>
-                  <div className="text-sm font-semibold mt-0.5 text-[#D08770]">
+                  <div className="text-sm font-semibold mt-0.5 text-orange-200 dark:text-[#D08770]">
                     {formatMoney(totals.totalExpense, currentCurrencySymbol)}
                   </div>
                 </div>
                 <div>
-                  <div className="text-neutral-400 flex items-center gap-1">
-                    <ArrowUpRight className="w-3.5 h-3.5 text-[#A3BE8C]" /> 总收入
+                  <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
+                    <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300 dark:text-[#A3BE8C]" /> 总收入
                   </div>
-                  <div className="text-sm font-semibold mt-0.5 text-[#A3BE8C]">
+                  <div className="text-sm font-semibold mt-0.5 text-emerald-200 dark:text-[#A3BE8C]">
                     {formatMoney(totals.totalIncome, currentCurrencySymbol)}
                   </div>
                 </div>
@@ -640,20 +653,20 @@ export function App() {
 
               {/* 转账与借贷辅助汇总 */}
               {(totals.totalTransfer > 0 || (totals.totalLoanLent + totals.totalLoanBorrowed + totals.totalLoanRepaid + totals.totalLoanCollected) > 0) && (
-                <div className="grid grid-cols-2 gap-3 pt-2.5 mt-2.5 border-t border-neutral-700/40 text-[11px]">
+                <div className="grid grid-cols-2 gap-3 pt-2.5 mt-2.5 border-t border-white/15 dark:border-neutral-700/40 text-[11px]">
                   <div>
-                    <div className="text-neutral-400 flex items-center gap-1">
-                      <ArrowRightLeft className="w-3 h-3 text-blue-400" /> 内部转账
+                    <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
+                      <ArrowRightLeft className="w-3 h-3 text-blue-300 dark:text-blue-400" /> 内部转账
                     </div>
-                    <div className="font-medium mt-0.5 text-blue-300">
+                    <div className="font-medium mt-0.5 text-blue-100 dark:text-blue-300">
                       {formatMoney(totals.totalTransfer, currentCurrencySymbol)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-neutral-400 flex items-center gap-1">
-                      <Landmark className="w-3 h-3 text-purple-400" /> 借贷流动
+                    <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
+                      <Landmark className="w-3 h-3 text-purple-300 dark:text-purple-400" /> 借贷流动
                     </div>
-                    <div className="font-medium mt-0.5 text-purple-300 flex items-center gap-1.5">
+                    <div className="font-medium mt-0.5 text-purple-100 dark:text-purple-300 flex items-center gap-1.5">
                       <span>出: {formatMoney(totals.totalLoanLent + totals.totalLoanRepaid, currentCurrencySymbol)}</span>
                       <span>·</span>
                       <span>入: {formatMoney(totals.totalLoanBorrowed + totals.totalLoanCollected, currentCurrencySymbol)}</span>
@@ -893,7 +906,7 @@ export function App() {
               {/* 头部标题与当前账本提示 */}
               <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 dark:border-neutral-700/60">
                 <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center font-bold text-xs">
+                  <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
                     <Plus className="w-4 h-4" />
                   </div>
                   <div>
@@ -1141,8 +1154,8 @@ export function App() {
                       onClick={() => setRecordDateType('today')}
                       className={`px-3 py-1 rounded-xl font-medium transition-all ${
                         recordDateType === 'today'
-                          ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
                       }`}
                     >
                       今天
@@ -1152,8 +1165,8 @@ export function App() {
                       onClick={() => setRecordDateType('yesterday')}
                       className={`px-3 py-1 rounded-xl font-medium transition-all ${
                         recordDateType === 'yesterday'
-                          ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
                       }`}
                     >
                       昨天
@@ -1163,8 +1176,8 @@ export function App() {
                       onClick={() => setRecordDateType('beforeYesterday')}
                       className={`px-3 py-1 rounded-xl font-medium transition-all ${
                         recordDateType === 'beforeYesterday'
-                          ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
                       }`}
                     >
                       前天
@@ -1174,8 +1187,8 @@ export function App() {
                       onClick={() => setRecordDateType('custom')}
                       className={`flex items-center gap-1 px-3 py-1 rounded-xl font-medium transition-all ${
                         recordDateType === 'custom'
-                          ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
                       }`}
                     >
                       <Calendar className="w-3 h-3" />
@@ -1207,7 +1220,7 @@ export function App() {
                   <button
                     type="submit"
                     disabled={!amountStr || parseFloat(amountStr) <= 0}
-                    className="px-5 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold text-xs shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-40 transition-all flex items-center gap-1.5"
+                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 disabled:opacity-40 transition-all flex items-center gap-1.5"
                   >
                     <PlusCircle className="w-4 h-4" />
                     <span>
@@ -1250,7 +1263,7 @@ export function App() {
             onToggleDarkMode={() => setDarkMode(!darkMode)}
             onSync={handleSync}
             onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
-            onLogout={handleLogout}
+            onLogout={handleRequestLogout}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
           />
         )}
@@ -1299,11 +1312,89 @@ export function App() {
           onDelete={handleDeleteTransaction}
           onRequireAuth={() => setIsAuthModalOpen(true)}
         />
+
+        {/* 退出登录安全确认弹窗 (含未同步数据风险提示) */}
+        {showLogoutConfirm && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+            <div className="w-full max-w-xs bg-white dark:bg-neutral-800 rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
+              <div className="flex items-center gap-2.5">
+                {pendingCount > 0 ? (
+                  <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm shrink-0">
+                    <AlertTriangle className="w-4 h-4" />
+                  </div>
+                ) : (
+                  <div className="w-8 h-8 rounded-xl bg-gray-100 dark:bg-neutral-700 text-gray-600 dark:text-gray-300 flex items-center justify-center font-bold text-sm shrink-0">
+                    <LogOut className="w-4 h-4" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="font-bold text-sm text-gray-900 dark:text-white">
+                    {pendingCount > 0 ? '存在未同步数据' : '退出登录'}
+                  </h3>
+                  <p className="text-[10px] text-gray-400">
+                    {pendingCount > 0 ? '退出前请注意数据安全' : '账号退出确认'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                {pendingCount > 0 ? (
+                  <div className="flex flex-col gap-1.5">
+                    <p>
+                      检测到您本地还有 <strong className="text-amber-600 dark:text-amber-400 font-bold">{pendingCount} 笔</strong> 离线流水尚未同步至云端。
+                    </p>
+                    <p className="text-[11px] text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 p-2 rounded-xl border border-red-100 dark:border-red-900/40">
+                      ⚠️ 若现在退出登录，本地未同步的流水记录可能会丢失！
+                    </p>
+                  </div>
+                ) : (
+                  <p>确认退出当前账号吗？已同步的数据均安全保存在您的 Cloudflare D1 云数据库中。</p>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 pt-1">
+                {pendingCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setShowLogoutConfirm(false);
+                      await handleSync();
+                    }}
+                    className="w-full py-2 rounded-xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>立即同步数据并保留</span>
+                  </button>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowLogoutConfirm(false)}
+                    className="flex-1 py-2 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmLogout}
+                    className={`flex-1 py-2 rounded-xl text-xs font-medium text-white transition-all shadow-xs ${
+                      pendingCount > 0
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                    }`}
+                  >
+                    {pendingCount > 0 ? '仍然退出' : '确认退出'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* 底部固定导航栏 (Bottom Navigation Bar - 5 Tabs: 明细, 统计, 记账[居中], 分类, 我的) */}
+      {/* 底部固定导航栏 (Bottom Navigation Bar - 5 图标无字精简模式) */}
       <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl border-t border-gray-200/80 dark:border-neutral-800 shadow-lg pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
-        <div className="max-w-md mx-auto flex items-center justify-around py-1.5 px-2">
+        <div className="max-w-md mx-auto flex items-center justify-around py-2 px-3">
           {[
             { id: 'detail', label: '明细', icon: Receipt },
             { id: 'stats', label: '统计', icon: PieChart },
@@ -1321,22 +1412,19 @@ export function App() {
                   key={item.id}
                   type="button"
                   onClick={() => setNavTab(item.id as NavigationTab)}
-                  className="flex flex-col items-center gap-0.5 -mt-4 group transition-transform active:scale-95"
+                  title={item.label}
+                  aria-label={item.label}
+                  className="flex items-center justify-center -mt-5 group transition-transform active:scale-95"
                 >
                   <div
-                    className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md transition-all ${
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md shadow-indigo-600/25 transition-all ${
                       isActive
-                        ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 ring-4 ring-gray-200/60 dark:ring-neutral-800 scale-105'
-                        : 'bg-gray-900/90 dark:bg-white/90 text-white dark:text-gray-900 hover:scale-105'
+                        ? 'bg-indigo-600 text-white ring-4 ring-indigo-100 dark:ring-neutral-800 scale-105'
+                        : 'bg-indigo-600 text-white hover:scale-105'
                     }`}
                   >
                     <Plus className="w-6 h-6 stroke-[2.5]" />
                   </div>
-                  <span className={`text-[10px] leading-tight font-bold ${
-                    isActive ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'
-                  }`}>
-                    {item.label}
-                  </span>
                 </button>
               );
             }
@@ -1346,22 +1434,23 @@ export function App() {
                 key={item.id}
                 type="button"
                 onClick={() => setNavTab(item.id as NavigationTab)}
-                className={`flex flex-col items-center gap-0.5 py-1 px-2 rounded-2xl transition-all ${
+                title={item.label}
+                aria-label={item.label}
+                className={`flex items-center justify-center p-1.5 rounded-2xl transition-all ${
                   isActive
-                    ? 'text-gray-900 dark:text-white font-bold scale-105'
-                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 font-medium'
+                    ? 'text-gray-900 dark:text-white scale-105'
+                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
                 }`}
               >
                 <div
-                  className={`p-1.5 rounded-xl transition-all ${
+                  className={`p-2 rounded-xl transition-all ${
                     isActive
                       ? 'bg-gray-100 dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs'
                       : 'bg-transparent text-gray-400'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-5 h-5" />
                 </div>
-                <span className="text-[10px] leading-none">{item.label}</span>
               </button>
             );
           })}

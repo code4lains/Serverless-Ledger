@@ -658,7 +658,7 @@ export function LedgerManagementModal({
                         onClick={() => setNewCurrency(c.code)}
                         className={`py-1.5 px-2 rounded-xl text-xs font-medium border transition-all flex items-center justify-center gap-1 ${
                           isSelected
-                            ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 border-transparent shadow-xs'
+                            ? 'bg-indigo-600 text-white border-transparent shadow-xs'
                             : 'bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-gray-300 border-gray-100 dark:border-neutral-800 hover:bg-gray-100'
                         }`}
                       >
@@ -699,7 +699,7 @@ export function LedgerManagementModal({
                 <button
                   type="submit"
                   disabled={isSubmitting || !newName.trim()}
-                  className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-gray-900 dark:bg-white dark:text-gray-900 shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
+                  className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>{isSubmitting ? '创建中...' : '立即创建账本'}</span>

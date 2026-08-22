@@ -48,8 +48,6 @@ export function ProfileView({
   onLogout,
   onOpenAuthModal,
 }: ProfileViewProps) {
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
   const formattedDate = currentUser?.created_at
     ? new Date(currentUser.created_at).toLocaleDateString()
     : '近期';
@@ -60,8 +58,8 @@ export function ProfileView({
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 flex items-center justify-center font-black text-lg shadow-sm">
-              {currentUser?.email ? currentUser.email[0].toUpperCase() : <UserIcon className="w-6 h-6 text-gray-400 dark:text-gray-600" />}
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-sm shadow-indigo-500/20">
+              {currentUser?.email ? currentUser.email[0].toUpperCase() : <UserIcon className="w-6 h-6 text-white" />}
             </div>
             <div>
               <div className="flex items-center gap-2">
@@ -86,7 +84,7 @@ export function ProfileView({
           {currentUser ? (
             <button
               type="button"
-              onClick={() => setShowLogoutConfirm(true)}
+              onClick={onLogout}
               title="退出登录"
               className="p-2 rounded-2xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-all"
             >
@@ -96,7 +94,7 @@ export function ProfileView({
             <button
               type="button"
               onClick={onOpenAuthModal}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold shadow-xs hover:opacity-90 active:scale-95 transition-all"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all"
             >
               <LogIn className="w-3.5 h-3.5" />
               <span>登录/注册</span>
@@ -122,61 +120,75 @@ export function ProfileView({
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <BookOpen className="w-4 h-4 text-emerald-500" />
-            <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">多账本体系</h4>
+            <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
+              <BookOpen className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">多账本管理</h4>
+              <p className="text-[10px] text-gray-400">日常、生意、旅行等独立核算</p>
+            </div>
           </div>
-          <span className="text-[11px] text-gray-400">{ledgers.length} 个账本</span>
+          <button
+            type="button"
+            onClick={onOpenLedgerModal}
+            className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
+          >
+            <span>管理 ({ledgers.length})</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
 
-        {/* 简要账本列表展示 */}
-        <div className="flex flex-col gap-2 pt-1">
-          {ledgers.map((l) => (
+        {/* 账本列表快速预览 */}
+        <div className="flex flex-col gap-1.5 pt-1">
+          {ledgers.slice(0, 3).map((led) => (
             <div
-              key={l.ledger_id}
-              className="flex items-center justify-between p-2.5 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 text-xs"
+              key={led.ledger_id}
+              onClick={onOpenLedgerModal}
+              className="p-2.5 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 hover:bg-gray-100 dark:hover:bg-neutral-700/60 transition-colors flex items-center justify-between cursor-pointer text-xs"
             >
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-gray-800 dark:text-gray-200">{l.name}</span>
-                <span className="text-[10px] text-gray-400">({l.currency})</span>
-                {l.is_default === 1 && (
-                  <span className="text-[9px] px-1.5 py-0.2 rounded-md bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-medium">
-                    默认
+                <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="font-semibold text-gray-800 dark:text-gray-200">{led.name}</span>
+                {led.is_default === 1 && (
+                  <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-semibold">
+                    默认日常
                   </span>
                 )}
               </div>
+              <span className="text-[11px] text-gray-400 font-medium">{led.currency}</span>
             </div>
           ))}
+          {ledgers.length > 3 && (
+            <button
+              type="button"
+              onClick={onOpenLedgerModal}
+              className="text-[11px] text-center text-gray-400 hover:text-gray-600 py-1"
+            >
+              查看其余 {ledgers.length - 3} 个账本...
+            </button>
+          )}
         </div>
-
-        <button
-          type="button"
-          onClick={onOpenLedgerModal}
-          className="w-full py-2 rounded-xl bg-gray-100 dark:bg-neutral-700 text-gray-700 dark:text-gray-200 text-xs font-semibold hover:bg-gray-200 dark:hover:bg-neutral-600 transition-all flex items-center justify-center gap-1 mt-1"
-        >
-          <span>管理账本与新建账本</span>
-          <ChevronRight className="w-3.5 h-3.5" />
-        </button>
       </div>
 
-      {/* 3. Cloudflare 云端同步中心 */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
+      {/* 3. 云端存储与双向同步 */}
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Cloud className="w-4 h-4 text-blue-500" />
-            <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">
-              Cloudflare Serverless D1 同步
-            </h4>
+            <div className="w-7 h-7 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
+              <Cloud className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">云端存储与同步</h4>
+              <p className="text-[10px] text-gray-400">Cloudflare D1 边缘数据库</p>
+            </div>
           </div>
-          <div className="flex items-center gap-1.5 text-xs font-medium">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                serverStatus.ok ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              }`}
-            />
-            <span className={serverStatus.ok ? 'text-emerald-600' : 'text-amber-500'}>
-              {serverStatus.ok ? '在线服务中' : '离线存储'}
-            </span>
-          </div>
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+            serverStatus.ok
+              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400'
+          }`}>
+            {serverStatus.ok ? '服务在线' : '离线模式'}
+          </span>
         </div>
 
         <div className="grid grid-cols-2 gap-3 text-xs">
@@ -198,7 +210,7 @@ export function ProfileView({
           type="button"
           disabled={isSyncing}
           onClick={onSync}
-          className="w-full py-2.5 rounded-2xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold hover:opacity-90 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-xs"
+          className="w-full py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold hover:opacity-90 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2 shadow-xs shadow-indigo-500/10"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
           <span>{isSyncing ? '正在双向同步中...' : '立即同步数据至云端'}</span>
@@ -246,40 +258,8 @@ export function ProfileView({
         </p>
         <p className="text-[10px] text-gray-400">版本 v1.0.0</p>
       </div>
-
-      {/* 退出登录确认弹窗 */}
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-xs bg-white dark:bg-neutral-800 rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-gray-900 dark:text-white font-bold text-sm">
-              <AlertTriangle className="w-4 h-4 text-amber-500" />
-              <span>退出登录</span>
-            </div>
-            <p className="text-xs text-gray-600 dark:text-gray-300">
-              确认退出当前账号吗？已同步的数据均保存在您的 Cloudflare D1 云数据库中。
-            </p>
-            <div className="flex gap-2 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setShowLogoutConfirm(false)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200"
-              >
-                取消
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowLogoutConfirm(false);
-                  onLogout();
-                }}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-white bg-red-600 hover:bg-red-700 shadow-xs"
-              >
-                确认退出
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
+
+export default ProfileView;

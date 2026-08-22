@@ -254,7 +254,7 @@ export function CategoriesView({
         <button
           type="button"
           onClick={() => handleOpenAdd(null)}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold shadow-xs hover:opacity-90 active:scale-95 transition-all"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>新建大分类</span>
@@ -590,7 +590,7 @@ export function CategoriesView({
                             title={iconName}
                             className={`p-2 rounded-xl flex items-center justify-center transition-all ${
                               formIcon === iconName
-                                ? 'bg-gray-900 dark:bg-white text-white dark:text-gray-900 shadow-xs'
+                                ? 'bg-indigo-600 text-white shadow-xs'
                                 : 'bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-gray-300 hover:bg-gray-100'
                             }`}
                           >
@@ -614,7 +614,7 @@ export function CategoriesView({
                 <button
                   type="submit"
                   disabled={isSaving}
-                  className="flex-1 py-2 rounded-xl text-xs font-semibold bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:opacity-90 shadow-xs disabled:opacity-50"
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white hover:opacity-90 shadow-xs disabled:opacity-50"
                 >
                   {isSaving ? '保存中...' : '保存'}
                 </button>

@@ -205,7 +205,7 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
         {/* 标题栏与关闭按钮 */}
         <div className="flex items-center justify-between px-5 pt-4 pb-2">
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 flex items-center justify-center font-bold text-xs">
+            <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
               {tab === 'login' ? <LogIn className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
             </div>
             <h3 className="font-bold text-sm text-gray-900 dark:text-white">
@@ -340,7 +340,7 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
             <button
               type="submit"
               disabled={loading || (!!siteKey && !turnstileToken)}
-              className="w-full py-2.5 rounded-xl bg-gray-900 hover:bg-black dark:bg-white dark:hover:bg-gray-100 text-white dark:text-gray-900 font-semibold text-xs shadow-sm active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
             >
               {loading ? (
                 <>

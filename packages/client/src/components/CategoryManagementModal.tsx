@@ -249,7 +249,7 @@ export function CategoryManagementModal({
         {/* 顶部标题栏 */}
         <div className="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-100 dark:border-neutral-700/60">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gray-800 dark:bg-gray-100 text-white dark:text-gray-900 flex items-center justify-center font-bold text-sm shadow-xs">
+            <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-sm shadow-xs">
               <Tag className="w-4 h-4" />
             </div>
             <div>
@@ -294,7 +294,7 @@ export function CategoryManagementModal({
           <button
             type="button"
             onClick={() => handleOpenAdd(null)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 text-xs font-semibold shadow-xs hover:opacity-90 active:scale-95 transition-all"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>添加大类</span>
@@ -530,7 +530,7 @@ export function CategoryManagementModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-1.5 rounded-xl bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 font-medium hover:opacity-90 transition-all"
+            className="px-4 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs shadow-xs transition-all"
           >
             完成
           </button>
@@ -654,7 +654,7 @@ export function CategoryManagementModal({
                               onClick={() => setFormIcon(ic)}
                               className={`p-2 rounded-xl flex items-center justify-center transition-all ${
                                 isIconSelected
-                                  ? 'bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 shadow-xs scale-105'
+                                  ? 'bg-indigo-600 text-white shadow-xs scale-105'
                                   : 'bg-white dark:bg-neutral-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-700'
                               }`}
                               title={ic}
@@ -709,7 +709,7 @@ export function CategoryManagementModal({
                 <button
                   type="submit"
                   disabled={isSaving || !formName.trim()}
-                  className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-gray-900 dark:bg-white dark:text-gray-900 shadow-sm hover:opacity-90 disabled:opacity-40 transition-all flex items-center justify-center gap-1"
+                  className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:opacity-90 disabled:opacity-40 transition-all flex items-center justify-center gap-1"
                 >
                   {isSaving ? '保存中...' : '保存分类'}
                 </button>

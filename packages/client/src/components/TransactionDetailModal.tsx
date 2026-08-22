@@ -444,7 +444,7 @@ export function TransactionDetailModal({
                 <button
                   type="submit"
                   disabled={isSaving || !editAmountStr || parseFloat(editAmountStr) <= 0}
-                  className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-gray-900 dark:bg-white dark:text-gray-900 shadow-sm hover:opacity-90 transition-all flex items-center justify-center gap-1"
+                  className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:opacity-90 transition-all flex items-center justify-center gap-1"
                 >
                   <Save className="w-3.5 h-3.5" />
                   <span>{isSaving ? '保存中...' : '保存修改'}</span>
