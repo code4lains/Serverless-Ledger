@@ -57,6 +57,18 @@ import {
   Store,
   Wallet,
   Tag,
+  ArrowLeftRight,
+  Repeat,
+  CreditCard,
+  Download,
+  ArrowRightLeft,
+  Landmark,
+  Send,
+  HandCoins,
+  BadgeDollarSign,
+  ArrowDownRight,
+  ArrowDownLeft,
+  ArrowUpRight,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -147,6 +159,20 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Store,
   Wallet,
   Tag,
+
+  // 转账与借贷
+  ArrowLeftRight,
+  Repeat,
+  CreditCard,
+  Download,
+  ArrowRightLeft,
+  Landmark,
+  Send,
+  HandCoins,
+  BadgeDollarSign,
+  ArrowDownRight,
+  ArrowDownLeft,
+  ArrowUpRight,
 };
 
 export function CategoryIcon({ icon, className = 'w-4 h-4', size }: CategoryIconProps) {

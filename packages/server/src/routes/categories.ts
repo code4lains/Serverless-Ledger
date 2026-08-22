@@ -3,6 +3,7 @@ import { Env, AppVariables } from '../types';
 import {
   ApiResponse,
   Category,
+  CategoryType,
   CategoryTreeNode,
   getDefaultCategories,
   buildCategoryTree,
@@ -14,11 +15,11 @@ const categoriesRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
  * 获取系统默认分类字典 (纯净初始定义)
  */
 categoriesRouter.get('/defaults', async (c) => {
-  const type = c.req.query('type') as 'expense' | 'income' | undefined;
+  const type = c.req.query('type') as CategoryType | undefined;
   const format = c.req.query('format');
 
   let list = getDefaultCategories();
-  if (type === 'expense' || type === 'income') {
+  if (type) {
     list = list.filter((item) => item.type === type);
   }
 
@@ -39,7 +40,7 @@ categoriesRouter.get('/tree', async (c) => {
   try {
     const authUser = c.get('user');
     const userId = authUser?.userId || c.req.query('userId') || null;
-    const type = c.req.query('type') as 'expense' | 'income' | undefined;
+    const type = c.req.query('type') as CategoryType | undefined;
 
     let query = 'SELECT * FROM categories WHERE (user_id IS NULL';
     const params: any[] = [];
@@ -50,7 +51,7 @@ categoriesRouter.get('/tree', async (c) => {
     }
     query += ')';
 
-    if (type === 'expense' || type === 'income') {
+    if (type) {
       query += ' AND type = ?';
       params.push(type);
     }
@@ -88,7 +89,7 @@ categoriesRouter.get('/', async (c) => {
   try {
     const authUser = c.get('user');
     const userId = authUser?.userId || c.req.query('userId') || null;
-    const type = c.req.query('type') as 'expense' | 'income' | undefined;
+    const type = c.req.query('type') as CategoryType | undefined;
     const format = c.req.query('format');
 
     let query = 'SELECT * FROM categories WHERE (user_id IS NULL';
@@ -100,7 +101,7 @@ categoriesRouter.get('/', async (c) => {
     }
     query += ')';
 
-    if (type === 'expense' || type === 'income') {
+    if (type) {
       query += ' AND type = ?';
       params.push(type);
     }
@@ -131,7 +132,7 @@ categoriesRouter.get('/', async (c) => {
     return c.json(res);
   } catch (err: any) {
     let list = getDefaultCategories();
-    const type = c.req.query('type') as 'expense' | 'income' | undefined;
+    const type = c.req.query('type') as CategoryType | undefined;
     if (type) {
       list = list.filter((item) => item.type === type);
     }

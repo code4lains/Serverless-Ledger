@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS ledgers (
 CREATE TABLE IF NOT EXISTS categories (
     category_id TEXT PRIMARY KEY,
     user_id TEXT, -- NULL 代表系统预置公共分类
-    type TEXT NOT NULL CHECK (type IN ('expense', 'income')),
+    type TEXT NOT NULL CHECK (type IN ('expense', 'income', 'transfer', 'loan')),
     parent_id TEXT, -- NULL 为大类，有值为小类
     name TEXT NOT NULL,
     icon TEXT,
@@ -167,5 +167,24 @@ INSERT OR IGNORE INTO categories (category_id, user_id, type, parent_id, name, i
 ('cat_inc_oth_refund', NULL, 'income', 'cat_inc_other', '退款返还', 'RotateCcw', 122),
 ('cat_inc_oth_second', NULL, 'income', 'cat_inc_other', '闲置二手', 'Store', 123),
 ('cat_inc_oth_windfall', NULL, 'income', 'cat_inc_other', '意外所得', 'Sparkles', 124),
-('cat_inc_oth_misc', NULL, 'income', 'cat_inc_other', '其它入账', 'Tag', 125);
+('cat_inc_oth_misc', NULL, 'income', 'cat_inc_other', '其它入账', 'Tag', 125),
+
+-- 转账大类与小类
+-- 1. 资金互转
+('cat_tr_mutual', NULL, 'transfer', NULL, '资金互转', 'ArrowLeftRight', 200),
+('cat_tr_internal', NULL, 'transfer', 'cat_tr_mutual', '内部转账', 'Repeat', 201),
+('cat_tr_credit', NULL, 'transfer', 'cat_tr_mutual', '信用卡还款', 'CreditCard', 202),
+('cat_tr_topup', NULL, 'transfer', 'cat_tr_mutual', '充值提现', 'Download', 203),
+('cat_tr_invest', NULL, 'transfer', 'cat_tr_mutual', '理财转存', 'TrendingUp', 204),
+('cat_tr_other', NULL, 'transfer', 'cat_tr_mutual', '其他转账', 'ArrowRightLeft', 205),
+
+-- 借贷大类与小类
+-- 1. 借款贷款
+('cat_loan_main', NULL, 'loan', NULL, '借款贷款', 'Landmark', 300),
+('cat_loan_lend', NULL, 'loan', 'cat_loan_main', '借出款项', 'Send', 301),
+('cat_loan_borrow', NULL, 'loan', 'cat_loan_main', '借入款项', 'HandCoins', 302),
+('cat_loan_repay', NULL, 'loan', 'cat_loan_main', '偿还借款', 'RotateCcw', 303),
+('cat_loan_collect', NULL, 'loan', 'cat_loan_main', '收回借款', 'BadgeDollarSign', 304),
+('cat_loan_social', NULL, 'loan', 'cat_loan_main', '人情往来', 'Users', 305),
+('cat_loan_platform', NULL, 'loan', 'cat_loan_main', '平台借还', 'Smartphone', 306);
 

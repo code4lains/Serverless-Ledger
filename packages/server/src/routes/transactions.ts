@@ -64,8 +64,9 @@ transactionsRouter.get('/', async (c) => {
     }
 
     if (search && search.trim()) {
-      query += ' AND remark LIKE ?';
-      params.push(`%${search.trim()}%`);
+      const kw = `%${search.trim()}%`;
+      query += ' AND (remark LIKE ? OR from_account LIKE ? OR to_account LIKE ?)';
+      params.push(kw, kw, kw);
     }
 
     query += ' ORDER BY transaction_date DESC, created_at DESC LIMIT ?';

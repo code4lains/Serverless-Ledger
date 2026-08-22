@@ -7,6 +7,9 @@ export type TransactionType = 'expense' | 'income' | 'transfer' | 'loan';
 export type BudgetPeriod = 'monthly' | 'yearly';
 export type SyncStatus = 'synced' | 'pending' | 'conflict';
 
+export type CategoryType = 'expense' | 'income' | 'transfer' | 'loan';
+export type LoanType = 'lend' | 'borrow' | 'repay' | 'collect';
+
 /**
  * 1. 用户表模型
  */
@@ -37,7 +40,7 @@ export interface Ledger {
 export interface Category {
   category_id: string;
   user_id?: string | null; // null 表示系统预置分类
-  type: 'expense' | 'income';
+  type: CategoryType;
   parent_id?: string | null; // null 为大分类，有值为小分类
   name: string;
   icon?: string;
@@ -145,5 +148,17 @@ export interface TransactionDayGroup {
   displayDate: string; // e.g. "今天 · 8月21日 星期五"
   totalExpense: number; // 分
   totalIncome: number; // 分
+  totalTransfer: number; // 分
   transactions: Transaction[];
+}
+
+export interface TotalsSummary {
+  totalExpense: number; // 分
+  totalIncome: number; // 分
+  totalTransfer: number; // 分
+  totalLoanLent: number; // 借出 (流出)
+  totalLoanBorrowed: number; // 借入 (流入)
+  totalLoanRepaid: number; // 还款 (流出)
+  totalLoanCollected: number; // 收款 (流入)
+  balance: number; // 结余 (分)
 }

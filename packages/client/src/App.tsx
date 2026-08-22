@@ -4,6 +4,8 @@ import {
   PlusCircle,
   ArrowDownLeft,
   ArrowUpRight,
+  ArrowRightLeft,
+  Landmark,
   RefreshCw,
   Moon,
   Sun,
@@ -23,11 +25,16 @@ import {
   Search,
   Filter,
   Inbox,
+  Send,
+  HandCoins,
+  RotateCcw,
+  BadgeDollarSign,
 } from 'lucide-react';
 import {
   Transaction,
   Category,
   TransactionType,
+  LoanType,
   AuthUser,
   formatMoney,
   toCents,
@@ -54,6 +61,7 @@ import {
 import { AuthModal } from './components/AuthModal';
 import { CategoryIcon } from './components/CategoryIcon';
 import { CategoryPicker } from './components/CategoryPicker';
+import { AccountPicker } from './components/AccountPicker';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
 
 export function App() {
@@ -69,6 +77,9 @@ export function App() {
   const [amountStr, setAmountStr] = useState<string>('');
   const [remark, setRemark] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [fromAccount, setFromAccount] = useState<string>('微信零钱');
+  const [toAccount, setToAccount] = useState<string>('招商银行');
+  const [loanType, setLoanType] = useState<LoanType>('lend');
   const [recordDateType, setRecordDateType] = useState<'today' | 'yesterday' | 'beforeYesterday' | 'custom'>('today');
   const [customDate, setCustomDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
@@ -80,7 +91,7 @@ export function App() {
   const [pendingCount, setPendingCount] = useState<number>(0);
 
   // 筛选状态
-  const [filterType, setFilterType] = useState<'all' | 'expense' | 'income'>('all');
+  const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
 
   // 初始化暗黑主题
@@ -157,6 +168,31 @@ export function App() {
     }
   };
 
+  // 切换借贷子模式
+  const handleLoanTypeChange = (lt: LoanType) => {
+    setLoanType(lt);
+    const categoryMap: Record<LoanType, string> = {
+      lend: 'cat_loan_lend',
+      borrow: 'cat_loan_borrow',
+      repay: 'cat_loan_repay',
+      collect: 'cat_loan_collect',
+    };
+    setSelectedCategory(categoryMap[lt] || 'cat_loan_lend');
+    if (lt === 'lend') {
+      setFromAccount('微信零钱');
+      setToAccount('张三');
+    } else if (lt === 'borrow') {
+      setFromAccount('李四');
+      setToAccount('招商银行');
+    } else if (lt === 'repay') {
+      setFromAccount('支付宝');
+      setToAccount('李四');
+    } else if (lt === 'collect') {
+      setFromAccount('张三');
+      setToAccount('微信零钱');
+    }
+  };
+
   // 提交记账 (3秒快速极简记账)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,7 +204,7 @@ export function App() {
     const ledgerId = currentUser?.default_ledger_id || 'default_ledger';
     const txDate = getCalculatedTransactionDate();
 
-    await createTransaction({
+    const txData: any = {
       transaction_id: txId,
       user_id: userId,
       ledger_id: ledgerId,
@@ -177,7 +213,14 @@ export function App() {
       category_id: selectedCategory || null,
       transaction_date: txDate,
       remark: remark.trim() || null,
-    });
+    };
+
+    if (activeTab === 'transfer' || activeTab === 'loan') {
+      txData.from_account = fromAccount.trim() || null;
+      txData.to_account = toAccount.trim() || null;
+    }
+
+    await createTransaction(txData);
 
     // 快速重置并刷新
     setAmountStr('');
@@ -221,27 +264,36 @@ export function App() {
     setSelectedTxForDetail(null);
   };
 
-  // 记账 Tab 切换处理
+  // 记账 Tab 切换处理 (支出 / 收入 / 转账 / 借贷)
   const handleTabChange = (type: TransactionType) => {
     setActiveTab(type);
-    setSelectedCategory(getInitialCategoryId(type, categories));
+    if (type === 'transfer') {
+      setSelectedCategory('cat_tr_internal');
+      if (!fromAccount) setFromAccount('微信零钱');
+      if (!toAccount) setToAccount('招商银行');
+    } else if (type === 'loan') {
+      handleLoanTypeChange(loanType);
+    } else {
+      setSelectedCategory(getInitialCategoryId(type, categories));
+    }
   };
 
   // 过滤后的流水列表
-
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t) => {
       // 类型筛选
       if (filterType !== 'all' && t.type !== filterType) {
         return false;
       }
-      // 搜索关键词 (匹配备注或分类名)
+      // 搜索关键词 (匹配备注、分类名或账户名)
       if (searchKeyword.trim()) {
         const kw = searchKeyword.trim().toLowerCase();
         const catMeta = getCategoryMeta(t.category_id, categories, t.type);
         const matchRemark = t.remark && t.remark.toLowerCase().includes(kw);
         const matchCat = catMeta.fullPath.toLowerCase().includes(kw) || catMeta.name.toLowerCase().includes(kw);
-        return matchRemark || matchCat;
+        const matchFrom = t.from_account && t.from_account.toLowerCase().includes(kw);
+        const matchTo = t.to_account && t.to_account.toLowerCase().includes(kw);
+        return matchRemark || matchCat || matchFrom || matchTo;
       }
 
       return true;
@@ -252,6 +304,7 @@ export function App() {
   const totals = useMemo(() => {
     return calculateTotals(transactions);
   }, [transactions]);
+
 
   // 按天分组的流水明细
   const dayGroups = useMemo(() => {
@@ -351,16 +404,18 @@ export function App() {
           )}
         </div>
 
-        {/* 概览卡片 (单账本收支汇总) */}
+        {/* 概览卡片 (单账本收支与转账借贷汇总) */}
         <div className="bg-gradient-to-br from-neutral-800 to-neutral-900 text-white rounded-3xl p-5 shadow-md">
           <div className="flex justify-between items-center text-xs text-neutral-400 mb-1">
             <span>默认日常账本 · 结余 (CNY)</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-700 text-neutral-300">单账本模式</span>
           </div>
-          <div className="text-2xl font-extrabold tracking-tight mb-4">
+          <div className="text-2xl font-extrabold tracking-tight mb-3">
             {formatMoney(totals.balance)}
           </div>
-          <div className="grid grid-cols-2 gap-4 pt-3 border-t border-neutral-700/60 text-xs">
+
+          {/* 收支统计 */}
+          <div className="grid grid-cols-2 gap-3 pt-3 border-t border-neutral-700/60 text-xs">
             <div>
               <div className="text-neutral-400 flex items-center gap-1">
                 <ArrowDownLeft className="w-3.5 h-3.5 text-[#D08770]" /> 总支出
@@ -374,17 +429,40 @@ export function App() {
               <div className="text-sm font-semibold mt-0.5 text-[#A3BE8C]">{formatMoney(totals.totalIncome)}</div>
             </div>
           </div>
+
+          {/* 转账与借贷辅助汇总 */}
+          {(totals.totalTransfer > 0 || (totals.totalLoanLent + totals.totalLoanBorrowed + totals.totalLoanRepaid + totals.totalLoanCollected) > 0) && (
+            <div className="grid grid-cols-2 gap-3 pt-2.5 mt-2.5 border-t border-neutral-700/40 text-[11px]">
+              <div>
+                <div className="text-neutral-400 flex items-center gap-1">
+                  <ArrowRightLeft className="w-3 h-3 text-blue-400" /> 内部转账
+                </div>
+                <div className="font-medium mt-0.5 text-blue-300">{formatMoney(totals.totalTransfer)}</div>
+              </div>
+              <div>
+                <div className="text-neutral-400 flex items-center gap-1">
+                  <Landmark className="w-3 h-3 text-purple-400" /> 借贷流动
+                </div>
+                <div className="font-medium mt-0.5 text-purple-300 flex items-center gap-1.5">
+                  <span>出: {formatMoney(totals.totalLoanLent + totals.totalLoanRepaid)}</span>
+                  <span>·</span>
+                  <span>入: {formatMoney(totals.totalLoanBorrowed + totals.totalLoanCollected)}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 3秒极简记账录入区 */}
         <div className="bg-white dark:bg-neutral-800 rounded-3xl p-4 shadow-sm border border-gray-100 dark:border-neutral-700">
-          {/* 类型切换 (支出 / 收入) */}
+          {/* 类型切换 (支出 / 收入 / 转账 / 借贷) */}
           <div className="flex bg-gray-100 dark:bg-neutral-900 rounded-2xl p-1 mb-3.5">
-            {(['expense', 'income'] as TransactionType[]).map((type) => {
-              const labels: Record<string, string> = {
-                expense: '支出',
-                income: '收入',
-              };
+            {([
+              { type: 'expense', label: '支出' },
+              { type: 'income', label: '收入' },
+              { type: 'transfer', label: '转账' },
+              { type: 'loan', label: '借贷' },
+            ] as const).map(({ type, label }) => {
               const isActive = activeTab === type;
               return (
                 <button
@@ -397,14 +475,42 @@ export function App() {
                       : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
                   }`}
                 >
-                  {labels[type]}
+                  {label}
                 </button>
               );
             })}
           </div>
 
-
           <form onSubmit={handleSubmit} className="flex flex-col gap-3.5">
+            {/* 借贷子类型切换 (借出 / 借入 / 还款 / 收款) */}
+            {activeTab === 'loan' && (
+              <div className="flex bg-purple-50/70 dark:bg-purple-950/30 rounded-2xl p-1 border border-purple-100 dark:border-purple-900/40">
+                {([
+                  { type: 'lend', label: '借出 (借给他人)', icon: Send },
+                  { type: 'borrow', label: '借入 (向人借款)', icon: HandCoins },
+                  { type: 'repay', label: '还款 (偿还欠款)', icon: RotateCcw },
+                  { type: 'collect', label: '收款 (收回外借)', icon: BadgeDollarSign },
+                ] as const).map(({ type: lt, label, icon: Icon }) => {
+                  const isLtActive = loanType === lt;
+                  return (
+                    <button
+                      key={lt}
+                      type="button"
+                      onClick={() => handleLoanTypeChange(lt)}
+                      className={`flex-1 py-1.5 px-1 text-[11px] font-semibold rounded-xl transition-all flex items-center justify-center gap-1 ${
+                        isLtActive
+                          ? 'bg-white dark:bg-neutral-800 text-purple-700 dark:text-purple-300 shadow-xs'
+                          : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                      }`}
+                    >
+                      <Icon className="w-3 h-3 shrink-0" />
+                      <span>{label.slice(0, 2)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             {/* 金额输入框与快捷填充 */}
             <div className="flex flex-col gap-1.5">
               <div className="relative">
@@ -422,7 +528,7 @@ export function App() {
 
               {/* 快捷金额预设 */}
               <div className="flex gap-1.5 overflow-x-auto no-scrollbar text-[11px]">
-                {[10, 20, 50, 100, 200].map((preset) => (
+                {[10, 20, 50, 100, 200, 500].map((preset) => (
                   <button
                     key={preset}
                     type="button"
@@ -446,6 +552,71 @@ export function App() {
                 )}
               </div>
             </div>
+
+            {/* 转账账户选择器 (仅转账类型显示) */}
+            {activeTab === 'transfer' && (
+              <div className="flex flex-col gap-1">
+                <div className="text-[11px] font-medium text-gray-400 px-0.5">转账账户与路径</div>
+                <AccountPicker
+                  fromAccount={fromAccount}
+                  toAccount={toAccount}
+                  onChangeFrom={setFromAccount}
+                  onChangeTo={setToAccount}
+                  fromLabel="转出账户"
+                  toLabel="转入账户"
+                  fromPlaceholder="例如：微信零钱"
+                  toPlaceholder="例如：招商银行"
+                />
+              </div>
+            )}
+
+            {/* 借贷账户/对象选择器 (仅借贷类型显示) */}
+            {activeTab === 'loan' && (
+              <div className="flex flex-col gap-1">
+                <div className="text-[11px] font-medium text-gray-400 px-0.5">借贷相关账户与对象</div>
+                <AccountPicker
+                  fromAccount={fromAccount}
+                  toAccount={toAccount}
+                  onChangeFrom={setFromAccount}
+                  onChangeTo={setToAccount}
+                  fromLabel={
+                    loanType === 'lend'
+                      ? '出资账户 (资金来源)'
+                      : loanType === 'borrow'
+                      ? '出资人/机构 (债权人)'
+                      : loanType === 'repay'
+                      ? '付款账户 (出资账户)'
+                      : '还款人/债务人'
+                  }
+                  toLabel={
+                    loanType === 'lend'
+                      ? '借款人 (资金去向)'
+                      : loanType === 'borrow'
+                      ? '存入账户 (收款账户)'
+                      : loanType === 'repay'
+                      ? '债权人/还给谁'
+                      : '收款账户 (存入账户)'
+                  }
+                  fromPlaceholder={
+                    loanType === 'lend' ? '如：微信零钱' : loanType === 'borrow' ? '如：李四 / 微粒贷' : loanType === 'repay' ? '如：招商银行' : '如：张三'
+                  }
+                  toPlaceholder={
+                    loanType === 'lend' ? '如：张三' : loanType === 'borrow' ? '如：招商银行' : loanType === 'repay' ? '如：李四' : '如：微信零钱'
+                  }
+                  fromPresets={
+                    loanType === 'borrow' || loanType === 'collect'
+                      ? ['张三', '李四', '王五', '微粒贷', '花呗/借呗', '亲友']
+                      : ['微信零钱', '支付宝', '招商银行', '工商银行', '现金']
+                  }
+                  toPresets={
+                    loanType === 'lend' || loanType === 'repay'
+                      ? ['张三', '李四', '王五', '微粒贷', '花呗/借呗', '亲友']
+                      : ['微信零钱', '支付宝', '招商银行', '工商银行', '建设银行']
+                  }
+                  showSwap={false}
+                />
+              </div>
+            )}
 
             {/* 大类 + 小类二级联动分类选择器 */}
             <div className="flex flex-col gap-1">
@@ -535,7 +706,16 @@ export function App() {
                 disabled={!amountStr || parseFloat(amountStr) <= 0}
                 className="px-5 py-2 rounded-xl bg-gray-900 dark:bg-white text-white dark:text-gray-900 font-semibold text-xs shadow-sm hover:opacity-90 active:scale-95 disabled:opacity-40 transition-all flex items-center gap-1.5"
               >
-                <PlusCircle className="w-4 h-4" /> 记一笔
+                <PlusCircle className="w-4 h-4" />
+                <span>
+                  {activeTab === 'expense'
+                    ? '记支出'
+                    : activeTab === 'income'
+                    ? '记收入'
+                    : activeTab === 'transfer'
+                    ? '记转账'
+                    : '记借贷'}
+                </span>
               </button>
             </div>
           </form>
@@ -552,18 +732,24 @@ export function App() {
               <span className="text-[11px] text-gray-400">共 {filteredTransactions.length} 笔记录</span>
             </div>
 
-            {/* 筛选切换 (全部 / 支出 / 收入) & 搜索 */}
+            {/* 筛选切换 (全部 / 支出 / 收入 / 转账 / 借贷) & 搜索 */}
             <div className="flex items-center gap-2">
-              <div className="flex bg-gray-100 dark:bg-neutral-900 rounded-xl p-0.5 text-xs">
-                {(['all', 'expense', 'income'] as const).map((t) => {
-                  const labels = { all: '全部', expense: '支出', income: '收入' };
+              <div className="flex bg-gray-100 dark:bg-neutral-900 rounded-xl p-0.5 text-xs overflow-x-auto no-scrollbar">
+                {(['all', 'expense', 'income', 'transfer', 'loan'] as const).map((t) => {
+                  const labels: Record<string, string> = {
+                    all: '全部',
+                    expense: '支出',
+                    income: '收入',
+                    transfer: '转账',
+                    loan: '借贷',
+                  };
                   const isCur = filterType === t;
                   return (
                     <button
                       key={t}
                       type="button"
                       onClick={() => setFilterType(t)}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                      className={`px-2 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                         isCur
                           ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs'
                           : 'text-gray-500 hover:text-gray-800'
@@ -580,7 +766,7 @@ export function App() {
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="搜索备注或分类..."
+                  placeholder="搜索备注、分类或账户..."
                   value={searchKeyword}
                   onChange={(e) => setSearchKeyword(e.target.value)}
                   className="w-full pl-7 pr-3 py-1 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none"
@@ -611,6 +797,9 @@ export function App() {
                       {group.totalIncome > 0 && (
                         <span>收: <strong className="text-[#A3BE8C]">{formatMoney(group.totalIncome)}</strong></span>
                       )}
+                      {group.totalTransfer > 0 && (
+                        <span>转: <strong className="text-blue-500">{formatMoney(group.totalTransfer)}</strong></span>
+                      )}
                     </div>
                   </div>
 
@@ -618,7 +807,28 @@ export function App() {
                   <div className="bg-gray-50/70 dark:bg-neutral-900/50 rounded-2xl p-1.5 flex flex-col divide-y divide-gray-100 dark:divide-neutral-800">
                     {group.transactions.map((tx) => {
                       const isExpense = tx.type === 'expense';
+                      const isIncome = tx.type === 'income';
+                      const isTransfer = tx.type === 'transfer';
+                      const isLoan = tx.type === 'loan';
+                      const isLoanInflow = isLoan && (tx.category_id === 'cat_loan_borrow' || tx.category_id === 'cat_loan_collect');
                       const catMeta = getCategoryMeta(tx.category_id, categories, tx.type);
+
+                      // 构造副标题描述
+                      const getSubtitle = () => {
+                        const parts = [formatTime(tx.transaction_date)];
+                        if (isTransfer) {
+                          parts.push(`${tx.from_account || '账户'} ➔ ${tx.to_account || '账户'}`);
+                        } else if (isLoan) {
+                          const loanTag = tx.category_id === 'cat_loan_borrow' ? '借入' : tx.category_id === 'cat_loan_repay' ? '还款' : tx.category_id === 'cat_loan_collect' ? '收款' : '借出';
+                          parts.push(`[${loanTag}] ${tx.from_account || '出资方'} ➔ ${tx.to_account || '收款方'}`);
+                        }
+                        if (tx.remark) {
+                          parts.push(tx.remark);
+                        }
+                        return parts;
+                      };
+
+                      const subtitleParts = getSubtitle();
 
                       return (
                         <div
@@ -632,23 +842,31 @@ export function App() {
                               className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 ${
                                 isExpense
                                   ? 'bg-orange-100/70 dark:bg-orange-950/40 text-[#D08770]'
-                                  : 'bg-emerald-100/70 dark:bg-emerald-950/40 text-[#A3BE8C]'
+                                  : isIncome
+                                  ? 'bg-emerald-100/70 dark:bg-emerald-950/40 text-[#A3BE8C]'
+                                  : isTransfer
+                                  ? 'bg-blue-100/70 dark:bg-blue-950/40 text-blue-500'
+                                  : isLoanInflow
+                                  ? 'bg-indigo-100/70 dark:bg-indigo-950/40 text-indigo-500'
+                                  : 'bg-purple-100/70 dark:bg-purple-950/40 text-purple-500'
                               }`}
                             >
                               <CategoryIcon icon={catMeta.icon} className="w-4 h-4" />
                             </div>
                             <div>
                               <div className="text-xs font-semibold text-gray-800 dark:text-gray-200">
-                                {catMeta.fullPath}
+                                {isTransfer
+                                  ? `${catMeta.name} · ${tx.from_account || '转出'} ➔ ${tx.to_account || '转入'}`
+                                  : catMeta.fullPath}
                               </div>
                               <div className="text-[10px] text-gray-400 flex items-center gap-1.5">
-                                <span>{formatTime(tx.transaction_date)}</span>
-                                {tx.remark && (
-                                  <>
+                                <span>{subtitleParts[0]}</span>
+                                {subtitleParts.slice(1).map((part, idx) => (
+                                  <React.Fragment key={idx}>
                                     <span>·</span>
-                                    <span className="max-w-[140px] truncate">{tx.remark}</span>
-                                  </>
-                                )}
+                                    <span className="max-w-[140px] truncate">{part}</span>
+                                  </React.Fragment>
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -658,10 +876,26 @@ export function App() {
                             <div>
                               <div
                                 className={`text-xs font-bold ${
-                                  isExpense ? 'text-gray-900 dark:text-white' : 'text-[#A3BE8C]'
+                                  isExpense
+                                    ? 'text-gray-900 dark:text-white'
+                                    : isIncome
+                                    ? 'text-[#A3BE8C]'
+                                    : isTransfer
+                                    ? 'text-blue-600 dark:text-blue-400'
+                                    : isLoanInflow
+                                    ? 'text-indigo-600 dark:text-indigo-400'
+                                    : 'text-purple-600 dark:text-purple-400'
                                 }`}
                               >
-                                {isExpense ? '-' : '+'}
+                                {isExpense
+                                  ? '-'
+                                  : isIncome
+                                  ? '+'
+                                  : isTransfer
+                                  ? '↔ '
+                                  : isLoanInflow
+                                  ? '+ '
+                                  : '- '}
                                 {formatMoney(tx.amount)}
                               </div>
                             </div>
@@ -684,6 +918,7 @@ export function App() {
             </div>
           )}
         </div>
+
 
         {/* 登录/注册 弹窗 */}
         <AuthModal

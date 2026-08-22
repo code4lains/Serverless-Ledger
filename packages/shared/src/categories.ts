@@ -1,4 +1,4 @@
-import { Category, TransactionType } from './models.js';
+import { Category, TransactionType, CategoryType } from './models.js';
 
 /**
  * 分类树节点结构 (大类及所包含的子分类)
@@ -15,10 +15,10 @@ export interface CategoryMeta {
   category_id: string;
   name: string;
   icon: string;
-  type: 'expense' | 'income';
+  type: CategoryType;
   parent_id?: string | null;
   parentName?: string;
-  fullPath: string; // 例如: "餐饮美食 · 早餐" 或 "职业收入"
+  fullPath: string; // 例如: "餐饮美食 · 早餐" 或 "职业收入" 或 "资金互转 · 内部转账"
   isParent: boolean;
 }
 
@@ -118,6 +118,25 @@ export const DEFAULT_CATEGORIES: ReadonlyArray<Category> = [
   { category_id: 'cat_inc_oth_second', user_id: null, type: 'income', parent_id: 'cat_inc_other', name: '闲置二手', icon: 'Store', sort_order: 123, created_at: STATIC_TIME, updated_at: STATIC_TIME },
   { category_id: 'cat_inc_oth_windfall', user_id: null, type: 'income', parent_id: 'cat_inc_other', name: '意外所得', icon: 'Sparkles', sort_order: 124, created_at: STATIC_TIME, updated_at: STATIC_TIME },
   { category_id: 'cat_inc_oth_misc', user_id: null, type: 'income', parent_id: 'cat_inc_other', name: '其它入账', icon: 'Tag', sort_order: 125, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+
+  // ================= 转账 (Transfer) =================
+  // 1. 资金互转
+  { category_id: 'cat_tr_mutual', user_id: null, type: 'transfer', parent_id: null, name: '资金互转', icon: 'ArrowLeftRight', sort_order: 200, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_tr_internal', user_id: null, type: 'transfer', parent_id: 'cat_tr_mutual', name: '内部转账', icon: 'Repeat', sort_order: 201, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_tr_credit', user_id: null, type: 'transfer', parent_id: 'cat_tr_mutual', name: '信用卡还款', icon: 'CreditCard', sort_order: 202, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_tr_topup', user_id: null, type: 'transfer', parent_id: 'cat_tr_mutual', name: '充值提现', icon: 'Download', sort_order: 203, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_tr_invest', user_id: null, type: 'transfer', parent_id: 'cat_tr_mutual', name: '理财转存', icon: 'TrendingUp', sort_order: 204, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_tr_other', user_id: null, type: 'transfer', parent_id: 'cat_tr_mutual', name: '其他转账', icon: 'ArrowRightLeft', sort_order: 205, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+
+  // ================= 借贷 (Loan) =================
+  // 1. 借款贷款
+  { category_id: 'cat_loan_main', user_id: null, type: 'loan', parent_id: null, name: '借款贷款', icon: 'Landmark', sort_order: 300, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_loan_lend', user_id: null, type: 'loan', parent_id: 'cat_loan_main', name: '借出款项', icon: 'Send', sort_order: 301, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_loan_borrow', user_id: null, type: 'loan', parent_id: 'cat_loan_main', name: '借入款项', icon: 'HandCoins', sort_order: 302, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_loan_repay', user_id: null, type: 'loan', parent_id: 'cat_loan_main', name: '偿还借款', icon: 'RotateCcw', sort_order: 303, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_loan_collect', user_id: null, type: 'loan', parent_id: 'cat_loan_main', name: '收回借款', icon: 'BadgeDollarSign', sort_order: 304, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_loan_social', user_id: null, type: 'loan', parent_id: 'cat_loan_main', name: '人情往来', icon: 'Users', sort_order: 305, created_at: STATIC_TIME, updated_at: STATIC_TIME },
+  { category_id: 'cat_loan_platform', user_id: null, type: 'loan', parent_id: 'cat_loan_main', name: '平台借还', icon: 'Smartphone', sort_order: 306, created_at: STATIC_TIME, updated_at: STATIC_TIME },
 ];
 
 /**
@@ -142,19 +161,44 @@ export function getDefaultIncomeCategories(): Category[] {
 }
 
 /**
+ * 获取默认转账分类
+ */
+export function getDefaultTransferCategories(): Category[] {
+  return getDefaultCategories().filter((c) => c.type === 'transfer');
+}
+
+/**
+ * 获取默认借贷分类
+ */
+export function getDefaultLoanCategories(): Category[] {
+  return getDefaultCategories().filter((c) => c.type === 'loan');
+}
+
+/**
  * 获取指定类型的首选默认分类 ID
  */
 export function getInitialCategoryId(type: TransactionType = 'expense', customCategories?: Category[]): string {
   const list = customCategories && customCategories.length > 0 ? customCategories : DEFAULT_CATEGORIES;
-  const targetType = type === 'income' ? 'income' : 'expense';
-  const match = list.find((c) => c.type === targetType && !c.parent_id);
-  return match?.category_id || (targetType === 'expense' ? 'cat_exp_food' : 'cat_inc_salary');
+  const match = list.find((c) => c.type === type && !c.parent_id);
+  if (match) return match.category_id;
+
+  switch (type) {
+    case 'income':
+      return 'cat_inc_salary';
+    case 'transfer':
+      return 'cat_tr_mutual';
+    case 'loan':
+      return 'cat_loan_main';
+    case 'expense':
+    default:
+      return 'cat_exp_food';
+  }
 }
 
 /**
  * 将扁平分类数组组织成二级树状结构 (大类 -> 子类数组)
  */
-export function buildCategoryTree(categories: Category[], type?: 'expense' | 'income'): CategoryTreeNode[] {
+export function buildCategoryTree(categories: Category[], type?: CategoryType): CategoryTreeNode[] {
   const filtered = type ? categories.filter((c) => c.type === type) : categories;
   const parentNodes: CategoryTreeNode[] = [];
   const parentMap = new Map<string, CategoryTreeNode>();
@@ -193,17 +237,30 @@ export function getCategoryMeta(
   fallbackType: TransactionType = 'expense'
 ): CategoryMeta {
   const list = categoriesList && categoriesList.length > 0 ? categoriesList : DEFAULT_CATEGORIES;
-  const defaultExpenseName = '日常支出';
-  const defaultIncomeName = '日常收入';
+
+  const defaultNames: Record<TransactionType, string> = {
+    expense: '日常支出',
+    income: '日常收入',
+    transfer: '账户转账',
+    loan: '借贷往来',
+  };
+
+  const defaultIcons: Record<TransactionType, string> = {
+    expense: 'Tag',
+    income: 'Tag',
+    transfer: 'ArrowLeftRight',
+    loan: 'Landmark',
+  };
 
   if (!categoryId) {
-    const isExp = fallbackType === 'expense';
+    const name = defaultNames[fallbackType] || '日常收支';
+    const icon = defaultIcons[fallbackType] || 'Tag';
     return {
       category_id: '',
-      name: isExp ? defaultExpenseName : defaultIncomeName,
-      icon: 'Tag',
-      type: isExp ? 'expense' : 'income',
-      fullPath: isExp ? defaultExpenseName : defaultIncomeName,
+      name,
+      icon,
+      type: fallbackType,
+      fullPath: name,
       isParent: true,
     };
   }
@@ -213,8 +270,8 @@ export function getCategoryMeta(
     return {
       category_id: categoryId,
       name: '分类',
-      icon: 'Tag',
-      type: fallbackType === 'income' ? 'income' : 'expense',
+      icon: defaultIcons[fallbackType] || 'Tag',
+      type: fallbackType,
       fullPath: '分类',
       isParent: false,
     };
@@ -226,7 +283,7 @@ export function getCategoryMeta(
     return {
       category_id: current.category_id,
       name: current.name,
-      icon: current.icon || parent?.icon || 'Tag',
+      icon: current.icon || parent?.icon || defaultIcons[current.type] || 'Tag',
       type: current.type,
       parent_id: current.parent_id,
       parentName,
@@ -238,7 +295,7 @@ export function getCategoryMeta(
   return {
     category_id: current.category_id,
     name: current.name,
-    icon: current.icon || 'Tag',
+    icon: current.icon || defaultIcons[current.type] || 'Tag',
     type: current.type,
     fullPath: current.name,
     isParent: true,

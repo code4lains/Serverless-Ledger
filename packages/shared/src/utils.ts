@@ -1,4 +1,4 @@
-import { Transaction, TransactionDayGroup } from './models.js';
+import { Transaction, TransactionDayGroup, TotalsSummary } from './models.js';
 
 /**
  * 格式化日期为 YYYY-MM-DD
@@ -84,12 +84,15 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
   for (const [dateKey, list] of map.entries()) {
     let totalExpense = 0;
     let totalIncome = 0;
+    let totalTransfer = 0;
 
     for (const tx of list) {
       if (tx.type === 'expense') {
         totalExpense += tx.amount;
       } else if (tx.type === 'income') {
         totalIncome += tx.amount;
+      } else if (tx.type === 'transfer') {
+        totalTransfer += tx.amount;
       }
     }
 
@@ -98,6 +101,7 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
       displayDate: list[0] ? formatRelativeDate(list[0].transaction_date) : dateKey,
       totalExpense,
       totalIncome,
+      totalTransfer,
       transactions: list,
     });
   }
@@ -106,27 +110,45 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
 }
 
 /**
- * 计算账单流水的总支出、总收入与结余
+ * 计算账单流水的总支出、总收入、转账、借贷与结余
  */
-export function calculateTotals(transactions: Transaction[]): {
-  totalExpense: number;
-  totalIncome: number;
-  balance: number;
-} {
+export function calculateTotals(transactions: Transaction[]): TotalsSummary {
   let totalExpense = 0;
   let totalIncome = 0;
+  let totalTransfer = 0;
+  let totalLoanLent = 0;
+  let totalLoanBorrowed = 0;
+  let totalLoanRepaid = 0;
+  let totalLoanCollected = 0;
 
   for (const tx of transactions) {
     if (tx.type === 'expense') {
       totalExpense += tx.amount;
     } else if (tx.type === 'income') {
       totalIncome += tx.amount;
+    } else if (tx.type === 'transfer') {
+      totalTransfer += tx.amount;
+    } else if (tx.type === 'loan') {
+      if (tx.category_id === 'cat_loan_borrow') {
+        totalLoanBorrowed += tx.amount;
+      } else if (tx.category_id === 'cat_loan_repay') {
+        totalLoanRepaid += tx.amount;
+      } else if (tx.category_id === 'cat_loan_collect') {
+        totalLoanCollected += tx.amount;
+      } else {
+        totalLoanLent += tx.amount;
+      }
     }
   }
 
   return {
     totalExpense,
     totalIncome,
+    totalTransfer,
+    totalLoanLent,
+    totalLoanBorrowed,
+    totalLoanRepaid,
+    totalLoanCollected,
     balance: totalIncome - totalExpense,
   };
 }

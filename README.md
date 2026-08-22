@@ -8,6 +8,9 @@
 
 ```
 Serverless-Ledger/
+├── functions/                 # Cloudflare Pages Functions 全栈一体化适配层
+│   └── api/
+│       └── [[route]].ts       # 路由代理层：将 /api/* 请求无缝对接 Hono API
 ├── packages/
 │   ├── shared/                # 前后端共享类型定义、DTO 模型与金额计算工具
 │   │   ├── src/
@@ -15,9 +18,9 @@ Serverless-Ledger/
 │   │   │   ├── money.ts       # 整数分 (Integer Cents) 与 元 的安全高精度换算
 │   │   │   └── index.ts
 │   │   └── package.json
-│   ├── server/                # 后端 API (Cloudflare Workers + Hono.js + D1)
+│   ├── server/                # 后端 API (Cloudflare Workers / Pages Functions + Hono.js + D1)
 │   │   ├── src/
-│   │   │   ├── routes/        # /api/health, /api/categories, /api/ledgers, /api/transactions
+│   │   │   ├── routes/        # /api/health, /api/auth, /api/categories, /api/ledgers, /api/transactions
 │   │   │   └── index.ts       # Hono 应用入口、CORS 中间件与错误捕获
 │   │   ├── migrations/        # Cloudflare D1 SQLite 结构与种子数据迁移脚本
 │   │   │   └── 0001_initial_schema.sql
@@ -25,7 +28,7 @@ Serverless-Ledger/
 │   │   └── package.json
 │   └── client/                # 前端 (React 18 + Vite + Tailwind CSS + Dexie.js)
 │       ├── src/
-│       │   ├── api/           # API 客户端 (支持请求 Cloudflare Workers API)
+│       │   ├── api/           # API 客户端 (支持离线优先 + 自动增量同步)
 │       │   ├── db/            # Dexie.js 本地 IndexedDB 数据库 (离线优先)
 │       │   ├── App.tsx        # 极简记账交互 (3秒记账流、莫兰迪色系、Dark Mode)
 │       │   └── main.tsx
@@ -80,15 +83,59 @@ npm run dev
 
 ---
 
-## 4. 跨平台打包指南 (Multi-platform Packaging)
+## 4. Cloudflare 线上部署指南 (Production Deployment)
 
-### 4.1 Web 端 (Cloudflare Pages)
-```bash
-npm run build:client
-# 产物位于 packages/client/dist，可直接一键部署到 Cloudflare Pages
-```
+本项目支持 **Cloudflare Pages 全栈一体化部署**（前端页面 + 后端 API + D1 数据库共享同源域名，零 CORS 困扰，仅需连接一次 GitHub）。
 
-### 4.2 移动端 (Capacitor for Android / iOS)
+### 4.1 第一步：创建 D1 数据库并初始化表结构
+1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/)。
+2. 进入左侧侧边栏：**Storage & Databases（存储和数据库）** ➔ **D1 SQL Database**。
+3. 点击 **Create database（创建数据库）**：
+   - 数据库名称填入：`serverless_ledger_db`
+   - 点击 **Create** 保存。
+4. 进入该数据库详情页，切换到 **Console（控制台）** 标签页。
+5. 打开项目中的 `packages/server/migrations/0001_initial_schema.sql` 文件，复制里面的全部 SQL 语句，粘贴进控制台并点击 **Execute（执行）**。
+   *(执行完成后切换到 **Tables** 标签页，确认 `users`、`ledgers`、`categories`、`transactions`、`budgets` 5 张表已生成并包含系统预置分类)*。
+
+### 4.2 第二步：在 Cloudflare Pages 导入 GitHub 仓库并部署
+1. 在 Cloudflare 控制台左侧进入 **Compute (Workers) / Workers & Pages**。
+2. 点击 **Create application（创建应用程序）** ➔ 切换到 **Pages** 标签页 ➔ 点击 **Connect to Git（连接到 Git）**。
+3. 选择已推送到 GitHub 的 `Serverless-Ledger` 仓库，点击 **Begin setup（开始设置）**。
+4. 配置构建参数：
+   - **Project name（项目名称）**：`serverless-ledger`（可自定义）
+   - **Production branch（生产分支）**：`main`（或 `master`）
+   - **Framework preset（框架预设）**：`None` 或 `Vite`
+   - **Root directory（根目录）**：留空或填 `/`
+   - **Build command（构建命令）**：
+     ```bash
+     npm run build:client
+     ```
+   - **Build output directory（构建输出目录）**：
+     ```bash
+     packages/client/dist
+     ```
+5. 点击底部的 **Save and Deploy（保存并部署）**。
+
+### 4.3 第三步：绑定 D1 数据库与密钥
+1. 首次部署完成后，进入该 Pages 项目的管理详情页。
+2. 点击顶部导航栏 **Settings（设置）** ➔ 左侧侧边栏选择 **Functions（函数）**。
+3. 向下滚动找到 **D1 Database Bindings（D1 数据库绑定）**，点击 **Add binding（添加绑定）**：
+   - **Variable name（变量名称）**：填 `DB`（必须大写）
+   - **D1 database（数据库）**：在下拉列表中选中第 4.1 步创建的 `serverless_ledger_db`
+   - 点击 **Save（保存）**。
+4. *(可选)* 在同一页面的 **Environment Variables（环境变量）** 中添加：
+   - **Variable name**：`JWT_SECRET`
+   - **Value**：输入一段自定义的随机强密钥（用于 JWT 鉴权加签）。
+5. **重试部署使绑定生效**：
+   - 切换到 **Deployments（部署）** 页面，在最近一条部署记录右侧点击 **`...` ➔ Retry deployment（重试部署）**。
+
+部署完成后，打开 Pages 分配的域名（形如 `https://serverless-ledger.pages.dev`）即可直接开始使用！
+
+---
+
+## 5. 跨平台客户端打包指南 (Multi-platform Packaging)
+
+### 5.1 移动端 (Capacitor for Android / iOS)
 ```bash
 # 1. 编译前端产物
 npm run build:client
@@ -105,7 +152,7 @@ npm run -w @ledger/client cap:open:android
 npm run -w @ledger/client cap:open:ios
 ```
 
-### 4.3 桌面端 (Tauri for Windows / macOS / Linux)
+### 5.2 桌面端 (Tauri for Windows / macOS / Linux)
 ```bash
 # 开发模式 (启动桌面窗口并热重载)
 npm run tauri:dev
@@ -113,22 +160,3 @@ npm run tauri:dev
 # 生成安装包 (Windows .msi/.exe, macOS .dmg/app, Linux .deb/AppImage)
 npm run tauri:build
 ```
-
----
-
-## 5. Cloudflare 线上部署 (Production Deployment)
-
-### 5.1 部署 Workers API
-1. 在 Cloudflare 控制台创建 D1 数据库：
-   ```bash
-   npx wrangler d1 create serverless_ledger_db
-   ```
-2. 将生成的 `database_id` 填入 `packages/server/wrangler.toml` 中的 `database_id` 字段。
-3. 执行云端 D1 数据库迁移：
-   ```bash
-   npm run db:migrate:remote
-   ```
-4. 部署 API Worker：
-   ```bash
-   npm run -w @ledger/server deploy
-   ```

@@ -15,7 +15,7 @@ export function CategoryPicker({
   selectedCategoryId,
   onSelectCategory,
 }: CategoryPickerProps) {
-  const targetType = type === 'income' ? 'income' : 'expense';
+  const targetType = type;
 
   // 构建大类及子分类树形结构
   const categoryTree = useMemo(() => {
