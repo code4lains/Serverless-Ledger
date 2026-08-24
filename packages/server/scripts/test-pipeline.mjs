@@ -1,8 +1,16 @@
 import assert from 'node:assert';
+import { execSync } from 'node:child_process';
 
 const BASE = 'http://127.0.0.1:8787';
 
 async function testPipeline() {
+  try {
+    execSync(
+      'npx wrangler d1 execute serverless_ledger_db --local --command "INSERT OR REPLACE INTO invite_codes (code, creator_id, status) VALUES (\'INV-SYSTEM1\', \'system_root\', \'unused\'), (\'INV-SYSTEM2\', \'system_root\', \'unused\'), (\'INV-WELCOME\', \'system_root\', \'unused\'), (\'INV-OFFLINE\', \'system_root\', \'unused\');"',
+      { stdio: 'ignore' }
+    );
+  } catch {}
+
   console.log('--- 1. Testing Health Endpoint ---');
   const healthRes = await fetch(`${BASE}/api/health`);
   assert.strictEqual(healthRes.status, 200, 'Health endpoint should return 200');
@@ -11,11 +19,20 @@ async function testPipeline() {
   assert.strictEqual(healthJson.success, true);
   assert.strictEqual(healthJson.data.database.status, 'connected');
 
-  console.log('\n--- 2. Testing User Registration (JWT Auth) ---');
+  console.log('\n--- 1.1 Testing Auth Config Endpoint (/api/auth/config) ---');
+  const configRes = await fetch(`${BASE}/api/auth/config`);
+  assert.strictEqual(configRes.status, 200, 'Auth config endpoint should return 200');
+  const configJson = await configRes.json();
+  console.log('Auth Config Response:', configJson);
+  assert.strictEqual(configJson.success, true);
+  assert.strictEqual(configJson.data.reg_mode, 1, 'Default REG_MODE must be 1 (Invite Mode)');
+
+  console.log('\n--- 2. Testing User Registration (Invite Mode & JWT Auth) ---');
   const testEmail = `user_${Date.now()}@example.com`;
   const testPassword = 'Password123!';
 
-  const regRes = await fetch(`${BASE}/api/auth/register`, {
+  // 2.1 拒绝无邀请码注册 (REG_MODE=1)
+  const noInviteRes = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -23,15 +40,81 @@ async function testPipeline() {
       password: testPassword,
     }),
   });
-  assert.strictEqual(regRes.status, 201, 'Registration should return 201 Created');
+  assert.strictEqual(noInviteRes.status, 400, 'Registration without invite code must return 400 when REG_MODE=1');
+  const noInviteJson = await noInviteRes.json();
+  console.log('No Invite Code Error Response:', noInviteJson);
+  assert.strictEqual(noInviteJson.success, false);
+
+  // 2.2 拒绝无效邀请码注册
+  const badInviteRes = await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      password: testPassword,
+      invite_code: 'INV-INVALID999',
+    }),
+  });
+  assert.strictEqual(badInviteRes.status, 400, 'Registration with invalid invite code must return 400');
+  const badInviteJson = await badInviteRes.json();
+  console.log('Invalid Invite Code Error Response:', badInviteJson);
+  assert.strictEqual(badInviteJson.success, false);
+
+  // 2.3 使用有效预置邀请码注册
+  const regRes = await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      password: testPassword,
+      invite_code: 'INV-SYSTEM1',
+    }),
+  });
+  assert.strictEqual(regRes.status, 201, 'Registration with valid invite code should return 201 Created');
   const regJson = await regRes.json();
   console.log('Registration Response:', regJson);
   assert.strictEqual(regJson.success, true);
   assert(regJson.data.token, 'Token must be present in register response');
   assert.strictEqual(regJson.data.user.email, testEmail);
   assert(regJson.data.user.default_ledger_id, 'Default ledger should be automatically created');
+  assert(regJson.data.new_recovery_code, 'New recovery code must be returned upon registration');
+  assert.strictEqual(regJson.data.new_recovery_code.length, 8, 'Recovery code must be exactly 8 characters');
   const userToken = regJson.data.token;
   const registeredUserId = regJson.data.user.user_id;
+  const registeredRecoveryCode = regJson.data.new_recovery_code;
+
+  // 2.4 拒绝已被使用的邀请码二次注册 (防一码多用)
+  const reuseInviteRes = await fetch(`${BASE}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: `another_${Date.now()}@example.com`,
+      password: testPassword,
+      invite_code: 'INV-SYSTEM1',
+    }),
+  });
+  assert.strictEqual(reuseInviteRes.status, 400, 'Reusing consumed invite code must return 400');
+  const reuseInviteJson = await reuseInviteRes.json();
+  console.log('Consumed Invite Code Error Response:', reuseInviteJson);
+  assert.strictEqual(reuseInviteJson.success, false);
+
+  console.log('\n--- 2.5 Testing Invite Codes Endpoint Before Transactions (/api/auth/invite-codes) ---');
+  const initialInviteRes = await fetch(`${BASE}/api/auth/invite-codes`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(initialInviteRes.status, 200);
+  const initialInviteJson = await initialInviteRes.json();
+  console.log('Initial User Invite Info (No transactions yet):', initialInviteJson.data);
+  assert.strictEqual(initialInviteJson.data.has_recorded_transaction, false);
+  assert.strictEqual(initialInviteJson.data.total_eligible, 0);
+  assert.strictEqual(initialInviteJson.data.can_generate, false);
+
+  // 尝试未满足记账条件时非法生成邀请码 -> 400
+  const illegalClaimRes = await fetch(`${BASE}/api/auth/invite-codes`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(illegalClaimRes.status, 400, 'Claiming invite code before conditions met must return 400');
 
   console.log('\n--- 3. Testing Duplicate Registration Prevention ---');
   const dupRes = await fetch(`${BASE}/api/auth/register`, {
@@ -40,6 +123,7 @@ async function testPipeline() {
     body: JSON.stringify({
       email: testEmail,
       password: 'AnotherPassword456',
+      invite_code: 'INV-SYSTEM2',
     }),
   });
   assert.strictEqual(dupRes.status, 400, 'Duplicate registration should return 400');
@@ -61,12 +145,13 @@ async function testPipeline() {
   assert.strictEqual(wrongLoginJson.success, false);
 
   console.log('\n--- 5. Testing User Login with Valid Password ---');
+  let currentPassword = testPassword;
   const loginRes = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       email: testEmail,
-      password: testPassword,
+      password: currentPassword,
     }),
   });
   assert.strictEqual(loginRes.status, 200, 'Login with correct credentials should return 200');
@@ -75,6 +160,57 @@ async function testPipeline() {
   assert.strictEqual(loginJson.success, true);
   assert(loginJson.data.token, 'Login response must provide valid JWT token');
   assert.strictEqual(loginJson.data.user.email, testEmail);
+  assert.strictEqual(loginJson.data.user.recovery_code, registeredRecoveryCode, 'Login user must have bound recovery code');
+
+  console.log('\n--- 5.5 Testing Password Reset via Recovery Code (/api/auth/reset-password) ---');
+  // 5.5.1 错误恢复码重置密码拒绝 -> 400
+  const wrongResetRes = await fetch(`${BASE}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      recovery_code: 'BADCODE8',
+      new_password: 'NewPassword789!',
+    }),
+  });
+  assert.strictEqual(wrongResetRes.status, 400, 'Reset with invalid recovery code must return 400');
+  const wrongResetJson = await wrongResetRes.json();
+  console.log('Invalid Recovery Code Error Response:', wrongResetJson);
+  assert.strictEqual(wrongResetJson.success, false);
+
+  // 5.5.2 正确恢复码 (测试小写输入以验证大小写不敏感) 重置密码成功 -> 200
+  const correctResetRes = await fetch(`${BASE}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      email: testEmail,
+      recovery_code: registeredRecoveryCode.toLowerCase(), // 小写输入测试
+      new_password: 'NewPassword789!',
+    }),
+  });
+  assert.strictEqual(correctResetRes.status, 200, 'Reset with valid recovery code should return 200');
+  const correctResetJson = await correctResetRes.json();
+  console.log('Password Reset Success Response:', correctResetJson);
+  assert.strictEqual(correctResetJson.success, true);
+
+  // 5.5.3 旧密码登录被拒 -> 401
+  const oldLoginRes = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: testEmail, password: testPassword }),
+  });
+  assert.strictEqual(oldLoginRes.status, 401, 'Login with old password after reset must return 401');
+
+  // 5.5.4 新密码登录成功 -> 200
+  currentPassword = 'NewPassword789!';
+  const newLoginRes = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: testEmail, password: currentPassword }),
+  });
+  assert.strictEqual(newLoginRes.status, 200, 'Login with new password must return 200');
+  const newLoginJson = await newLoginRes.json();
+  assert.strictEqual(newLoginJson.success, true);
 
   console.log('\n--- 6. Testing Protected /api/auth/me Endpoint ---');
   // 6.1 Without Token -> 401
@@ -487,6 +623,17 @@ async function testPipeline() {
   assert.strictEqual(createJson.data.amount, 5200);
   assert.strictEqual(createJson.data.user_id, registeredUserId);
 
+  // 8.1.1 验证记账后用户激活了邀请资格 (has_recorded_transaction = true)
+  const afterTxInviteRes = await fetch(`${BASE}/api/auth/invite-codes`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(afterTxInviteRes.status, 200);
+  const afterTxInviteJson = await afterTxInviteRes.json();
+  console.log('Invite Info after Recording 1st Transaction:', afterTxInviteJson.data);
+  assert.strictEqual(afterTxInviteJson.data.has_recorded_transaction, true, 'User should now have recorded transactions');
+  assert.strictEqual(afterTxInviteJson.data.total_eligible, 0, 'Should have 0 eligible codes because registration is < 3 days');
+  assert(afterTxInviteJson.data.next_unlock_date, 'Should indicate unlock date at Day 3');
+
   // 8.2 创建转账流水 (Transfer)
   const transferTx = {
     transaction_id: `tx_tr_${Date.now()}`,
@@ -846,7 +993,38 @@ async function testPipeline() {
   assert.strictEqual(verifyCsvJson.data.length, 5, 'All 5 imported CSV transactions must exist in D1');
   console.log('CSV Batch Import Verified Successfully in Cloudflare D1!');
 
-  console.log('\n🎉 ALL PIPELINE, MULTI-LEDGER, BUDGET & CSV IMPORT TESTS PASSED SUCCESSFULLY! 🎉');
+  console.log('\n--- 17. Testing Account Deletion (Deregistration) & Data Cascade Cleanup ---');
+  // 17.1 未携带 Token 调用注销接口 -> 401
+  const unauthDelAcc = await fetch(`${BASE}/api/auth/account`, { method: 'DELETE' });
+  assert.strictEqual(unauthDelAcc.status, 401, 'Deleting account without token must return 401');
+
+  // 17.2 携带有效 Token 调用注销接口 -> 200
+  const delAccRes = await fetch(`${BASE}/api/auth/account`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delAccRes.status, 200, 'Account deletion should return 200 OK');
+  const delAccJson = await delAccRes.json();
+  console.log('Account Deletion Response:', delAccJson);
+  assert.strictEqual(delAccJson.success, true);
+
+  // 17.3 注销后使用原账号密码登录 -> 401
+  const loginAfterDel = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: testEmail, password: currentPassword }),
+  });
+  assert.strictEqual(loginAfterDel.status, 401, 'Login with deleted account must fail with 401');
+  console.log('Login after account deletion rejected as expected: 401 Unauthorized');
+
+  // 17.4 注销后使用原 Token 访问受保护接口 -> 404 (用户不存在或已注销)
+  const meAfterDel = await fetch(`${BASE}/api/auth/me`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(meAfterDel.status, 404, 'Accessing /api/auth/me with token of deleted user must return 404');
+  console.log('Account Deletion & Data Cascade Cleanup Verified Successfully!');
+
+  console.log('\n🎉 ALL PIPELINE, RECOVERY CODES, PASSWORD RESET, ACCOUNT DELETION & CSV TESTS PASSED! 🎉');
 
 }
 

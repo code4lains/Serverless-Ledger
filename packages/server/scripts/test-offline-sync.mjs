@@ -1,8 +1,16 @@
 import assert from 'node:assert';
+import { execSync } from 'node:child_process';
 
 const BASE = 'http://127.0.0.1:8787';
 
 async function testOfflineSync() {
+  try {
+    execSync(
+      'npx wrangler d1 execute serverless_ledger_db --local --command "INSERT OR REPLACE INTO invite_codes (code, creator_id, status) VALUES (\'INV-SYSTEM1\', \'system_root\', \'unused\'), (\'INV-SYSTEM2\', \'system_root\', \'unused\'), (\'INV-WELCOME\', \'system_root\', \'unused\'), (\'INV-OFFLINE\', \'system_root\', \'unused\');"',
+      { stdio: 'ignore' }
+    );
+  } catch {}
+
   console.log('====================================================');
   console.log('🧪 TEST: Phase 7.3 Offline Caching & Sync Verification');
   console.log('====================================================');
@@ -14,7 +22,7 @@ async function testOfflineSync() {
   const regRes = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: testEmail, password: testPassword }),
+    body: JSON.stringify({ email: testEmail, password: testPassword, invite_code: 'INV-OFFLINE' }),
   });
   assert.strictEqual(regRes.status, 201);
   const regJson = await regRes.json();

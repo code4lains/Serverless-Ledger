@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "tsc && node scripts/test-categories.mjs && node scripts/test-budget.mjs && node scripts/test-csv-import-export.mjs"
+    "test": "tsc && node scripts/test-categories.mjs && node scripts/test-budget.mjs && node scripts/test-csv-import-export.mjs && node scripts/test-invite-eligibility.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

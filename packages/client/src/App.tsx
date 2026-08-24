@@ -89,6 +89,8 @@ import { StatisticsView } from './components/StatisticsView';
 import { CategoriesView } from './components/CategoriesView';
 import { ProfileView } from './components/ProfileView';
 import { DataManagementModal } from './components/DataManagementModal';
+import { RecoveryCodeModal } from './components/RecoveryCodeModal';
+import { DeleteAccountModal } from './components/DeleteAccountModal';
 
 export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profile';
 
@@ -107,6 +109,9 @@ export function App() {
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState<boolean>(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState<boolean>(false);
   const [dataModalMode, setDataModalMode] = useState<'export' | 'import'>('export');
+  const [isRecoveryCodeModalOpen, setIsRecoveryCodeModalOpen] = useState<boolean>(false);
+  const [activeRecoveryCode, setActiveRecoveryCode] = useState<string>('');
+  const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState<boolean>(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
   const [feedbackToast, setFeedbackToast] = useState<{ message: string; type?: 'success' | 'info' | 'error' } | null>(null);
@@ -470,10 +475,23 @@ export function App() {
   };
 
   // 登录/注册成功回调
-  const handleAuthSuccess = async (user: AuthUser) => {
+  const handleAuthSuccess = async (user: AuthUser, newRecoveryCode?: string | null) => {
     setCurrentUser(user);
     setIsAuthModalOpen(false);
     await loadUserData(user);
+    if (newRecoveryCode) {
+      setActiveRecoveryCode(newRecoveryCode);
+      setIsRecoveryCodeModalOpen(true);
+    }
+  };
+
+  // 账号注销成功回调
+  const handleDeleteAccountSuccess = async () => {
+    setIsDeleteAccountModalOpen(false);
+    clearSession();
+    setCurrentUser(null);
+    await loadGuestData();
+    showToast('账号及所有关联数据已成功注销', 'info');
   };
 
   // 流水修改回调
@@ -1381,8 +1399,32 @@ export function App() {
             }}
             onLogout={handleRequestLogout}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenDeleteAccountModal={() => setIsDeleteAccountModalOpen(true)}
+            onOpenRecoveryCodeModal={(code) => {
+              setActiveRecoveryCode(code);
+              setIsRecoveryCodeModalOpen(true);
+            }}
           />
         )}
+
+        {/* 密码恢复凭证弹窗 */}
+        <RecoveryCodeModal
+          isOpen={isRecoveryCodeModalOpen}
+          recoveryCode={activeRecoveryCode}
+          userEmail={currentUser?.email}
+          onClose={() => setIsRecoveryCodeModalOpen(false)}
+        />
+
+        {/* 注销账号确认弹窗 (含一键备份) */}
+        <DeleteAccountModal
+          isOpen={isDeleteAccountModalOpen}
+          currentUser={currentUser}
+          ledgers={ledgers}
+          categories={categories}
+          transactions={transactions}
+          onClose={() => setIsDeleteAccountModalOpen(false)}
+          onDeleteSuccess={handleDeleteAccountSuccess}
+        />
 
         {/* 数据与资产管理 弹窗 (白皮书 7.3: CSV 导入与导出) */}
         <DataManagementModal

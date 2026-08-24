@@ -25,11 +25,18 @@ import {
   FolderDown,
   Download,
   Upload,
+  Ticket,
+  Copy,
+  Check,
+  Plus,
+  KeyRound,
+  Trash2,
 } from 'lucide-react';
-import { AuthUser, Ledger, Transaction } from '@ledger/shared';
+import { AuthUser, Ledger, Transaction, InviteEligibilityInfo } from '@ledger/shared';
 import { networkMonitor, NetworkInfo } from '../api/network';
 import { syncManager, SyncStats } from '../api/syncManager';
 import { getLocalStorageStats } from '../db';
+import { getInviteCodes, claimInviteCode } from '../api/client';
 
 interface ProfileViewProps {
   currentUser: AuthUser | null;
@@ -46,6 +53,8 @@ interface ProfileViewProps {
   onOpenDataModal?: (initialTab?: 'export' | 'import') => void;
   onLogout: () => void;
   onOpenAuthModal?: () => void;
+  onOpenDeleteAccountModal?: () => void;
+  onOpenRecoveryCodeModal?: (code: string) => void;
 }
 
 
@@ -64,6 +73,8 @@ export function ProfileView({
   onOpenDataModal,
   onLogout,
   onOpenAuthModal,
+  onOpenDeleteAccountModal,
+  onOpenRecoveryCodeModal,
 }: ProfileViewProps) {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo>(() => networkMonitor.getInfo());
   const [syncStats, setSyncStats] = useState<SyncStats>(() => syncManager.getStats());
@@ -76,6 +87,12 @@ export function ProfileView({
     pendingTransactions: number;
     totalPending: number;
   } | null>(null);
+
+  const [inviteInfo, setInviteInfo] = useState<InviteEligibilityInfo | null>(null);
+  const [loadingInviteInfo, setLoadingInviteInfo] = useState(false);
+  const [claimingInvite, setClaimingInvite] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState('');
 
   useEffect(() => {
     const unsubNet = networkMonitor.subscribe((info) => setNetworkInfo(info));
@@ -90,6 +107,49 @@ export function ProfileView({
   useEffect(() => {
     getLocalStorageStats().then((stats) => setStorageStats(stats));
   }, [transactions.length, pendingCount, isSyncing]);
+
+  useEffect(() => {
+    if (currentUser) {
+      setLoadingInviteInfo(true);
+      getInviteCodes()
+        .then((res) => {
+          if (res.success && res.data) {
+            setInviteInfo(res.data);
+          }
+        })
+        .finally(() => setLoadingInviteInfo(false));
+    } else {
+      setInviteInfo(null);
+    }
+  }, [currentUser?.user_id, transactions.length]);
+
+  const handleClaimInvite = async () => {
+    setClaimingInvite(true);
+    setInviteError('');
+    try {
+      const res = await claimInviteCode();
+      if (res.success) {
+        const refreshed = await getInviteCodes();
+        if (refreshed.success && refreshed.data) {
+          setInviteInfo(refreshed.data);
+        }
+      } else {
+        setInviteError(res.error || '获取邀请码失败');
+      }
+    } catch (err: any) {
+      setInviteError(err.message || '网络异常');
+    } finally {
+      setClaimingInvite(false);
+    }
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopiedCode(code);
+    setTimeout(() => {
+      setCopiedCode((curr) => (curr === code ? null : curr));
+    }, 2000);
+  };
 
   const formattedDate = currentUser?.created_at
     ? new Date(currentUser.created_at).toLocaleDateString()
@@ -124,7 +184,7 @@ export function ProfileView({
                     ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
                     : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400'
                 }`}>
-                  <ShieldCheck className="w-3 h-3" />
+                  <ShieldCheck className="w-3.5 h-3.5" />
                   <span>{currentUser ? '已加密' : '未登录'}</span>
                 </span>
               </div>
@@ -168,6 +228,128 @@ export function ProfileView({
           </div>
         )}
       </div>
+
+      {/* 1.5 我的邀请码专区 (仅登录用户显示) */}
+      {currentUser && (
+        <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 flex items-center justify-center font-bold text-xs">
+                <Ticket className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">我的邀请码</h4>
+                <p className="text-[10px] text-gray-400">邀请好友注册 · 旧用户专享</p>
+              </div>
+            </div>
+
+            {inviteInfo && (
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 font-semibold">
+                已获取 {inviteInfo.claimed_count}/{inviteInfo.max_limit}
+              </span>
+            )}
+          </div>
+
+          {/* 规则说明与状态提示 */}
+          <div className="p-3 rounded-2xl bg-gray-50/80 dark:bg-neutral-900/40 border border-gray-100 dark:border-neutral-800/80 flex flex-col gap-1 text-[11px] text-gray-600 dark:text-gray-300">
+            <div className="flex items-start gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-purple-500 shrink-0 mt-0.5" />
+              <span className="leading-relaxed">
+                规则说明：注册完成且记账后第 3 天可获取第 1 个邀请码，随后每 30 天可获取 1 个，上限 3 个。
+              </span>
+            </div>
+
+            {inviteInfo && !inviteInfo.has_recorded_transaction && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium pl-5">
+                • 需先记录至少一笔账单以激活邀请资格。
+              </p>
+            )}
+
+            {inviteInfo && inviteInfo.has_recorded_transaction && !inviteInfo.can_generate && inviteInfo.claimed_count < inviteInfo.max_limit && inviteInfo.next_unlock_date && (
+              <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium pl-5">
+                • 下一个邀请码将于 {new Date(inviteInfo.next_unlock_date).toLocaleDateString()} 解锁。
+              </p>
+            )}
+
+            {inviteInfo && inviteInfo.claimed_count >= inviteInfo.max_limit && (
+              <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium pl-5">
+                • 您已成功获取全部 3 个邀请码。
+              </p>
+            )}
+          </div>
+
+          {inviteError && (
+            <div className="p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/50 text-xs text-red-600 dark:text-red-400">
+              {inviteError}
+            </div>
+          )}
+
+          {/* 邀请码列表 */}
+          {inviteInfo && inviteInfo.invite_codes && inviteInfo.invite_codes.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {inviteInfo.invite_codes.map((item) => (
+                <div
+                  key={item.code}
+                  className="p-2.5 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 flex items-center justify-between text-xs"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-gray-900 dark:text-white tracking-wider text-xs bg-white dark:bg-neutral-800 px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700">
+                      {item.code}
+                    </span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                      item.status === 'unused'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+                        : 'bg-gray-200 dark:bg-neutral-700 text-gray-500 dark:text-gray-400'
+                    }`}>
+                      {item.status === 'unused' ? '未使用' : '已被使用'}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleCopyCode(item.code)}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white dark:bg-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-700 text-indigo-600 dark:text-indigo-400 border border-gray-200 dark:border-neutral-700 font-medium transition-all active:scale-95"
+                  >
+                    {copiedCode === item.code ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-500" />
+                        <span className="text-emerald-600 dark:text-emerald-400">已复制</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>复制</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 生成/获取邀请码按钮 */}
+          {inviteInfo && inviteInfo.can_generate && (
+            <button
+              type="button"
+              disabled={claimingInvite}
+              onClick={handleClaimInvite}
+              className="w-full py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-semibold hover:opacity-90 active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-1.5 shadow-xs shadow-purple-500/20"
+            >
+              {claimingInvite ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>正在生成邀请码...</span>
+                </>
+              ) : (
+                <>
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>获取新邀请码 (可获取 {inviteInfo.total_eligible - inviteInfo.claimed_count} 个)</span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 2. 多账本管理中心 */}
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
@@ -455,6 +637,57 @@ export function ProfileView({
           </button>
         </div>
       </div>
+
+      {/* 4.5 账号安全与危险操作 (仅登录状态下显示) */}
+      {currentUser && (
+        <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-3">
+          <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">账号与安全</h4>
+
+          <div className="flex flex-col gap-2 pt-1">
+            {/* 查看/备份密码恢复码 */}
+            {currentUser.recovery_code && (
+              <div className="p-3 rounded-2xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/40 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                    <KeyRound className="w-3.5 h-3.5" />
+                  </div>
+                  <div>
+                    <span className="font-semibold text-gray-800 dark:text-gray-200 block">密码恢复凭证</span>
+                    <span className="text-[10px] text-gray-400">用于找回/重置登录密码</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenRecoveryCodeModal && onOpenRecoveryCodeModal(currentUser.recovery_code!)}
+                  className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-800 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-amber-200 dark:border-amber-900/50 text-[11px] font-semibold text-amber-700 dark:text-amber-300 transition-all active:scale-95 shadow-2xs"
+                >
+                  查看凭证
+                </button>
+              </div>
+            )}
+
+            {/* 注销账户危险入口 */}
+            <div className="p-3 rounded-2xl bg-red-50/50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/30 flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-xl bg-red-100 dark:bg-red-900/50 text-red-600 dark:text-red-400 flex items-center justify-center">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-semibold text-red-700 dark:text-red-300 block">注销当前账号</span>
+                  <span className="text-[10px] text-red-500/80">永久删除云端及本地所有记录</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onOpenDeleteAccountModal}
+                className="px-2.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-[11px] font-semibold transition-all active:scale-95 shadow-xs shadow-red-500/20"
+              >
+                注销账号
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. 关于账盾 */}
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-2 text-center text-xs">

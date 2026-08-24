@@ -17,6 +17,8 @@ export interface User {
   user_id: string;
   email: string;
   password_hash?: string;
+  invited_by?: string | null;
+  recovery_code?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -243,6 +245,33 @@ export interface AuthUser {
   email: string;
   created_at: string;
   default_ledger_id?: string;
+  invited_by?: string | null;
+  recovery_code?: string | null;
+}
+
+export interface AuthConfig {
+  reg_mode: number; // 0: 关闭注册, 1: 邀请注册模式 (默认), 2: 自由注册模式
+}
+
+export type InviteCodeStatus = 'unused' | 'used' | 'expired';
+
+export interface InviteCode {
+  code: string;
+  creator_id: string;
+  used_by?: string | null;
+  status: InviteCodeStatus;
+  created_at: string;
+  used_at?: string | null;
+}
+
+export interface InviteEligibilityInfo {
+  total_eligible: number; // 当前已解锁可获取的总配额 (0 ~ 3)
+  claimed_count: number; // 当前已生成的邀请码数量
+  can_generate: boolean; // 是否可立即生成/领取新的邀请码 (claimed_count < total_eligible && claimed_count < 3)
+  max_limit: number; // 最大上限 (3)
+  has_recorded_transaction: boolean; // 是否已写入过记账数据
+  next_unlock_date: string | null; // 下一个邀请码解锁时间 (ISO 格式，若已达上限或未记账则为 null)
+  invite_codes: InviteCode[];
 }
 
 export interface RegisterRequest {
@@ -250,6 +279,7 @@ export interface RegisterRequest {
   password: string;
   name?: string;
   turnstile_token?: string;
+  invite_code?: string;
 }
 
 export interface LoginRequest {
@@ -258,10 +288,18 @@ export interface LoginRequest {
   turnstile_token?: string;
 }
 
+export interface ResetPasswordRequest {
+  email: string;
+  recovery_code: string;
+  new_password: string;
+  turnstile_token?: string;
+}
+
 export interface AuthResponse {
   user: AuthUser;
   token: string;
   expires_in: number;
+  new_recovery_code?: string | null; // 若本次登录或注册时新生成了密码恢复码，则在此返回给客户端展示
 }
 
 export interface TransactionFilter {

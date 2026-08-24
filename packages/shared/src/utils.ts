@@ -152,3 +152,76 @@ export function calculateTotals(transactions: Transaction[]): TotalsSummary {
     balance: totalIncome - totalExpense,
   };
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export interface InviteEligibilityCalculation {
+  total_eligible: number; // 0, 1, 2, 3
+  claimed_count: number;
+  can_generate: boolean;
+  max_limit: number; // 3
+  has_recorded_transaction: boolean;
+  next_unlock_date: string | null;
+}
+
+/**
+ * 计算旧用户的邀请码获取资格
+ * 规则：旧用户注册完成且写入过记账数据后第 3 天，可获取一个邀请码，随后每 30 天可以获取一个邀请码，上限是 3 个。
+ */
+export function calculateInviteEligibility(
+  userCreatedAt: string | Date,
+  hasRecordedTransaction: boolean,
+  claimedCount: number,
+  nowInput?: string | Date | number
+): InviteEligibilityCalculation {
+  const maxLimit = 3;
+  const regDate = typeof userCreatedAt === 'string' ? new Date(userCreatedAt) : userCreatedAt;
+  const regTime = regDate.getTime();
+  const now = nowInput ? (typeof nowInput === 'number' ? nowInput : new Date(nowInput).getTime()) : Date.now();
+
+  if (isNaN(regTime)) {
+    return {
+      total_eligible: 0,
+      claimed_count: claimedCount,
+      can_generate: false,
+      max_limit: maxLimit,
+      has_recorded_transaction: hasRecordedTransaction,
+      next_unlock_date: null,
+    };
+  }
+
+  const diffMs = Math.max(0, now - regTime);
+  let totalEligible = 0;
+  let nextUnlockDate: string | null = null;
+
+  if (!hasRecordedTransaction) {
+    totalEligible = 0;
+    const day3Time = regTime + 3 * DAY_MS;
+    nextUnlockDate = new Date(day3Time).toISOString();
+  } else {
+    if (diffMs < 3 * DAY_MS) {
+      totalEligible = 0;
+      nextUnlockDate = new Date(regTime + 3 * DAY_MS).toISOString();
+    } else if (diffMs < 33 * DAY_MS) {
+      totalEligible = 1;
+      nextUnlockDate = new Date(regTime + 33 * DAY_MS).toISOString();
+    } else if (diffMs < 63 * DAY_MS) {
+      totalEligible = 2;
+      nextUnlockDate = new Date(regTime + 63 * DAY_MS).toISOString();
+    } else {
+      totalEligible = 3;
+      nextUnlockDate = null;
+    }
+  }
+
+  const canGenerate = hasRecordedTransaction && claimedCount < totalEligible && claimedCount < maxLimit;
+
+  return {
+    total_eligible: Math.min(totalEligible, maxLimit),
+    claimed_count: claimedCount,
+    can_generate: canGenerate,
+    max_limit: maxLimit,
+    has_recorded_transaction: hasRecordedTransaction,
+    next_unlock_date: totalEligible >= maxLimit ? null : nextUnlockDate,
+  };
+}

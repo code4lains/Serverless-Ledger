@@ -211,3 +211,16 @@ export async function seedLocalLedgers(userId?: string) {
     await localDb.ledgers.put(defaultLedger);
   }
 }
+
+/**
+ * 清空本地数据库所有关联数据 (用户注销账户时彻底清除本地缓存并重置为初始状态)
+ */
+export async function clearLocalDatabase() {
+  await localDb.transactions.clear();
+  await localDb.categories.clear();
+  await localDb.ledgers.clear();
+  await localDb.budgets.clear();
+  await localDb.syncQueue.clear();
+  await seedLocalCategories();
+  await seedLocalLedgers();
+}

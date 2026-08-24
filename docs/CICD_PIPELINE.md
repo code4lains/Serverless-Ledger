@@ -57,8 +57,11 @@
    - 点击 **Create Token** ➔ 使用 **Cloudflare Pages: Edit** 模板，或自定义具备 `Cloudflare Pages: Edit` 权限的 API Token。
 2. **`CLOUDFLARE_ACCOUNT_ID`** (必填 - Cloudflare 账户 ID):
    - 在 Cloudflare 控制台右侧侧边栏或 Workers & Pages 概览页中复制 **Account ID**。
-3. **`VITE_TURNSTILE_SITE_KEY`** (可选 - Cloudflare Turnstile 验证码 Site Key):
-   - 用于前端渲染人机验证组件。
+3. **Pages 运行时环境变量 (在 Cloudflare 控制台 Pages -> Settings -> Environment Variables 配置)**:
+   - **`REG_MODE`**（可选，默认为 `1`）：注册模式管控（`0`=关闭注册，`1`=邀请注册，`2`=自由注册）。
+   - **`JWT_SECRET`**（必填）：JWT 鉴权签名高强度随机密钥。
+   - **`TURNSTILE_SECRET_KEY`**（可选）：Cloudflare Turnstile 人机验证 Secret Key。
+   - **`VITE_TURNSTILE_SITE_KEY`**（可选）：Cloudflare Turnstile 人机验证 Site Key。
 
 ---
 

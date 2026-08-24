@@ -21,6 +21,10 @@ import {
   BudgetPeriod,
   SetBudgetItem,
   BatchSetBudgetRequest,
+  AuthConfig,
+  InviteCode,
+  InviteEligibilityInfo,
+  ResetPasswordRequest,
 } from '@ledger/shared';
 import { localDb, enqueueSyncAction, removeSyncQueueItem } from '../db';
 import { networkMonitor } from './network';
@@ -139,6 +143,107 @@ export async function fetchCurrentUser(): Promise<ApiResponse<AuthUser>> {
     return json;
   } catch (err: any) {
     return { success: false, error: err.message };
+  }
+}
+
+/**
+ * 获取服务端注册模式与认证配置
+ */
+export async function getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/config`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    const json = (await res.json()) as ApiResponse<AuthConfig>;
+    return json;
+  } catch (err: any) {
+    return {
+      success: true,
+      data: { reg_mode: 1 }, // 默认降级为 1 (邀请模式)
+    };
+  }
+}
+
+/**
+ * 获取当前登录用户的邀请码信息与获取资格
+ */
+export async function getInviteCodes(): Promise<ApiResponse<InviteEligibilityInfo>> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/invite-codes`, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(4000),
+    });
+    const json = (await res.json()) as ApiResponse<InviteEligibilityInfo>;
+    return json;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || '获取邀请码信息失败',
+    };
+  }
+}
+
+/**
+ * 领取/生成新的邀请码
+ */
+export async function claimInviteCode(): Promise<ApiResponse<InviteCode>> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/invite-codes`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(4000),
+    });
+    const json = (await res.json()) as ApiResponse<InviteCode>;
+    return json;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || '生成邀请码失败',
+    };
+  }
+}
+
+/**
+ * 找回密码 (凭 8 位密码恢复码重置密码)
+ */
+export async function resetPassword(req: ResetPasswordRequest): Promise<ApiResponse<void>> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req),
+      signal: AbortSignal.timeout(6000),
+    });
+    const json = (await res.json()) as ApiResponse<void>;
+    return json;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || '网络连接异常，重置密码失败',
+    };
+  }
+}
+
+/**
+ * 用户注销账户 (彻底清除云端关联的所有记录)
+ */
+export async function deleteAccount(): Promise<ApiResponse<void>> {
+  try {
+    const res = await fetch(`${API_BASE}/auth/account`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(8000),
+    });
+    const json = (await res.json()) as ApiResponse<void>;
+    if (res.ok && json.success) {
+      clearSession();
+    }
+    return json;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || '网络连接异常，注销账户失败',
+    };
   }
 }
 

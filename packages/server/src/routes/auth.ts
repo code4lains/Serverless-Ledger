@@ -3,9 +3,52 @@ import { Env, AppVariables } from '../types';
 import { hashPassword, verifyPassword, generateJwtToken, DEFAULT_JWT_SECRET, TOKEN_EXPIRY_SECONDS } from '../utils/auth';
 import { verifyTurnstileToken } from '../utils/turnstile';
 import { requireAuth } from '../middleware/auth';
-import { ApiResponse, AuthResponse, AuthUser, RegisterRequest, LoginRequest, User, Ledger } from '@ledger/shared';
+import {
+  ApiResponse,
+  AuthResponse,
+  AuthUser,
+  RegisterRequest,
+  LoginRequest,
+  User,
+  Ledger,
+  AuthConfig,
+  InviteCode,
+  InviteEligibilityInfo,
+  calculateInviteEligibility,
+  ResetPasswordRequest,
+} from '@ledger/shared';
 
 const authRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
+
+// 获取系统当前注册模式: 0: 禁止注册, 1: 邀请注册模式 (默认), 2: 自由注册模式
+function getRegMode(env: Env): number {
+  const mode = env.REG_MODE;
+  if (mode === undefined || mode === null || mode === '') {
+    return 1;
+  }
+  const parsed = Number(mode);
+  return isNaN(parsed) ? 1 : parsed;
+}
+
+// 生成随机邀请码 (INV-前缀 + 6位无歧义字符)
+function generateRandomInviteCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let randomPart = '';
+  for (let i = 0; i < 6; i++) {
+    randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return `INV-${randomPart}`;
+}
+
+// 生成 8 位包含字母和数字的随机密码恢复码 (全大写，排除易混淆字符)
+function generateRecoveryCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let code = '';
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
 
 // 简单邮箱格式校验
 function isValidEmail(email: string): boolean {
@@ -14,14 +57,77 @@ function isValidEmail(email: string): boolean {
 }
 
 /**
+ * 获取系统认证与注册模式配置
+ * GET /api/auth/config
+ */
+authRouter.get('/config', async (c) => {
+  const regMode = getRegMode(c.env);
+  const res: ApiResponse<AuthConfig> = {
+    success: true,
+    data: {
+      reg_mode: regMode,
+    },
+  };
+  return c.json(res, 200);
+});
+
+/**
  * 用户注册
  * POST /api/auth/register
  */
 authRouter.post('/register', async (c) => {
   try {
+    const regMode = getRegMode(c.env);
+
+    // 当 REG_MODE 为 0 时，系统禁止注册
+    if (regMode === 0) {
+      const res: ApiResponse = {
+        success: false,
+        error: '系统当前未开放注册，请联系管理员或稍后再试',
+      };
+      return c.json(res, 403);
+    }
+
     const body = await c.req.json<RegisterRequest>();
     const email = body.email?.trim().toLowerCase();
     const password = body.password;
+    const inviteCodeRaw = body.invite_code?.trim().toUpperCase();
+
+    // 当 REG_MODE 为 1 时，必须提供有效邀请码
+    let validInviteCodeRecord: InviteCode | null = null;
+    if (regMode === 1) {
+      if (!inviteCodeRaw) {
+        const res: ApiResponse = {
+          success: false,
+          error: '当前系统为邀请注册模式，请输入邀请码',
+        };
+        return c.json(res, 400);
+      }
+
+      validInviteCodeRecord = await c.env.DB.prepare(
+        'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE code = ?'
+      )
+        .bind(inviteCodeRaw)
+        .first<InviteCode>();
+
+      if (!validInviteCodeRecord || validInviteCodeRecord.status !== 'unused') {
+        const res: ApiResponse = {
+          success: false,
+          error: '邀请码无效或已被使用',
+        };
+        return c.json(res, 400);
+      }
+    } else if (regMode === 2 && inviteCodeRaw) {
+      // REG_MODE 为 2 时邀请码为可选，若用户输入了有效未使用的邀请码则予以关联
+      validInviteCodeRecord = await c.env.DB.prepare(
+        'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE code = ?'
+      )
+        .bind(inviteCodeRaw)
+        .first<InviteCode>();
+      if (validInviteCodeRecord && validInviteCodeRecord.status !== 'unused') {
+        validInviteCodeRecord = null;
+      }
+    }
 
     // 1. Cloudflare Turnstile 人机验证
     const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for');
@@ -66,15 +172,26 @@ authRouter.post('/register', async (c) => {
     const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const passwordHash = await hashPassword(password);
     const now = new Date().toISOString();
+    const invitedBy = validInviteCodeRecord ? validInviteCodeRecord.creator_id : null;
+    const recoveryCode = generateRecoveryCode();
 
-    // 1. 写入用户表
+    // 1. 写入用户表 (包含 8 位密码恢复码)
     await c.env.DB.prepare(
-      'INSERT INTO users (user_id, email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO users (user_id, email, password_hash, invited_by, recovery_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )
-      .bind(userId, email, passwordHash, now, now)
+      .bind(userId, email, passwordHash, invitedBy, recoveryCode, now, now)
       .run();
 
-    // 2. 自动为新用户创建默认日常账本
+    // 2. 若使用了有效邀请码，标记邀请码为已使用
+    if (validInviteCodeRecord) {
+      await c.env.DB.prepare(
+        'UPDATE invite_codes SET status = ?, used_by = ?, used_at = ? WHERE code = ?'
+      )
+        .bind('used', userId, now, validInviteCodeRecord.code)
+        .run();
+    }
+
+    // 3. 自动为新用户创建默认日常账本
     const defaultLedgerId = `led_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     await c.env.DB.prepare(
       'INSERT INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
@@ -82,7 +199,7 @@ authRouter.post('/register', async (c) => {
       .bind(defaultLedgerId, userId, '默认账本', 'CNY', now, now)
       .run();
 
-    // 3. 签发 JWT
+    // 4. 签发 JWT
     const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET;
     const token = await generateJwtToken({ user_id: userId, email }, secret, TOKEN_EXPIRY_SECONDS);
 
@@ -91,6 +208,8 @@ authRouter.post('/register', async (c) => {
       email,
       created_at: now,
       default_ledger_id: defaultLedgerId,
+      invited_by: invitedBy,
+      recovery_code: recoveryCode,
     };
 
     const res: ApiResponse<AuthResponse> = {
@@ -99,6 +218,7 @@ authRouter.post('/register', async (c) => {
         user: authUser,
         token,
         expires_in: TOKEN_EXPIRY_SECONDS,
+        new_recovery_code: recoveryCode,
       },
       message: '注册成功，欢迎使用账盾',
     };
@@ -144,7 +264,7 @@ authRouter.post('/login', async (c) => {
 
     // 查询用户
     const user = await c.env.DB.prepare(
-      'SELECT user_id, email, password_hash, created_at, updated_at FROM users WHERE email = ?'
+      'SELECT user_id, email, password_hash, invited_by, recovery_code, created_at, updated_at FROM users WHERE email = ?'
     )
       .bind(email)
       .first<User>();
@@ -167,6 +287,18 @@ authRouter.post('/login', async (c) => {
       return c.json(res, 401);
     }
 
+    // 若登录时发现用户没有恢复码，则自动生成一个并绑定提供给用户
+    let newRecoveryCode: string | null = null;
+    let currentRecoveryCode = user.recovery_code;
+    if (!currentRecoveryCode) {
+      newRecoveryCode = generateRecoveryCode();
+      currentRecoveryCode = newRecoveryCode;
+      const now = new Date().toISOString();
+      await c.env.DB.prepare('UPDATE users SET recovery_code = ?, updated_at = ? WHERE user_id = ?')
+        .bind(newRecoveryCode, now, user.user_id)
+        .run();
+    }
+
     // 获取用户默认账本
     const defaultLedger = await c.env.DB.prepare(
       'SELECT ledger_id FROM ledgers WHERE user_id = ? AND is_default = 1 LIMIT 1'
@@ -187,6 +319,8 @@ authRouter.post('/login', async (c) => {
       email: user.email,
       created_at: user.created_at,
       default_ledger_id: defaultLedger?.ledger_id,
+      invited_by: user.invited_by,
+      recovery_code: currentRecoveryCode,
     };
 
     const res: ApiResponse<AuthResponse> = {
@@ -195,6 +329,7 @@ authRouter.post('/login', async (c) => {
         user: authUser,
         token,
         expires_in: TOKEN_EXPIRY_SECONDS,
+        new_recovery_code: newRecoveryCode,
       },
       message: '登录成功',
     };
@@ -218,7 +353,7 @@ authRouter.get('/me', requireAuth, async (c) => {
     const jwtUser = c.get('user')!;
 
     const user = await c.env.DB.prepare(
-      'SELECT user_id, email, created_at, updated_at FROM users WHERE user_id = ?'
+      'SELECT user_id, email, invited_by, recovery_code, created_at, updated_at FROM users WHERE user_id = ?'
     )
       .bind(jwtUser.userId)
       .first<User>();
@@ -242,6 +377,8 @@ authRouter.get('/me', requireAuth, async (c) => {
       email: user.email,
       created_at: user.created_at,
       default_ledger_id: defaultLedger?.ledger_id,
+      invited_by: user.invited_by,
+      recovery_code: user.recovery_code,
     };
 
     const res: ApiResponse<AuthUser> = {
@@ -259,4 +396,322 @@ authRouter.get('/me', requireAuth, async (c) => {
   }
 });
 
+/**
+ * 找回密码 (凭 8 位密码恢复码重置密码)
+ * POST /api/auth/reset-password
+ */
+authRouter.post('/reset-password', async (c) => {
+  try {
+    const body = await c.req.json<ResetPasswordRequest>();
+    const email = body.email?.trim().toLowerCase();
+    const recoveryCodeInput = body.recovery_code?.trim().toUpperCase();
+    const newPassword = body.new_password;
+
+    // 1. Cloudflare Turnstile 人机验证
+    const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for');
+    const turnstileCheck = await verifyTurnstileToken(c.env.TURNSTILE_SECRET_KEY, body.turnstile_token, clientIp);
+    if (!turnstileCheck.success) {
+      const res: ApiResponse = {
+        success: false,
+        error: turnstileCheck.message || '人机验证失败，请重试',
+      };
+      return c.json(res, 400);
+    }
+
+    if (!email || !isValidEmail(email)) {
+      const res: ApiResponse = {
+        success: false,
+        error: '请输入有效的邮箱地址',
+      };
+      return c.json(res, 400);
+    }
+
+    if (!recoveryCodeInput) {
+      const res: ApiResponse = {
+        success: false,
+        error: '请输入 8 位密码恢复码',
+      };
+      return c.json(res, 400);
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      const res: ApiResponse = {
+        success: false,
+        error: '新密码长度至少需 6 位',
+      };
+      return c.json(res, 400);
+    }
+
+    const user = await c.env.DB.prepare(
+      'SELECT user_id, email, recovery_code FROM users WHERE email = ?'
+    )
+      .bind(email)
+      .first<User>();
+
+    if (!user) {
+      const res: ApiResponse = {
+        success: false,
+        error: '该邮箱不存在或恢复码错误',
+      };
+      return c.json(res, 400);
+    }
+
+    // 恢复码校验 (不区分大小写，已转为全大写比对)
+    if (!user.recovery_code || user.recovery_code.trim().toUpperCase() !== recoveryCodeInput) {
+      const res: ApiResponse = {
+        success: false,
+        error: '密码恢复码错误，请核对后重试',
+      };
+      return c.json(res, 400);
+    }
+
+    // 密码加密并更新
+    const passwordHash = await hashPassword(newPassword);
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      'UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?'
+    )
+      .bind(passwordHash, now, user.user_id)
+      .run();
+
+    const res: ApiResponse = {
+      success: true,
+      message: '密码重置成功，请使用新密码登录',
+    };
+
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '重置密码失败，请稍后重试',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 用户注销账户 (删除系统中其所关联的所有记录)
+ * DELETE /api/auth/account
+ */
+authRouter.delete('/account', requireAuth, async (c) => {
+  try {
+    const jwtUser = c.get('user')!;
+    const userId = jwtUser.userId;
+
+    // 1. 删除用户的所有账单流水
+    await c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId).run();
+
+    // 2. 删除用户的所有预算
+    await c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ?').bind(userId).run();
+
+    // 3. 删除用户的所有账本
+    await c.env.DB.prepare('DELETE FROM ledgers WHERE user_id = ?').bind(userId).run();
+
+    // 4. 删除用户创建的所有自定义分类
+    await c.env.DB.prepare('DELETE FROM categories WHERE user_id = ?').bind(userId).run();
+
+    // 5. 删除用户创建的邀请码，并将他人邀请码中已被该用户使用过的字段置空
+    await c.env.DB.prepare('DELETE FROM invite_codes WHERE creator_id = ?').bind(userId).run();
+    await c.env.DB.prepare('UPDATE invite_codes SET used_by = NULL WHERE used_by = ?').bind(userId).run();
+
+    // 6. 删除用户记录
+    await c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId).run();
+
+    const res: ApiResponse = {
+      success: true,
+      message: '账号及所有关联数据已成功注销',
+    };
+
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '注销失败，请稍后重试',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 获取当前登录用户的邀请码列表与获取资格
+ * GET /api/auth/invite-codes
+ */
+authRouter.get('/invite-codes', requireAuth, async (c) => {
+  try {
+    const jwtUser = c.get('user')!;
+
+    const user = await c.env.DB.prepare(
+      'SELECT user_id, email, created_at, updated_at FROM users WHERE user_id = ?'
+    )
+      .bind(jwtUser.userId)
+      .first<User>();
+
+    if (!user) {
+      const res: ApiResponse = {
+        success: false,
+        error: '用户不存在',
+      };
+      return c.json(res, 404);
+    }
+
+    // 1. 查询用户是否已写入过记账数据
+    const txCountRow = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count FROM transactions WHERE user_id = ?'
+    )
+      .bind(user.user_id)
+      .first<{ count: number }>();
+
+    const hasRecordedTransaction = (txCountRow?.count || 0) > 0;
+
+    // 2. 查询用户已生成的邀请码
+    const inviteCodesResult = await c.env.DB.prepare(
+      'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE creator_id = ? ORDER BY created_at DESC'
+    )
+      .bind(user.user_id)
+      .all<InviteCode>();
+
+    const inviteCodes = inviteCodesResult.results || [];
+
+    // 3. 计算获取资格
+    const eligibility = calculateInviteEligibility(
+      user.created_at,
+      hasRecordedTransaction,
+      inviteCodes.length,
+      Date.now()
+    );
+
+    const data: InviteEligibilityInfo = {
+      ...eligibility,
+      invite_codes: inviteCodes,
+    };
+
+    const res: ApiResponse<InviteEligibilityInfo> = {
+      success: true,
+      data,
+    };
+
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '获取邀请码信息失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 领取/生成新的邀请码
+ * POST /api/auth/invite-codes
+ */
+authRouter.post('/invite-codes', requireAuth, async (c) => {
+  try {
+    const jwtUser = c.get('user')!;
+
+    const user = await c.env.DB.prepare(
+      'SELECT user_id, email, created_at, updated_at FROM users WHERE user_id = ?'
+    )
+      .bind(jwtUser.userId)
+      .first<User>();
+
+    if (!user) {
+      const res: ApiResponse = {
+        success: false,
+        error: '用户不存在',
+      };
+      return c.json(res, 404);
+    }
+
+    // 1. 检查是否写入过记账数据
+    const txCountRow = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count FROM transactions WHERE user_id = ?'
+    )
+      .bind(user.user_id)
+      .first<{ count: number }>();
+
+    const hasRecordedTransaction = (txCountRow?.count || 0) > 0;
+
+    // 2. 检查已生成的邀请码数量
+    const inviteCodesResult = await c.env.DB.prepare(
+      'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE creator_id = ? ORDER BY created_at DESC'
+    )
+      .bind(user.user_id)
+      .all<InviteCode>();
+
+    const inviteCodes = inviteCodesResult.results || [];
+
+    // 3. 计算资格
+    const eligibility = calculateInviteEligibility(
+      user.created_at,
+      hasRecordedTransaction,
+      inviteCodes.length,
+      Date.now()
+    );
+
+    if (!eligibility.can_generate) {
+      let reason = '当前暂无可领取的邀请码';
+      if (!hasRecordedTransaction) {
+        reason = '需先写入至少一笔记账数据以激活邀请资格';
+      } else if (inviteCodes.length >= 3) {
+        reason = '已达到邀请码获取上限（最多 3 个）';
+      } else if (eligibility.next_unlock_date) {
+        reason = `下一个邀请码将于 ${new Date(eligibility.next_unlock_date).toLocaleDateString()} 解锁`;
+      }
+      const res: ApiResponse = {
+        success: false,
+        error: reason,
+      };
+      return c.json(res, 400);
+    }
+
+    // 4. 生成唯一邀请码
+    let newCode = generateRandomInviteCode();
+    let isUnique = false;
+    for (let attempts = 0; attempts < 5; attempts++) {
+      const existing = await c.env.DB.prepare('SELECT code FROM invite_codes WHERE code = ?')
+        .bind(newCode)
+        .first<{ code: string }>();
+      if (!existing) {
+        isUnique = true;
+        break;
+      }
+      newCode = generateRandomInviteCode();
+    }
+
+    if (!isUnique) {
+      newCode = `INV-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+    }
+
+    const now = new Date().toISOString();
+
+    await c.env.DB.prepare(
+      'INSERT INTO invite_codes (code, creator_id, status, created_at) VALUES (?, ?, ?, ?)'
+    )
+      .bind(newCode, user.user_id, 'unused', now)
+      .run();
+
+    const createdInviteCode: InviteCode = {
+      code: newCode,
+      creator_id: user.user_id,
+      status: 'unused',
+      created_at: now,
+    };
+
+    const res: ApiResponse<InviteCode> = {
+      success: true,
+      data: createdInviteCode,
+      message: '邀请码生成成功',
+    };
+
+    return c.json(res, 201);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '生成邀请码失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
 export default authRouter;
+
