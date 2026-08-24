@@ -37,6 +37,7 @@ import {
   exportTransactionsToJson,
   generateStandardCsvTemplate,
   detectAndParseBillCsv,
+  detectAndParseBillFile,
   BillParseResult,
   ParsedBillItem,
   getCategoryMeta,
@@ -217,11 +218,18 @@ export function DataManagementModal({
     URL.revokeObjectURL(url);
   };
 
-  // 处理文件解析
+  // 处理文件解析 (支持 .xls / .xlsx / .csv / .txt)
   const processFile = (file: File) => {
     if (!file) return;
-    if (!file.name.endsWith('.csv') && !file.name.endsWith('.txt')) {
-      setImportError('仅支持上传 .csv 或 .txt 格式的账单文本文件');
+    const lowerName = file.name.toLowerCase();
+    const isSupported =
+      lowerName.endsWith('.csv') ||
+      lowerName.endsWith('.xls') ||
+      lowerName.endsWith('.xlsx') ||
+      lowerName.endsWith('.txt');
+
+    if (!isSupported) {
+      setImportError('仅支持上传 .xls、.xlsx、.csv 或 .txt 格式的账单文件');
       return;
     }
 
@@ -232,8 +240,8 @@ export function DataManagementModal({
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const text = e.target?.result as string;
-        const result = detectAndParseBillCsv(text, categories, importTargetLedgerId);
+        const arrayBuffer = e.target?.result as ArrayBuffer;
+        const result = detectAndParseBillFile(arrayBuffer, file.name, categories, importTargetLedgerId);
         setParseResult(result);
         if (result.valid_rows === 0) {
           setImportError('未能从文件中识别出有效交易流水，请检查文件格式或下载标准模板对照。');
@@ -249,8 +257,8 @@ export function DataManagementModal({
       setIsParsing(false);
     };
 
-    // 读取文本 (UTF-8)
-    reader.readAsText(file, 'utf-8');
+    // 以 ArrayBuffer 形式读取以统一兼容二进制 Excel 与文本 CSV
+    reader.readAsArrayBuffer(file);
   };
 
   // 文件拖拽与选择事件
@@ -625,7 +633,7 @@ export function DataManagementModal({
                         <input
                           ref={fileInputRef}
                           type="file"
-                          accept=".csv,.txt"
+                          accept=".csv,.xls,.xlsx,.txt"
                           onChange={handleFileChange}
                           className="hidden"
                         />
@@ -634,10 +642,10 @@ export function DataManagementModal({
                         </div>
                         <div>
                           <p className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                            点击上传 或 拖拽 CSV 文件至此处
+                            点击上传 或 拖拽账单文件至此处
                           </p>
                           <p className="text-[11px] text-gray-400 mt-1">
-                            自动智能识别：微信支付账单、支付宝明细、账盾标准或通用记账 CSV
+                            自动智能识别：小星记账 (.xls/.xlsx)、微信支付、支付宝明细、账盾标准或通用记账 CSV
                           </p>
                         </div>
                       </div>
@@ -677,6 +685,11 @@ export function DataManagementModal({
                             <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-200">
                               {parseResult.format_name}
                             </h4>
+                            {parseResult.warnings && parseResult.warnings.length > 0 && (
+                              <p className="text-[10px] text-emerald-700/80 dark:text-emerald-300/80 mt-0.5">
+                                {parseResult.warnings.join(' · ')}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <button
