@@ -1514,11 +1514,11 @@ export function App() {
           </div>
         )}
 
-        {/* 4. 【分类】板块 */}
+        {/* 4. 【分类】板块 (默认固定展示 支出大类) */}
         {navTab === 'category' && (
           <CategoriesView
             categories={categories}
-            initialType={activeTab}
+            initialType="expense"
             currentUser={currentUser}
             onCategoriesChanged={refreshCategories}
             onRequireAuth={() => setIsAuthModalOpen(true)}
