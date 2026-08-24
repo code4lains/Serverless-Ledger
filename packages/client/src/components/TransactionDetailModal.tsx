@@ -199,13 +199,13 @@ export function TransactionDetailModal({
   const loanLabels = getLoanLabels();
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-neutral-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 dark:border-neutral-700/80 transition-all">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-neutral-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 dark:border-neutral-700/80 transition-all animate-modal-in">
         {/* 顶部 Header */}
         <div className="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-100 dark:border-neutral-700/60">
           <div className="flex items-center gap-2">
             <div
-              className={`w-7 h-7 rounded-xl flex items-center justify-center ${
+              className={`w-8 h-8 rounded-xl flex items-center justify-center shadow-2xs ${
                 isExpense
                   ? 'bg-orange-50 dark:bg-orange-950/40 text-[#D08770]'
                   : isIncome
@@ -225,7 +225,7 @@ export function TransactionDetailModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
+            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>

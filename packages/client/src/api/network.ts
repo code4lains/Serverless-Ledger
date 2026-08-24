@@ -1,6 +1,7 @@
 /**
  * 账盾 - 实时网络感知与智能弱网探测系统
  * 践行《白皮书 2.0 & 7.3 弱网/无网无缝切换》规范
+ * 采用缓和、非阻塞的健康心跳策略，避免高频轮询与网络拥塞
  */
 
 export type NetworkState = 'online' | 'weak' | 'offline' | 'syncing';
@@ -26,6 +27,7 @@ class NetworkMonitor {
   private listeners: Set<(info: NetworkInfo) => void> = new Set();
   private checkTimer: any = null;
   private isChecking = false;
+  private lastHealthCheckTime = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -36,6 +38,7 @@ class NetworkMonitor {
   }
 
   private handleBrowserOnline = () => {
+    // 浏览器触发 online 事件时进行一次连通性与延迟探测
     this.checkHealth();
   };
 
@@ -49,8 +52,12 @@ class NetworkMonitor {
   };
 
   private handleVisibilityChange = () => {
+    // 页面切回前台时，且距离上次检测超过 15 秒才执行健康检查，避免频繁切换页面导致高频请求
     if (document.visibilityState === 'visible') {
-      this.checkHealth();
+      const now = Date.now();
+      if (now - this.lastHealthCheckTime > 15000) {
+        this.checkHealth();
+      }
     }
   };
 
@@ -70,6 +77,7 @@ class NetworkMonitor {
 
     if (this.isChecking) return this.currentState;
     this.isChecking = true;
+    this.lastHealthCheckTime = Date.now();
 
     const startTime = performance.now();
     try {
@@ -117,9 +125,9 @@ class NetworkMonitor {
   }
 
   /**
-   * 启动后台周期性心跳探测
+   * 启动后台周期性心跳探测 (默认 30 秒间隔，温和且平稳)
    */
-  public start(intervalMs: number = 20000) {
+  public start(intervalMs: number = 30000) {
     this.checkHealth();
     if (this.checkTimer) clearInterval(this.checkTimer);
     this.checkTimer = setInterval(() => {
@@ -138,13 +146,19 @@ class NetworkMonitor {
   }
 
   /**
-   * 设置外部同步状态 (如开始同步或同步完成)
+   * 设置外部同步状态 (开始同步/结束同步)
+   * 结束同步时直接恢复对应网络状态，不触发额外网络请求，避免级联循环
    */
   public setSyncing(isSyncing: boolean) {
     if (isSyncing) {
       this.updateState({ state: 'syncing' });
     } else {
-      this.checkHealth();
+      const targetState: NetworkState = !this.currentState.isOnline
+        ? 'offline'
+        : this.currentState.latencyMs && this.currentState.latencyMs > 1200
+        ? 'weak'
+        : 'online';
+      this.updateState({ state: targetState });
     }
   }
 
@@ -162,13 +176,14 @@ class NetworkMonitor {
 
   private updateState(partial: Partial<NetworkInfo>) {
     const prevState = this.currentState.state;
+    const prevOnline = this.currentState.isOnline;
     this.currentState = {
       ...this.currentState,
       ...partial,
       lastChecked: new Date().toISOString(),
     };
 
-    const hasChanged = prevState !== this.currentState.state || partial.latencyMs !== undefined;
+    const hasChanged = prevState !== this.currentState.state || prevOnline !== this.currentState.isOnline || partial.latencyMs !== undefined;
     if (hasChanged) {
       for (const listener of this.listeners) {
         try {

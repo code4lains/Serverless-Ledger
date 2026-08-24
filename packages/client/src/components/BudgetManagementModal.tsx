@@ -211,8 +211,8 @@ export function BudgetManagementModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
-      <div className="w-full max-w-md max-h-[90vh] bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700 flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="w-full max-w-md max-h-[90vh] bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700/80 flex flex-col overflow-hidden animate-modal-in">
         {/* 顶部标题栏 */}
         <div className="flex items-center justify-between p-4 sm:p-5 pb-3 border-b border-gray-100 dark:border-neutral-700/60 shrink-0">
           <div className="flex items-center gap-2.5">

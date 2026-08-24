@@ -81,13 +81,15 @@ export function ProfileView({
     const unsubNet = networkMonitor.subscribe((info) => setNetworkInfo(info));
     const unsubSync = syncManager.subscribe((stats) => setSyncStats(stats));
 
-    getLocalStorageStats().then((stats) => setStorageStats(stats));
-
     return () => {
       unsubNet();
       unsubSync();
     };
-  }, [transactions, isSyncing, pendingCount]);
+  }, []);
+
+  useEffect(() => {
+    getLocalStorageStats().then((stats) => setStorageStats(stats));
+  }, [transactions.length, pendingCount, isSyncing]);
 
   const formattedDate = currentUser?.created_at
     ? new Date(currentUser.created_at).toLocaleDateString()
@@ -417,30 +419,37 @@ export function ProfileView({
       </div>
 
       {/* 4. 系统首选项与暗黑模式 */}
-
-      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-3">
         <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">偏好设置</h4>
 
         <div className="flex items-center justify-between py-1">
-          <div className="flex items-center gap-2 text-xs">
-            {darkMode ? (
-              <Moon className="w-4 h-4 text-indigo-400" />
-            ) : (
-              <Sun className="w-4 h-4 text-amber-500" />
-            )}
-            <span className="font-medium text-gray-700 dark:text-gray-300">深色外观模式</span>
+          <div className="flex items-center gap-2.5 text-xs">
+            <div className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+              darkMode ? 'bg-indigo-950/60 text-indigo-400' : 'bg-amber-50 text-amber-500'
+            }`}>
+              {darkMode ? (
+                <Moon className="w-4 h-4 text-indigo-400" />
+              ) : (
+                <Sun className="w-4 h-4 text-amber-500" />
+              )}
+            </div>
+            <div>
+              <span className="font-semibold text-gray-800 dark:text-gray-200 block">深色外观模式</span>
+              <span className="text-[10px] text-gray-400">适配 OLED 纯黑与低饱和莫兰迪色系</span>
+            </div>
           </div>
 
           <button
             type="button"
             onClick={onToggleDarkMode}
-            className={`w-11 h-6 rounded-full transition-colors relative flex items-center p-0.5 ${
-              darkMode ? 'bg-indigo-600' : 'bg-gray-300'
+            aria-label="切换深色模式"
+            className={`w-12 h-6.5 rounded-full transition-all duration-300 relative flex items-center p-1 focus:outline-none ${
+              darkMode ? 'bg-indigo-600 shadow-glow-indigo' : 'bg-gray-300 dark:bg-neutral-700'
             }`}
           >
             <div
-              className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform ${
-                darkMode ? 'translate-x-5' : 'translate-x-0'
+              className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                darkMode ? 'translate-x-5.5' : 'translate-x-0'
               }`}
             />
           </button>

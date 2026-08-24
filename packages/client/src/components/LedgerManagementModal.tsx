@@ -252,8 +252,8 @@ export function LedgerManagementModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-100 dark:border-neutral-700/80 transition-all flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+      <div className="bg-white dark:bg-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-100 dark:border-neutral-700/80 transition-all flex flex-col max-h-[85vh] animate-modal-in">
         {/* 弹窗顶部 Header */}
         <div className="flex justify-between items-center px-5 pt-4 pb-3 border-b border-gray-100 dark:border-neutral-700/60 shrink-0">
           <div className="flex items-center gap-2">
@@ -271,7 +271,7 @@ export function LedgerManagementModal({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
+            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -279,7 +279,7 @@ export function LedgerManagementModal({
 
         {/* Tab 导航切换 (账本列表 / 新建账本) */}
         <div className="flex px-5 pt-3 shrink-0">
-          <div className="flex w-full bg-gray-100 dark:bg-neutral-900 rounded-xl p-1 text-xs">
+          <div className="flex w-full bg-gray-100/90 dark:bg-neutral-900/90 rounded-xl p-1 text-xs">
             <button
               type="button"
               onClick={() => {
@@ -288,9 +288,9 @@ export function LedgerManagementModal({
                 setDeletingLedgerId(null);
                 setErrorMsg(null);
               }}
-              className={`flex-1 py-1.5 font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 font-semibold rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
                 activeTab === 'list'
-                  ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-xs'
+                  ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs'
                   : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
             >
@@ -309,9 +309,9 @@ export function LedgerManagementModal({
                 setDeletingLedgerId(null);
                 setErrorMsg(null);
               }}
-              className={`flex-1 py-1.5 font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 font-semibold rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
                 activeTab === 'create'
-                  ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-xs'
+                  ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs'
                   : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
               }`}
             >

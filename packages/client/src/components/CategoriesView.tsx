@@ -456,8 +456,8 @@ export function CategoriesView({
 
       {/* 4. 删除二次确认浮层 */}
       {deletingCategory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-xs bg-white dark:bg-neutral-800 rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-xs bg-white dark:bg-neutral-800 rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-3 animate-modal-in">
             <div className="flex items-center gap-2 text-red-600 dark:text-red-400 font-bold text-sm">
               <AlertCircle className="w-4 h-4" />
               <span>确认删除分类？</span>
@@ -471,7 +471,7 @@ export function CategoriesView({
                 type="button"
                 disabled={isDeleting}
                 onClick={() => setDeletingCategory(null)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 transition-colors active:scale-95"
               >
                 取消
               </button>
@@ -479,7 +479,7 @@ export function CategoriesView({
                 type="button"
                 disabled={isDeleting}
                 onClick={handleConfirmDelete}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-white bg-red-600 hover:bg-red-700 shadow-xs"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-white bg-red-600 hover:bg-red-700 shadow-xs transition-colors active:scale-95"
               >
                 {isDeleting ? '删除中...' : '确认删除'}
               </button>
@@ -490,8 +490,8 @@ export function CategoriesView({
 
       {/* 5. 新建 / 编辑分类弹窗 */}
       {isEditingFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700 overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700/80 overflow-hidden flex flex-col max-h-[85vh] animate-modal-in">
             <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-gray-100 dark:border-neutral-700/60">
               <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100">
                 {editingCategory ? '编辑分类' : formParentId ? '添加子分类' : '添加大分类'}
@@ -499,7 +499,7 @@ export function CategoriesView({
               <button
                 type="button"
                 onClick={() => setIsEditingFormOpen(false)}
-                className="p-1 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>

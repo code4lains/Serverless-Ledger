@@ -1,10 +1,9 @@
 /**
  * 账盾 - 统一离线同步管理器 (Unified Offline Sync Engine)
  * 践行《白皮书 2.0, 6.1, 7.3》规范：
- * - 离线变更日志时序重放 (Replay Mutation Queue)
- * - 离线删除防复活墓碑机制 (Tombstone Deletion Protection)
- * - 弱网无阻塞与断网恢复后台静默自动同步 (Auto-Sync on Reconnect)
- * - Last-Write-Wins (最后修改者胜出) 双向增量冲突合并
+ * - 缓和且合理的后台静默同步策略，杜绝高频死循环与过度请求
+ * - 仅在网络真实“断网恢复”或存在待同步本地队列时按需同步
+ * - 60 秒平滑冷却防抖与 Last-Write-Wins 双向增量冲突合并
  */
 
 import {
@@ -20,6 +19,7 @@ import {
   getPendingSyncQueue,
   removeSyncQueueItem,
   incrementSyncQueueAttempts,
+  getLocalStorageStats,
   SyncQueueItem,
 } from '../db';
 import { networkMonitor } from './network';
@@ -48,6 +48,7 @@ class SyncManager {
   private autoSyncTimer: any = null;
   private listeners: Set<(stats: SyncStats) => void> = new Set();
   private lastSyncedAt: string | null = null;
+  private lastAutoSyncTimestamp = 0;
 
   constructor() {
     if (typeof localStorage !== 'undefined') {
@@ -56,27 +57,34 @@ class SyncManager {
   }
 
   /**
-   * 启动同步管理器：监听网络状态并在网络恢复时触发自动同步
+   * 启动同步管理器：
+   * 1. 监听真实的网络状态转变 (从 offline 变为 online 时触发恢复同步)
+   * 2. 60秒周期性缓和心跳同步 (仅在有待同步数据或数据陈旧时执行)
    */
   public start() {
-    // 监听网络感知器变化
+    let wasOffline = !networkMonitor.getInfo().isOnline;
+
+    // 监听网络状态变更：仅在真正从“离线”跃迁至“在线”时触发断网恢复同步
     networkMonitor.subscribe((info) => {
-      if (info.isOnline && info.state !== 'syncing' && !this.isSyncing) {
-        // 网络恢复或保持在线，静默尝试同步离线队列
-        this.triggerAutoSync();
+      const justCameOnline = wasOffline && info.isOnline;
+      wasOffline = !info.isOnline;
+
+      if (justCameOnline && info.state !== 'syncing' && !this.isSyncing) {
+        console.log('[SyncManager] 网络已恢复在线，执行平滑自动同步...');
+        this.triggerAutoSync({ minIntervalMs: 10000 });
       }
     });
 
-    // 启动周期性静默同步轮询 (每 45 秒)
+    // 启动周期性静默同步轮询 (缓和的 60 秒轮询间隔)
     if (this.autoSyncTimer) clearInterval(this.autoSyncTimer);
     this.autoSyncTimer = setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
         const net = networkMonitor.getInfo();
         if (net.isOnline && !this.isSyncing) {
-          this.triggerAutoSync();
+          this.triggerAutoSync({ minIntervalMs: 60000 });
         }
       }
-    }, 45000);
+    }, 60000);
   }
 
   public stop() {
@@ -86,14 +94,37 @@ class SyncManager {
     }
   }
 
-  private triggerAutoSync() {
+  /**
+   * 缓和的自动静默同步触发器 (带冷却时间与未同步前置判断)
+   */
+  private async triggerAutoSync(options?: { minIntervalMs?: number }) {
+    const minInterval = options?.minIntervalMs ?? 60000;
+    const now = Date.now();
+
+    // 1. 冷却期检查：避免短时间内频繁发起同步
+    if (now - this.lastAutoSyncTimestamp < minInterval) {
+      return;
+    }
+
     const user = getStoredUser();
     const token = getStoredToken();
-    if (user && token) {
-      this.syncAll(true).catch((err) => {
-        console.warn('[SyncManager] Auto silent sync notice:', err?.message);
-      });
+    if (!user || !token) return;
+
+    // 2. 本地待同步数据检查
+    try {
+      const stats = await getLocalStorageStats();
+      // 若本地没有未同步数据，且距离上次全量同步未超过 120 秒，则无需消耗网络资源
+      if (stats.totalPending === 0 && now - this.lastAutoSyncTimestamp < 120000) {
+        return;
+      }
+    } catch {
+      // 容错处理
     }
+
+    this.lastAutoSyncTimestamp = now;
+    this.syncAll(true).catch((err) => {
+      console.warn('[SyncManager] Auto silent sync notice:', err?.message);
+    });
   }
 
   private getAuthHeaders(): HeadersInit {
@@ -191,6 +222,7 @@ class SyncManager {
 
       const now = new Date().toISOString();
       this.lastSyncedAt = now;
+      this.lastAutoSyncTimestamp = Date.now();
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(LAST_SYNC_KEY, now);
       }

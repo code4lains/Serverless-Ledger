@@ -44,20 +44,20 @@ export function BudgetProgressCard({
     : categoryBudgets.slice(0, 3);
 
   return (
-    <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5 transition-all">
+    <div className="p-4 sm:p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-3.5 transition-all">
       {/* 头部标题与操作栏 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
-            <Target className="w-3.5 h-3.5" />
+          <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shadow-2xs">
+            <Target className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h3 className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                {overview.period === 'monthly' ? '月度预算' : '年度预算'}
+              <h3 className="text-xs font-bold text-gray-800 dark:text-gray-100">
+                {overview.period === 'monthly' ? '月度预算看板' : '年度预算看板'}
               </h3>
               {ledgerName && (
-                <span className="text-[10px] px-1.5 py-0.2 rounded bg-gray-100 dark:bg-neutral-700 text-gray-500 dark:text-gray-400 font-normal">
+                <span className="text-[10px] px-1.5 py-0.2 rounded-md bg-gray-100 dark:bg-neutral-700 text-gray-500 dark:text-gray-400 font-normal">
                   {ledgerName}
                 </span>
               )}
@@ -71,14 +71,18 @@ export function BudgetProgressCard({
         <div className="flex items-center gap-1.5">
           {totalBudget && totalStatusMeta && (
             <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex items-center gap-1 ${totalStatusMeta.badgeBg} ${totalStatusMeta.badgeText}`}
+              className={`text-[10px] px-2.5 py-0.8 rounded-full font-semibold flex items-center gap-1 transition-all ${totalStatusMeta.badgeBg} ${totalStatusMeta.badgeText} ${
+                totalBudget.status === 'exceeded' || totalBudget.status === 'warning'
+                  ? 'animate-subtle-pulse ring-1 ring-amber-500/20'
+                  : ''
+              }`}
             >
               {totalBudget.status === 'exceeded' ? (
-                <AlertCircle className="w-3 h-3" />
+                <AlertCircle className="w-3 h-3 text-red-500" />
               ) : totalBudget.status === 'warning' ? (
-                <AlertTriangle className="w-3 h-3" />
+                <AlertTriangle className="w-3 h-3 text-amber-500" />
               ) : (
-                <CheckCircle2 className="w-3 h-3" />
+                <CheckCircle2 className="w-3 h-3 text-emerald-500" />
               )}
               <span>
                 {totalBudget.status === 'exceeded'
@@ -93,7 +97,7 @@ export function BudgetProgressCard({
           <button
             type="button"
             onClick={onOpenBudgetModal}
-            className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1 text-[11px] font-medium"
+            className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1 text-[11px] font-medium active:scale-95"
             title="设置预算"
           >
             <Settings className="w-3.5 h-3.5" />
@@ -104,7 +108,7 @@ export function BudgetProgressCard({
 
       {/* 1. 总预算主进度条展示 */}
       {totalBudget ? (
-        <div className="p-3 rounded-2xl bg-gray-50/80 dark:bg-neutral-900/60 border border-gray-100 dark:border-neutral-800 flex flex-col gap-2">
+        <div className="p-3.5 rounded-2xl bg-gray-50/80 dark:bg-neutral-900/60 border border-gray-100/80 dark:border-neutral-800 flex flex-col gap-2.5">
           <div className="flex justify-between items-baseline text-xs">
             <div className="flex items-baseline gap-1.5">
               <span className="text-gray-400 text-[11px]">已用:</span>
@@ -130,9 +134,9 @@ export function BudgetProgressCard({
           </div>
 
           {/* 莫兰迪动态进度条 */}
-          <div className="w-full h-2.5 rounded-full bg-gray-200/80 dark:bg-neutral-700 overflow-hidden relative">
+          <div className="w-full h-2.5 rounded-full bg-gray-200/80 dark:bg-neutral-700/80 overflow-hidden relative">
             <div
-              className="h-full rounded-full transition-all duration-500 ease-out"
+              className="h-full rounded-full transition-all duration-700 ease-out shadow-xs"
               style={{
                 width: `${Math.min(Math.max(totalBudget.percentage, 2), 100)}%`,
                 backgroundColor: totalStatusMeta?.barColor || '#6366F1',
@@ -142,13 +146,13 @@ export function BudgetProgressCard({
 
           {/* 预警文字提示 */}
           {totalBudget.status === 'exceeded' && (
-            <div className="text-[10px] text-red-600 dark:text-red-400 flex items-center gap-1 font-medium pt-0.5">
+            <div className="text-[10px] text-red-600 dark:text-red-400 flex items-center gap-1 font-medium pt-0.5 animate-in fade-in duration-200">
               <AlertCircle className="w-3 h-3 shrink-0" />
               <span>本月总支出已超出预算额度，请合理控制开支！</span>
             </div>
           )}
           {totalBudget.status === 'warning' && (
-            <div className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium pt-0.5">
+            <div className="text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-medium pt-0.5 animate-in fade-in duration-200">
               <AlertTriangle className="w-3 h-3 shrink-0" />
               <span>预算消耗已达到 80% 警戒线，注意消费节奏。</span>
             </div>
@@ -214,12 +218,12 @@ export function BudgetProgressCard({
                         {item.category_name}
                       </span>
                       {item.status === 'exceeded' && (
-                        <span className="text-[9px] px-1 py-0.2 rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-bold">
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 font-bold animate-subtle-pulse">
                           超支
                         </span>
                       )}
                       {item.status === 'warning' && (
-                        <span className="text-[9px] px-1 py-0.2 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-bold">
+                        <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 font-bold animate-subtle-pulse">
                           预警
                         </span>
                       )}
@@ -239,9 +243,9 @@ export function BudgetProgressCard({
                   </div>
 
                   {/* 大分类子进度条 */}
-                  <div className="w-full h-1.5 rounded-full bg-gray-100 dark:bg-neutral-700 overflow-hidden">
+                  <div className="w-full h-1.5 rounded-full bg-gray-100 dark:bg-neutral-700/80 overflow-hidden">
                     <div
-                      className="h-full rounded-full transition-all duration-500"
+                      className="h-full rounded-full transition-all duration-700 ease-out"
                       style={{
                         width: `${Math.min(Math.max(item.percentage, 2), 100)}%`,
                         backgroundColor: barColor,
@@ -258,7 +262,7 @@ export function BudgetProgressCard({
             <button
               type="button"
               onClick={() => setIsExpanded(!isExpanded)}
-              className="py-1 text-[11px] font-medium text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-1 pt-1"
+              className="py-1 text-[11px] font-medium text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center justify-center gap-1 pt-1 active:scale-95"
             >
               <span>{isExpanded ? '收起分类预算' : `展开其余 ${categoryBudgets.length - 3} 个分类预算`}</span>
               {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}

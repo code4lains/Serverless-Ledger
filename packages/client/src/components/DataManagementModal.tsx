@@ -333,9 +333,9 @@ export function DataManagementModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-white dark:bg-neutral-850 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700/80 overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="w-full max-w-lg bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700/80 overflow-hidden flex flex-col max-h-[92vh] animate-modal-in">
         {/* 1. 顶部 Header */}
-        <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-neutral-700 flex items-center justify-between bg-gray-50/50 dark:bg-neutral-800/40">
+        <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-neutral-700/80 flex items-center justify-between bg-gray-50/50 dark:bg-neutral-800/40">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-600/20">
               <FolderDown className="w-4 h-4" />
@@ -353,7 +353,7 @@ export function DataManagementModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
+            className="p-1.5 rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -361,16 +361,16 @@ export function DataManagementModal({
 
         {/* 2. 导出 / 导入 Tab 切换 Pills */}
         <div className="px-4 sm:px-5 pt-3">
-          <div className="grid grid-cols-2 bg-gray-100 dark:bg-neutral-900/80 p-1 rounded-2xl text-xs font-semibold">
+          <div className="grid grid-cols-2 bg-gray-100/90 dark:bg-neutral-900/90 p-1 rounded-2xl text-xs font-semibold">
             <button
               type="button"
               onClick={() => {
                 setActiveTab('export');
                 setExportSuccessMessage(null);
               }}
-              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2 rounded-xl transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
                 activeTab === 'export'
-                  ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-sm font-bold'
+                  ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
                   : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
               }`}
             >
@@ -383,9 +383,9 @@ export function DataManagementModal({
                 setActiveTab('import');
                 handleResetImport();
               }}
-              className={`py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              className={`py-2 rounded-xl transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
                 activeTab === 'import'
-                  ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-sm font-bold'
+                  ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-2xs font-bold'
                   : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
               }`}
             >

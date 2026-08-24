@@ -185,12 +185,12 @@ export function StatisticsView({
       {/* 1. 顶部控制栏 (账本切换与时间周期筛选) */}
       <div className="flex items-center justify-between gap-2">
         {/* 账本下拉选择 */}
-        <div className="flex items-center gap-1 bg-white dark:bg-neutral-800 border border-gray-100 dark:border-neutral-700 px-3 py-1.5 rounded-2xl shadow-xs text-xs font-medium">
+        <div className="flex items-center gap-1.5 bg-white dark:bg-neutral-800 border border-gray-100 dark:border-neutral-700/80 px-3 py-1.5 rounded-2xl shadow-2xs text-xs font-medium">
           <Coins className="w-3.5 h-3.5 text-indigo-500" />
           <select
             value={activeLedgerId}
             onChange={(e) => onSelectLedger(e.target.value)}
-            className="bg-transparent text-gray-800 dark:text-gray-200 outline-none cursor-pointer"
+            className="bg-transparent text-gray-800 dark:text-gray-200 outline-none cursor-pointer font-semibold"
           >
             <option value="all">全部账本透视</option>
             {ledgers.map((l) => (
@@ -202,45 +202,30 @@ export function StatisticsView({
         </div>
 
         {/* 周期切换 Pills */}
-        <div className="flex bg-gray-200/80 dark:bg-neutral-800 p-1 rounded-xl text-xs font-medium">
-          <button
-            type="button"
-            onClick={() => setPeriod('month')}
-            className={`px-2.5 py-1 rounded-lg transition-all ${
-              period === 'month'
-                ? 'bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-xs'
-                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
-            }`}
-          >
-            本月
-          </button>
-          <button
-            type="button"
-            onClick={() => setPeriod('year')}
-            className={`px-2.5 py-1 rounded-lg transition-all ${
-              period === 'year'
-                ? 'bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-xs'
-                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
-            }`}
-          >
-            本年
-          </button>
-          <button
-            type="button"
-            onClick={() => setPeriod('all')}
-            className={`px-2.5 py-1 rounded-lg transition-all ${
-              period === 'all'
-                ? 'bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-xs'
-                : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
-            }`}
-          >
-            全部
-          </button>
+        <div className="flex bg-gray-100/90 dark:bg-neutral-900/90 p-1 rounded-2xl text-xs font-medium">
+          {(['month', 'year', 'all'] as const).map((p) => {
+            const labels: Record<string, string> = { month: '本月', year: '本年', all: '全部' };
+            const isCur = period === p;
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1 rounded-xl transition-all duration-150 active:scale-95 ${
+                  isCur
+                    ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs font-semibold'
+                    : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
+                }`}
+              >
+                {labels[p]}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* 2. 核心财务看板大卡片 */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-4">
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-gray-400">
             {period === 'month' ? '本月结余' : period === 'year' ? '本年结余' : '累计净结余'}
@@ -284,13 +269,13 @@ export function StatisticsView({
       </div>
 
       {/* 3. 分类排行榜 Tab 切换 */}
-      <div className="flex bg-gray-100 dark:bg-neutral-800/80 p-1 rounded-2xl text-xs font-semibold">
+      <div className="flex bg-gray-100/90 dark:bg-neutral-900/90 p-1 rounded-2xl text-xs font-semibold">
         <button
           type="button"
           onClick={() => setSelectedType('expense')}
-          className={`flex-1 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-1.5 rounded-xl transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
             selectedType === 'expense'
-              ? 'bg-white dark:bg-neutral-700 text-[#D08770] shadow-xs'
+              ? 'bg-white dark:bg-neutral-800 text-[#D08770] shadow-2xs font-bold'
               : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
           }`}
         >
@@ -300,9 +285,9 @@ export function StatisticsView({
         <button
           type="button"
           onClick={() => setSelectedType('income')}
-          className={`flex-1 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-1.5 rounded-xl transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
             selectedType === 'income'
-              ? 'bg-white dark:bg-neutral-700 text-[#A3BE8C] shadow-xs'
+              ? 'bg-white dark:bg-neutral-800 text-[#A3BE8C] shadow-2xs font-bold'
               : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
           }`}
         >
@@ -312,9 +297,9 @@ export function StatisticsView({
         <button
           type="button"
           onClick={() => setSelectedType('loan')}
-          className={`flex-1 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+          className={`flex-1 py-1.5 rounded-xl transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
             selectedType === 'loan'
-              ? 'bg-white dark:bg-neutral-700 text-purple-600 dark:text-purple-400 shadow-xs'
+              ? 'bg-white dark:bg-neutral-800 text-purple-600 dark:text-purple-400 shadow-2xs font-bold'
               : 'text-gray-500 hover:text-gray-800 dark:text-gray-400'
           }`}
         >
@@ -324,7 +309,7 @@ export function StatisticsView({
       </div>
 
       {/* 4. 统计排行榜列表 */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-4">
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-4">
         {selectedType === 'expense' ? (
           <div>
             <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-neutral-700/60 text-xs font-bold text-gray-700 dark:text-gray-200">
@@ -365,9 +350,9 @@ export function StatisticsView({
                       </div>
                     </div>
                     {/* 莫兰迪色进度条 */}
-                    <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-neutral-700 overflow-hidden">
+                    <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-neutral-700/80 overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-500"
+                        className="h-full rounded-full transition-all duration-700 ease-out"
                         style={{
                           width: `${Math.max(item.percentage, 2)}%`,
                           backgroundColor: item.category?.color || '#D08770',
@@ -418,9 +403,9 @@ export function StatisticsView({
                         </span>
                       </div>
                     </div>
-                    <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-neutral-700 overflow-hidden">
+                    <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-neutral-700/80 overflow-hidden">
                       <div
-                        className="h-full rounded-full transition-all duration-500"
+                        className="h-full rounded-full transition-all duration-700 ease-out"
                         style={{
                           width: `${Math.max(item.percentage, 2)}%`,
                           backgroundColor: item.category?.color || '#A3BE8C',

@@ -96,10 +96,10 @@ export function CategoryPicker({
               key={parent.category_id}
               type="button"
               onClick={() => handleSelectParent(parent.category_id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl whitespace-nowrap transition-all text-xs font-medium border shrink-0 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl whitespace-nowrap transition-all duration-150 text-xs font-medium border shrink-0 active:scale-95 ${
                 isParentActive
-                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                  : 'bg-gray-50 dark:bg-neutral-900 text-gray-600 dark:text-gray-400 border-gray-200 dark:border-neutral-700/80 hover:bg-gray-100 dark:hover:bg-neutral-800'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm shadow-indigo-500/20'
+                  : 'bg-gray-50/90 dark:bg-neutral-900/90 text-gray-600 dark:text-gray-400 border-gray-200/80 dark:border-neutral-700/80 hover:bg-gray-100 dark:hover:bg-neutral-800'
               }`}
             >
               <CategoryIcon
@@ -115,7 +115,7 @@ export function CategoryPicker({
 
       {/* 2. 二级子分类选择区域 (胶囊 Pills 风格) */}
       {currentParentNode && currentParentNode.children.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-gray-100 dark:border-neutral-700/50">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-700/60">
           {currentParentNode.children.map((sub) => {
             const isSubSelected = selectedCategoryId === sub.category_id;
             return (
@@ -123,10 +123,10 @@ export function CategoryPicker({
                 key={sub.category_id}
                 type="button"
                 onClick={() => onSelectCategory(sub.category_id)}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all duration-150 active:scale-95 ${
                   isSubSelected
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-gray-100/90 dark:bg-neutral-800 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                    ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                    : 'bg-gray-100/90 dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200/80 dark:hover:bg-neutral-700/80'
                 }`}
               >
                 <CategoryIcon
@@ -144,7 +144,7 @@ export function CategoryPicker({
               type="button"
               onClick={onOpenManage}
               title="添加或调整子分类"
-              className="flex items-center gap-0.5 px-2 py-0.8 rounded-lg text-[10px] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 border border-dashed border-gray-300 dark:border-neutral-700 transition-colors"
+              className="flex items-center gap-0.5 px-2 py-0.8 rounded-lg text-[10px] text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 border border-dashed border-gray-300 dark:border-neutral-700 transition-colors active:scale-95"
             >
               <Plus className="w-3 h-3" />
               <span>加小类</span>

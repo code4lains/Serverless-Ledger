@@ -95,6 +95,9 @@ export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profil
 export function App() {
   const [navTab, setNavTab] = useState<NavigationTab>('record');
   const [darkMode, setDarkMode] = useState<boolean>(() => {
+    const saved = localStorage.getItem('ledger_theme');
+    if (saved === 'dark') return true;
+    if (saved === 'light') return false;
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
@@ -106,7 +109,33 @@ export function App() {
   const [dataModalMode, setDataModalMode] = useState<'export' | 'import'>('export');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
+  const [feedbackToast, setFeedbackToast] = useState<{ message: string; type?: 'success' | 'info' | 'error' } | null>(null);
 
+  // 快捷微动效提示 Toast
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setFeedbackToast({ message, type });
+    setTimeout(() => {
+      setFeedbackToast((prev) => (prev?.message === message ? null : prev));
+    }, 2800);
+  };
+
+  // 切换深浅主题并持久化
+  const handleToggleTheme = () => {
+    setDarkMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('ledger_theme', next ? 'dark' : 'light');
+      return next;
+    });
+  };
+
+  // 初始化与监听系统暗黑主题
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
 
   // 账本状态 (多账本体系)
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -135,15 +164,6 @@ export function App() {
   // 筛选状态
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
-
-  // 初始化暗黑主题
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
 
   // 从本地 Dexie 加载流水与待同步状态
   const loadLocalData = async (user?: AuthUser | null) => {
@@ -250,7 +270,7 @@ export function App() {
   // 初始化应用 (免登录自由浏览体验)
   useEffect(() => {
     // 启动网络感知器与后台自动同步
-    networkMonitor.start(15000);
+    networkMonitor.start(30000);
     syncManager.start();
 
     // 订阅同步完成事件以自动刷新本地 UI
@@ -407,6 +427,12 @@ export function App() {
 
     await createTransaction(txData);
 
+    // 触发展示记账成功微交互提示 Toast
+    const catMeta = getCategoryMeta(selectedCategory, categories, activeTab);
+    const typeLabel = activeTab === 'expense' ? '支出' : activeTab === 'income' ? '收入' : activeTab === 'transfer' ? '转账' : '借贷';
+    const targetLedgerName = ledgers.find((l) => l.ledger_id === targetLedgerId)?.name || '账本';
+    showToast(`✓ 已记一笔${typeLabel} ¥${amountStr}${catMeta?.name ? ` · ${catMeta.name}` : ''} (${targetLedgerName})`);
+
     // 快速重置并刷新
     setAmountStr('');
     setRemark('');
@@ -535,22 +561,32 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F7F6F2] dark:bg-[#18191A] text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 pb-32 sm:pb-36 font-sans">
+    <div className="min-h-screen bg-morandi-bg dark:bg-morandi-darkBg text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 pb-32 sm:pb-36 font-sans transition-colors duration-200">
+      {/* 浮动微动效反馈 Toast */}
+      {feedbackToast && (
+        <div className="fixed top-4 z-60 max-w-sm px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-neutral-800/95 text-gray-900 dark:text-white shadow-xl shadow-indigo-500/10 border border-gray-100 dark:border-neutral-700/80 backdrop-blur-md animate-toast-in flex items-center gap-2.5 text-xs font-semibold">
+          <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+          </div>
+          <span>{feedbackToast.message}</span>
+        </div>
+      )}
+
       <div className="w-full max-w-md flex flex-col gap-4">
         {/* 顶部导航与状态栏 */}
         <header className="flex justify-between items-center py-2 px-1">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shadow-indigo-500/20">
-              <ShieldCheck className="w-4 h-4 text-white" />
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shadow-indigo-500/25 transition-transform hover:scale-105 active:scale-95">
+              <ShieldCheck className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight">账盾</h1>
-              <p className="text-[11px] text-gray-400">Serverless Ledger</p>
+              <h1 className="text-base font-bold tracking-tight text-gray-900 dark:text-white">账盾</h1>
+              <p className="text-[10px] text-gray-400 font-medium">Serverless Ledger</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {currentUser ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 text-xs">
+              <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 text-xs">
                 <UserIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
                 <span className="font-medium max-w-[90px] truncate text-gray-700 dark:text-gray-200" title={currentUser.email}>
                   {currentUser.email.split('@')[0]}
@@ -582,7 +618,7 @@ export function App() {
                   ? `存在 ${pendingCount} 笔未同步记录，点击立即同步`
                   : '数据已完全同步至云端'
               }
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative"
             >
               <RefreshCw
                 className={`w-4 h-4 transition-colors ${
@@ -594,14 +630,19 @@ export function App() {
                 }`}
               />
               {pendingCount > 0 && !isSyncing && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 ring-2 ring-white dark:ring-neutral-800 animate-pulse" />
               )}
             </button>
             <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 hover:bg-gray-50 active:scale-95 transition-all text-gray-600 dark:text-gray-300"
+              onClick={handleToggleTheme}
+              title={darkMode ? '切换为浅色模式' : '切换为深色模式'}
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-90 transition-all text-gray-600 dark:text-gray-300"
             >
-              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-gray-600" />}
+              {darkMode ? (
+                <Sun className="w-4 h-4 text-amber-400 animate-in spin-in-180 duration-200" />
+              ) : (
+                <Moon className="w-4 h-4 text-indigo-600 animate-in spin-in-180 duration-200" />
+              )}
             </button>
           </div>
         </header>
@@ -853,12 +894,12 @@ export function App() {
                             <div
                               key={tx.transaction_id}
                               onClick={() => setSelectedTxForDetail(tx)}
-                              className="py-2.5 px-2 flex items-center justify-between hover:bg-white dark:hover:bg-neutral-800 rounded-xl transition-all cursor-pointer group"
+                              className="py-2.5 px-2.5 flex items-center justify-between hover:bg-white dark:hover:bg-neutral-800/90 rounded-2xl transition-all cursor-pointer group active:scale-[0.99] border border-transparent hover:border-gray-100 dark:hover:border-neutral-700/60 shadow-none hover:shadow-2xs"
                             >
                               {/* 左侧：分类图标与名称/备注 */}
                               <div className="flex items-center gap-3">
                                 <div
-                                  className={`w-8 h-8 rounded-xl flex items-center justify-center transition-transform group-hover:scale-105 ${
+                                  className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-105 group-active:scale-95 shadow-2xs ${
                                     isExpense
                                       ? 'bg-orange-100/70 dark:bg-orange-950/40 text-[#D08770]'
                                       : isIncome
@@ -1082,7 +1123,7 @@ export function App() {
                           const current = parseFloat(amountStr) || 0;
                           setAmountStr((current + preset).toString());
                         }}
-                        className="px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-neutral-700 transition-colors"
+                        className="px-2.5 py-1 rounded-xl bg-gray-100 dark:bg-neutral-800/80 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-neutral-700 active:scale-95 transition-all shadow-2xs font-semibold"
                       >
                         +{preset}
                       </button>
@@ -1091,7 +1132,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setAmountStr('')}
-                        className="px-2 py-1 rounded-lg text-gray-400 hover:text-red-500 text-[10px]"
+                        className="px-2.5 py-1 rounded-xl text-gray-400 hover:text-red-500 dark:hover:text-red-400 text-[10px] font-medium active:scale-95 transition-all"
                       >
                         清空
                       </button>

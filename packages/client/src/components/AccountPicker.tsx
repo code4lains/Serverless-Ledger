@@ -48,7 +48,7 @@ export function AccountPicker({
   };
 
   return (
-    <div className="flex flex-col gap-2.5 bg-gray-50/80 dark:bg-neutral-900/60 p-3 rounded-2xl border border-gray-100 dark:border-neutral-700/60">
+    <div className="flex flex-col gap-2.5 bg-gray-50/90 dark:bg-neutral-900/70 p-3.5 rounded-2xl border border-gray-100 dark:border-neutral-700/70 shadow-2xs">
       {/* 顶部或行内：转出账户与转入账户 */}
       <div className="flex items-center gap-2">
         {/* 转出账户 / 来源 */}
@@ -62,7 +62,7 @@ export function AccountPicker({
             placeholder={fromPlaceholder}
             value={fromAccount}
             onChange={(e) => onChangeFrom(e.target.value)}
-            className="w-full px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 focus:border-gray-400 dark:focus:border-neutral-500 focus:outline-none transition-all shadow-2xs"
+            className="w-full px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 focus:border-indigo-500 dark:focus:border-indigo-400 focus:outline-none transition-all shadow-2xs text-gray-900 dark:text-white"
           />
         </div>
 
@@ -73,9 +73,9 @@ export function AccountPicker({
               type="button"
               onClick={handleSwap}
               title="交换转出与转入账户"
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-95 transition-all shadow-2xs"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-700 hover:scale-105 active:scale-90 transition-all shadow-2xs group"
             >
-              <ArrowRightLeft className="w-3.5 h-3.5" />
+              <ArrowRightLeft className="w-3.5 h-3.5 group-hover:rotate-180 transition-transform duration-300" />
             </button>
           </div>
         )}
@@ -91,13 +91,13 @@ export function AccountPicker({
             placeholder={toPlaceholder}
             value={toAccount}
             onChange={(e) => onChangeTo(e.target.value)}
-            className="w-full px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 focus:border-gray-400 dark:focus:border-neutral-500 focus:outline-none transition-all shadow-2xs"
+            className="w-full px-3 py-2 text-xs font-semibold rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 focus:border-indigo-500 dark:focus:border-indigo-400 focus:outline-none transition-all shadow-2xs text-gray-900 dark:text-white"
           />
         </div>
       </div>
 
       {/* 快捷账户选择 Chips */}
-      <div className="flex flex-col gap-1.5 pt-1 border-t border-gray-100 dark:border-neutral-800/80">
+      <div className="flex flex-col gap-1.5 pt-1.5 border-t border-gray-100 dark:border-neutral-800/80">
         {/* 来源快捷建议 */}
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar text-[10px]">
           <span className="text-gray-400 shrink-0 font-medium px-1">来源快捷:</span>
@@ -106,10 +106,10 @@ export function AccountPicker({
               key={`from_${item}`}
               type="button"
               onClick={() => onChangeFrom(item)}
-              className={`px-2 py-0.5 rounded-md whitespace-nowrap transition-colors ${
+              className={`px-2 py-0.8 rounded-lg whitespace-nowrap transition-all active:scale-95 ${
                 fromAccount === item
-                  ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-medium'
-                  : 'bg-white dark:bg-neutral-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-700'
+                  ? 'bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300 font-semibold shadow-2xs'
+                  : 'bg-white dark:bg-neutral-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-100 dark:border-neutral-700/60'
               }`}
             >
               {item}
@@ -125,10 +125,10 @@ export function AccountPicker({
               key={`to_${item}`}
               type="button"
               onClick={() => onChangeTo(item)}
-              className={`px-2 py-0.5 rounded-md whitespace-nowrap transition-colors ${
+              className={`px-2 py-0.8 rounded-lg whitespace-nowrap transition-all active:scale-95 ${
                 toAccount === item
-                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-medium'
-                  : 'bg-white dark:bg-neutral-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-neutral-700'
+                  ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold shadow-2xs'
+                  : 'bg-white dark:bg-neutral-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-700 border border-gray-100 dark:border-neutral-700/60'
               }`}
             >
               {item}
