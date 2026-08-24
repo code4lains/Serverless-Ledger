@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Wallet,
   PlusCircle,
@@ -173,6 +173,11 @@ export function App() {
   // 筛选状态
   const [filterType, setFilterType] = useState<'all' | TransactionType>('all');
   const [searchKeyword, setSearchKeyword] = useState<string>('');
+
+  // 明细列表分页与按需懒加载 (单页 40 条，触底自动追加，极大提高巨量流水下的流畅度)
+  const DETAIL_PAGE_SIZE = 40;
+  const [displayLimit, setDisplayLimit] = useState<number>(DETAIL_PAGE_SIZE);
+  const detailListObserverRef = useRef<HTMLDivElement | null>(null);
 
   // 从本地 Dexie 加载流水与待同步状态
   const loadLocalData = async (user?: AuthUser | null) => {
@@ -574,7 +579,36 @@ export function App() {
     });
   }, [activeLedgerTransactions, filterType, searchKeyword, categories]);
 
-  // 独立账本核算：收支与结余统计
+  // 筛选条件或 Tab 变化时平滑重置懒加载展示数量
+  useEffect(() => {
+    setDisplayLimit(DETAIL_PAGE_SIZE);
+  }, [activeLedgerId, filterType, searchKeyword, navTab]);
+
+  // 监听明细列表触底并自动无感追加下一批次数据 (懒加载)
+  useEffect(() => {
+    if (navTab !== 'detail') return;
+    const target = detailListObserverRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0] && entries[0].isIntersecting) {
+          setDisplayLimit((prev) => {
+            if (prev < filteredTransactions.length) {
+              return prev + DETAIL_PAGE_SIZE;
+            }
+            return prev;
+          });
+        }
+      },
+      { rootMargin: '250px' }
+    );
+
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [navTab, filteredTransactions.length]);
+
+  // 独立账本核算：收支与结余统计 (基于当前筛选的所有交易)
   const totals = useMemo(() => {
     return calculateTotals(activeLedgerTransactions);
   }, [activeLedgerTransactions]);
@@ -587,10 +621,15 @@ export function App() {
     });
   }, [budgets, activeLedgerTransactions, categories, activeLedgerId]);
 
-  // 按天分组的流水明细
+  // 明细按需懒加载切片 (仅对可见切片进行日历分组与渲染，解决海量数据 DOM 卡顿)
+  const visibleTransactions = useMemo(() => {
+    return filteredTransactions.slice(0, displayLimit);
+  }, [filteredTransactions, displayLimit]);
+
+  // 按天分组的流水明细 (仅对可见切片计算分组，保证 60fps 极速滑动)
   const dayGroups = useMemo(() => {
-    return groupTransactionsByDay(filteredTransactions);
-  }, [filteredTransactions]);
+    return groupTransactionsByDay(visibleTransactions);
+  }, [visibleTransactions]);
 
   // 切换账本
   const handleSwitchLedger = (ledgerId: string) => {
@@ -864,7 +903,14 @@ export function App() {
                   <h2 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">
                     {activeLedger ? `【${activeLedger.name}】流水明细` : '全账本流水明细'}
                   </h2>
-                  <span className="text-[11px] text-gray-400">共 {filteredTransactions.length} 笔记录</span>
+                  <span className="text-[11px] text-gray-400">
+                    共 {filteredTransactions.length} 笔记录
+                    {filteredTransactions.length > displayLimit && (
+                      <span className="text-indigo-600 dark:text-indigo-400 ml-1 font-medium">
+                        (已载入前 {visibleTransactions.length} 笔)
+                      </span>
+                    )}
+                  </span>
                 </div>
 
                 {/* 筛选切换 (全部 / 支出 / 收入 / 转账 / 借贷) & 搜索 */}
@@ -1072,6 +1118,33 @@ export function App() {
                       </div>
                     </div>
                   ))}
+
+                  {/* 懒加载触底哨兵与分页加载指示条 */}
+                  {filteredTransactions.length > 0 && (
+                    <div className="pt-2 flex flex-col items-center gap-2">
+                      {displayLimit < filteredTransactions.length ? (
+                        <div ref={detailListObserverRef} className="w-full flex flex-col items-center gap-1.5 py-3">
+                          <div className="flex items-center gap-2 text-xs text-gray-400">
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-500" />
+                            <span>正在向下无感加载更多明细 ({visibleTransactions.length}/{filteredTransactions.length})...</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setDisplayLimit((prev) => prev + DETAIL_PAGE_SIZE)}
+                            className="text-[11px] px-3 py-1 rounded-xl bg-gray-100 dark:bg-neutral-800 hover:bg-gray-200 dark:hover:bg-neutral-700 text-indigo-600 dark:text-indigo-400 font-medium transition-colors cursor-pointer"
+                          >
+                            点击快速加载更多 (+{Math.min(DETAIL_PAGE_SIZE, filteredTransactions.length - visibleTransactions.length)} 笔)
+                          </button>
+                        </div>
+                      ) : (
+                        filteredTransactions.length > DETAIL_PAGE_SIZE && (
+                          <div className="text-[11px] text-gray-400 py-3 text-center">
+                            ✓ 已加载全部 {filteredTransactions.length} 笔流水明细
+                          </div>
+                        )
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

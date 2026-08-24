@@ -360,18 +360,51 @@ transactionsRouter.post('/sync', async (c) => {
     const now = new Date().toISOString();
 
     if (transactions.length > 0) {
+      // 1. 批量预先保障用户和账本存在 (仅执行 1 次批量准备)
+      const ledgerSet = new Set<string>();
       for (const tx of transactions) {
-        // 校验金额
+        ledgerSet.add(tx.ledger_id || 'default_ledger');
+      }
+
+      const ensureStmts = [
+        c.env.DB.prepare(
+          'INSERT OR IGNORE INTO users (user_id, email, created_at, updated_at) VALUES (?, ?, ?, ?)'
+        ).bind(userId, `${userId}@serverless.dev`, now, now),
+      ];
+
+      for (const ledId of ledgerSet) {
+        ensureStmts.push(
+          c.env.DB.prepare(
+            'INSERT OR IGNORE INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          ).bind(ledId, userId, '默认账本', 'CNY', 1, now, now)
+        );
+      }
+
+      await c.env.DB.batch(ensureStmts);
+
+      // 2. 一次性获取所有有效分类 ID 缓存至 Set 中 (O(1) 匹配，避免循环查询)
+      const { results: catRows } = await c.env.DB.prepare(
+        'SELECT category_id FROM categories WHERE user_id = ? OR user_id IS NULL'
+      )
+        .bind(userId)
+        .all<{ category_id: string }>();
+      const validCategoryIds = new Set((catRows || []).map((r) => r.category_id));
+
+      // 3. 准备流水 Upsert 语句并使用 D1 batch 批量写入
+      const txStmts = [];
+
+      for (const tx of transactions) {
         const amount = typeof tx.amount === 'number' ? Math.round(tx.amount) : 0;
         if (amount <= 0 || isNaN(amount)) {
           continue; // 跳过非法金额记录
         }
 
         const ledgerId = tx.ledger_id || 'default_ledger';
-        await ensureUserAndLedger(c.env.DB, userId, ledgerId);
-        const validCatId = await resolveValidCategoryId(c.env.DB, tx.category_id);
+        const validCatId = tx.category_id && validCategoryIds.has(tx.category_id) ? tx.category_id : null;
+        const txCreatedAt = tx.created_at || now;
+        const txUpdatedAt = tx.updated_at || now;
 
-        await c.env.DB.prepare(
+        const stmt = c.env.DB.prepare(
           `INSERT INTO transactions (
             transaction_id, user_id, ledger_id, type, amount, category_id,
             from_account, to_account, transaction_date, remark, sync_status, created_at, updated_at
@@ -386,25 +419,31 @@ transactionsRouter.post('/sync', async (c) => {
             remark=excluded.remark,
             sync_status='synced',
             updated_at=excluded.updated_at
-          WHERE excluded.updated_at > transactions.updated_at`
-        )
-          .bind(
-            tx.transaction_id,
-            userId,
-            ledgerId,
-            tx.type,
-            amount,
-            validCatId,
-            tx.from_account || null,
-            tx.to_account || null,
-            tx.transaction_date,
-            tx.remark || null,
-            tx.created_at || now,
-            tx.updated_at || now
-          )
-          .run();
+          WHERE excluded.updated_at >= transactions.updated_at`
+        ).bind(
+          tx.transaction_id,
+          userId,
+          ledgerId,
+          tx.type,
+          amount,
+          validCatId,
+          tx.from_account || null,
+          tx.to_account || null,
+          tx.transaction_date,
+          tx.remark || null,
+          txCreatedAt,
+          txUpdatedAt
+        );
 
+        txStmts.push(stmt);
         syncedIds.push(tx.transaction_id);
+      }
+
+      // 按 100 条为一组分批执行 D1 batch
+      const BATCH_CHUNK_SIZE = 100;
+      for (let i = 0; i < txStmts.length; i += BATCH_CHUNK_SIZE) {
+        const chunk = txStmts.slice(i, i + BATCH_CHUNK_SIZE);
+        await c.env.DB.batch(chunk);
       }
     }
 

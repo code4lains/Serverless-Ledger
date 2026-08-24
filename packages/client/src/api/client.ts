@@ -963,11 +963,11 @@ export async function pullAndMergeServerTransactions(): Promise<number> {
           if (!localTx) {
             // 本地没有，直接写入
             await localDb.transactions.put({ ...serverTx, sync_status: 'synced' });
-          } else if (localTx.sync_status === 'synced') {
-            // 本地已同步，比较 updated_at (Last-Write-Wins)
+          } else {
+            // 本地已有：若时间戳服务端更新或本地曾为 pending，更新并置为 synced
             const localUpdated = new Date(localTx.updated_at).getTime();
             const serverUpdated = new Date(serverTx.updated_at).getTime();
-            if (serverUpdated >= localUpdated) {
+            if (serverUpdated >= localUpdated || localTx.sync_status === 'pending') {
               await localDb.transactions.put({ ...serverTx, sync_status: 'synced' });
             }
           }
@@ -1211,17 +1211,21 @@ export async function batchImportTransactions(
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({ transactions: chunk }),
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(15000),
         });
 
         if (res.ok) {
           const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
           if (json.success && json.data) {
             const syncedIds = new Set(json.data.synced_ids);
+            const syncedTxs: Transaction[] = [];
             for (const tx of chunk) {
               if (syncedIds.has(tx.transaction_id)) {
-                await localDb.transactions.update(tx.transaction_id, { sync_status: 'synced' });
+                syncedTxs.push({ ...tx, sync_status: 'synced' });
               }
+            }
+            if (syncedTxs.length > 0) {
+              await localDb.transactions.bulkPut(syncedTxs);
             }
           }
         }

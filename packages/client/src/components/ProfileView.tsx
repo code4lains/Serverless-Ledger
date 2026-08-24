@@ -654,9 +654,9 @@ export function ProfileView({
                 <p className="text-[10px] text-gray-400">CSV 账单导入 · 多格式全量导出 · 资产掌控</p>
               </div>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-semibold">
+            {/* <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-semibold">
               白皮书 7.3
-            </span>
+            </span> */}
           </div>
 
           {/* 快捷操作入口 */}

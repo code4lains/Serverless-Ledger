@@ -351,9 +351,9 @@ export function DataManagementModal({
             <div>
               <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-1.5">
                 <span>数据与资产管理</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-normal">
+                {/* <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-normal">
                   白皮书 7.3
-                </span>
+                </span> */}
               </h3>
               <p className="text-[11px] text-gray-400">CSV 账单智能导入与多格式全量导出</p>
             </div>

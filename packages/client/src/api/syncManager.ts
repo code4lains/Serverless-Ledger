@@ -181,7 +181,7 @@ class SyncManager {
         }
       }
 
-      // 2. 批量推送待同步的账单流水
+      // 2. 批量分批推送待同步的账单流水 (分块推送，防止大文件导入后单次请求超时)
       const pendingTxs = await localDb.transactions
         .where('user_id')
         .equals(user.user_id)
@@ -189,28 +189,38 @@ class SyncManager {
         .toArray();
 
       if (pendingTxs.length > 0) {
-        try {
-          const res = await fetch(`${API_BASE}/transactions/sync`, {
-            method: 'POST',
-            headers: this.getAuthHeaders(),
-            body: JSON.stringify({ transactions: pendingTxs }),
-            signal: AbortSignal.timeout(6000),
-          });
+        const CHUNK_SIZE = 100;
+        const totalChunks = Math.ceil(pendingTxs.length / CHUNK_SIZE);
 
-          if (res.ok) {
-            const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
-            if (json.success && json.data) {
-              const syncedIds = new Set(json.data.synced_ids);
-              for (const tx of pendingTxs) {
-                if (syncedIds.has(tx.transaction_id)) {
-                  await localDb.transactions.update(tx.transaction_id, { sync_status: 'synced' });
-                  syncedTxCount++;
+        for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+          const chunk = pendingTxs.slice(chunkIdx * CHUNK_SIZE, (chunkIdx + 1) * CHUNK_SIZE);
+          try {
+            const res = await fetch(`${API_BASE}/transactions/sync`, {
+              method: 'POST',
+              headers: this.getAuthHeaders(),
+              body: JSON.stringify({ transactions: chunk }),
+              signal: AbortSignal.timeout(15000),
+            });
+
+            if (res.ok) {
+              const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
+              if (json.success && json.data) {
+                const syncedIds = new Set(json.data.synced_ids);
+                const syncedTxs: Transaction[] = [];
+                for (const tx of chunk) {
+                  if (syncedIds.has(tx.transaction_id)) {
+                    syncedTxs.push({ ...tx, sync_status: 'synced' });
+                    syncedTxCount++;
+                  }
+                }
+                if (syncedTxs.length > 0) {
+                  await localDb.transactions.bulkPut(syncedTxs);
                 }
               }
             }
+          } catch (err: any) {
+            console.warn('[SyncManager] Push pending transactions chunk failed:', err);
           }
-        } catch (err: any) {
-          console.warn('[SyncManager] Push pending transactions failed:', err);
         }
       }
 

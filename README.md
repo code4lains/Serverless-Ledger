@@ -41,7 +41,7 @@ Serverless-Ledger/
 │   │   │   ├── middleware/    # JWT 身份鉴权与可选鉴权中间件
 │   │   │   ├── utils/         # 密码哈希、JWT 签发、Turnstile 人机验证
 │   │   │   └── index.ts       # Hono 应用入口、CORS 中间件与错误捕获
-│   │   ├── migrations/        # Cloudflare D1 SQLite 数据库迁移脚本 (0001 ~ 0005)
+│   │   ├── migrations/        # Cloudflare D1 SQLite 数据库迁移脚本 (0001_initial_schema.sql)
 │   │   ├── wrangler.toml      # Workers & D1 本地与生产环境绑定配置
 │   │   └── package.json
 │   └── client/                # 前端 (React 18 + Vite + Tailwind CSS + Dexie.js)
@@ -141,19 +141,14 @@ npm run test:server
 ```bash
 npm run db:migrate:remote
 ```
-Wrangler 将自动按顺序执行 `packages/server/migrations/` 中的所有迁移脚本：
-- `0001_initial_schema.sql`：基础用户、账本、分类、流水、预算表结构与系统默认分类数据
-- `0002_transfer_and_loan_categories.sql`：转账与借贷专属分类
-- `0003_category_color.sql`：分类莫兰迪色系与图标拓展
-- `0004_invite_codes.sql`：邀请码管理表与系统初始创世邀请码
-- `0005_recovery_code.sql`：用户密码恢复码绑定字段
-- `0006_recurring_rules.sql`：周期记账规则表与执行索引
+Wrangler 将自动执行 `packages/server/migrations/` 中的全量迁移脚本：
+- `0001_initial_schema.sql`：包含全部核心表结构（用户、账本、分类、流水、预算、邀请码、周期记账规则）、索引与全量预置分类/邀请码数据。
 
 #### 备用方式 B：在 Cloudflare Dashboard 控制台中手动执行
 若未配置本地 Wrangler 登录，可直接在控制台操作：
 1. 进入该 D1 数据库详情页，切换到 **Console（控制台）** 标签页。
-2. 依次打开项目 `packages/server/migrations/` 目录下的 SQL 文件（从 `0001` 到 `0006`），将其中的 SQL 内容复制粘贴进控制台并点击 **Execute（执行）**。
-3. 执行完成后切换到 **Tables** 标签页，确认 `users`、`ledgers`、`categories`、`transactions`、`budgets`、`invite_codes`、`recurring_rules` 均已就绪。
+2. 打开项目 `packages/server/migrations/0001_initial_schema.sql` 文件，将其中的全量 SQL 内容复制粘贴进控制台并点击 **Execute（执行）**。
+3. 执行完成后切换到 **Tables** 标签页，确认 `users`、`ledgers`、`categories`、`transactions`、`budgets`、`invite_codes`、`recurring_rules` 7 张数据表均已就绪。
 
 ---
 
