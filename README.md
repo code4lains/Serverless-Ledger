@@ -167,9 +167,30 @@ npm run -w @ledger/client cap:open:ios
 
 ### 5.2 桌面端 (Tauri for Windows / macOS / Linux)
 ```bash
+# 生成全平台图标 (PNG / ICO / ICNS / PWA)
+npm run generate:icons
+
 # 开发模式 (启动桌面窗口并热重载)
 npm run tauri:dev
 
 # 生成安装包 (Windows .msi/.exe, macOS .dmg/app, Linux .deb/AppImage)
 npm run tauri:build
 ```
+
+---
+
+## 6. 全端 CI/CD 自动化构建与发布 (CI/CD via GitHub Actions & CF Pages)
+
+本项目在 `.github/workflows/` 中内置了工业级的 CI/CD 自动化矩阵，支持全端一键构建与自动发布：
+
+| 工作流 | 触发机制 | 目标与产物 |
+| :--- | :--- | :--- |
+| **`ci.yml`** | `push` / `pull_request` | TypeScript 类型检查、Shared 库单元测试、Web 与 Server 产物编译预检 |
+| **`deploy-pages.yml`** | `push` (`main`) / 手动调度 | 自动化构建并无缝部署至 **Cloudflare Pages** 全栈托管环境 |
+| **`build-android.yml`** | `tag` (`v*`) / 手动调度 | 自动同步 Capacitor 并编译生成 Android Debug / Release APK |
+| **`build-ios.yml`** | `tag` (`v*`) / 手动调度 | macOS 环境下编译 iOS App 归档与工程包 |
+| **`build-desktop.yml`** | `tag` (`v*`) / 手动调度 | 跨平台 Matrix 构建 Windows (`.msi`, `.exe`)、macOS (`.dmg`)、Linux (`.AppImage`, `.deb`) |
+| **`release.yml`** | `tag` (`v*.*.*`) / 手动调度 | **全端统一发布流**：并发构建全平台安装包、生成 `SHA256SUMS.txt` 并发布至 GitHub Release |
+
+> 📖 更多关于 GitHub Secrets 与环境变量配置细节，请查阅 [全端 CI/CD 自动化构建指南](docs/CICD_PIPELINE.md)。
+

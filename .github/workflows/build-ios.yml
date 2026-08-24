@@ -1,0 +1,85 @@
+name: Build iOS App (Capacitor)
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: Build iOS Application
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client Dist
+        run: npm run build:client
+
+      - name: Add & Sync Capacitor iOS
+        working-directory: packages/client
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
+
+      - name: Install CocoaPods Dependencies
+        working-directory: packages/client/ios/App
+        run: |
+          pod install --repo-update
+
+      - name: Build iOS App (Generic Device, No Signing)
+        working-directory: packages/client/ios/App
+        run: |
+          xcodebuild build \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            -derivedDataPath build
+
+      - name: Package iOS Build Artifacts
+        run: |
+          mkdir -p release-ios
+          if [ -d packages/client/ios/App/build/Build/Products/Release-iphoneos/App.app ]; then
+            cd packages/client/ios/App/build/Build/Products/Release-iphoneos
+            zip -r ../../../../../../../release-ios/ServerlessLedger-iOS-Release.zip App.app
+            cd -
+          else
+            tar -czvf release-ios/ServerlessLedger-iOS-Project.tar.gz -C packages/client/ios App
+          fi
+          ls -la release-ios/
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-app-bundle
+          path: release-ios/*
+          retention-days: 14
+
+      - name: Upload to GitHub Release (on Tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-ios/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

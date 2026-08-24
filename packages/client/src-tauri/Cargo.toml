@@ -1,0 +1,20 @@
+[package]
+name = "serverless-ledger"
+version = "1.0.0"
+description = "账盾 - 极简记账应用 (Serverless Ledger)"
+authors = ["Serverless Ledger Team"]
+edition = "2021"
+default-run = "serverless-ledger"
+
+[lib]
+name = "serverless_ledger_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

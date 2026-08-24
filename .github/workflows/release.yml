@@ -1,0 +1,270 @@
+name: Full-Client Release (Web / App / PC)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release Tag (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  pre-release-check:
+    name: Run Quality & Pipeline Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npm -w @ledger/shared test
+
+      - name: Verify Build Configurations
+        run: node scripts/verify-build-pipeline.mjs
+
+  package-web:
+    name: Package Web PWA
+    needs: [pre-release-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client
+        run: npm run build:client
+
+      - name: Zip Web Dist
+        run: |
+          mkdir -p release-web
+          cd packages/client/dist
+          zip -r ../../../release-web/ServerlessLedger-Web-PWA.zip .
+          cd -
+
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-web-bundle
+          path: release-web/*
+
+  package-android:
+    name: Package Android APK
+    needs: [pre-release-check]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client Dist
+        run: npm run build:client
+
+      - name: Add & Sync Capacitor Android
+        working-directory: packages/client
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Build APKs
+        working-directory: packages/client/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+          ./gradlew assembleRelease
+
+      - name: Collect Android Artifacts
+        run: |
+          mkdir -p release-android
+          if [ -f packages/client/android/app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp packages/client/android/app/build/outputs/apk/debug/app-debug.apk release-android/ServerlessLedger-Android-Debug.apk
+          fi
+          if [ -f packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk release-android/ServerlessLedger-Android-Release-Unsigned.apk
+          fi
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-android-apks
+          path: release-android/*
+
+  package-desktop:
+    name: Package PC Desktop (${{ matrix.platform.os }} - ${{ matrix.platform.target }})
+    needs: [pre-release-check]
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            name: Windows-x64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            name: macOS-Intel
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            name: macOS-AppleSilicon
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            name: Linux-x64
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Linux System Dependencies
+        if: matrix.platform.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Setup Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Rust Cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './packages/client/src-tauri -> target'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client Dist
+        run: npm run build:client
+
+      - name: Build Tauri Desktop Bundle
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: packages/client
+          tagName: ${{ github.ref_name || inputs.release_tag }}
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.platform.target }}
+
+      - name: Collect Desktop Binaries
+        shell: bash
+        run: |
+          mkdir -p release-desktop-${{ matrix.platform.name }}
+          find packages/client/src-tauri/target/${{ matrix.platform.target }}/release/bundle/ -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} release-desktop-${{ matrix.platform.name }}/ \; || true
+          ls -la release-desktop-${{ matrix.platform.name }}/ || true
+
+      - name: Upload Desktop Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop-${{ matrix.platform.name }}
+          path: release-desktop-${{ matrix.platform.name }}/*
+
+  publish-full-release:
+    name: Publish Full-Client Release & Checksums
+    needs: [package-web, package-android, package-desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-dist
+
+      - name: Prepare Final Release Directory & Compute Checksums
+        run: |
+          mkdir -p release-assets
+          find all-dist -type f -exec cp {} release-assets/ \;
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt || shasum -a 256 * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          cd -
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.release_tag }}
+          name: '账盾 (Serverless Ledger) 全端发布 ${{ github.ref_name || inputs.release_tag }}'
+          body: |
+            ## 🌟 账盾 (Serverless Ledger) 全端跨平台发布
+
+            本版本包含了 **Web PWA、Android、PC（Windows / macOS / Linux）** 的完整构建产物。
+
+            ### 📦 下载与安装指南
+
+            | 平台 | 格式 | 说明 |
+            | :--- | :--- | :--- |
+            | **Windows PC** | `.msi` / `.exe` | Windows 10/11 64位安装包及绿色安装器 |
+            | **macOS PC** | `.dmg` | 支持 Apple Silicon (M1/M2/M3) 及 Intel x64 架构 |
+            | **Linux PC** | `.AppImage` / `.deb` | 适用于 Ubuntu/Debian 及主流 Linux 发行版 |
+            | **Android App** | `.apk` | Android 8.0+ 移动端安装包 |
+            | **Web PWA** | `.zip` | Web 静态离线资源包，可直接部署在 Cloudflare Pages / Nginx |
+
+            ### 🔒 校验和 (SHA256)
+            所有发布文件的 SHA256 校验和详见附件中的 `SHA256SUMS.txt`。
+
+            ---
+            *自动化构建由 GitHub Actions & Cloudflare Pages 提供支持。*
+          files: release-assets/*
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

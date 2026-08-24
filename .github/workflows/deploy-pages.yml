@@ -1,0 +1,66 @@
+name: Deploy to Cloudflare Pages (Web PWA & Fullstack)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment Environment (production or preview)'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - preview
+
+concurrency:
+  group: pages-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-pages:
+    name: Build & Deploy to Cloudflare Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+      pull-requests: write
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client Bundle
+        run: npm run build:client
+        env:
+          VITE_TURNSTILE_SITE_KEY: ${{ secrets.VITE_TURNSTILE_SITE_KEY }}
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        id: pages-deployment
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy packages/client/dist --project-name=serverless-ledger --branch=${{ github.ref_name }}
+
+      - name: Summary & Deployment URL
+        run: |
+          echo "### 🚀 Cloudflare Pages Deployment Succeeded!" >> $GITHUB_STEP_SUMMARY
+          echo "- **Project Name**: \`serverless-ledger\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch / Ref**: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Output**: \`packages/client/dist\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Functions Proxy**: \`functions/api/[[route]].ts\`" >> $GITHUB_STEP_SUMMARY

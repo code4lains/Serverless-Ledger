@@ -1,0 +1,89 @@
+name: CI (Code Quality & Build Verification)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+      - master
+      - dev
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Code Quality & Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Shared Package
+        run: npm run build:shared
+
+      - name: Run Shared Library Unit Tests (Category, Budget, CSV Import/Export)
+        run: npm -w @ledger/shared test
+
+      - name: TypeScript TypeCheck
+        run: |
+          npx tsc -b packages/shared/tsconfig.json --noEmit
+          npx tsc -b packages/client/tsconfig.json --noEmit
+
+  build-artifacts:
+    name: Verify Web PWA & Server Builds
+    runs-on: ubuntu-latest
+    needs: [lint-and-test]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client (PWA)
+        run: npm run build:client
+
+      - name: Verify Web Dist Assets
+        run: |
+          test -f packages/client/dist/index.html || (echo "dist/index.html not found!" && exit 1)
+          test -f packages/client/dist/sw.js || (echo "dist/sw.js not found!" && exit 1)
+          test -f packages/client/dist/manifest.webmanifest || (echo "dist/manifest.webmanifest not found!" && exit 1)
+          echo "Web PWA build verification passed!"
+
+      - name: Build Cloudflare Server & Functions
+        run: npm run build:server
+
+      - name: Verify Build Pipeline Configurations
+        run: node scripts/verify-build-pipeline.mjs
+
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: packages/client/dist/
+          retention-days: 7
