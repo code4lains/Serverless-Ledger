@@ -766,7 +766,88 @@ async function testPipeline() {
   assert.strictEqual(afterDelBudgetsJson.data.length, 3);
   console.log('Budget Module Verification Passed Successfully!');
 
-  console.log('\n🎉 ALL PIPELINE, MULTI-LEDGER & BUDGET INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉');
+  console.log('\n--- 16. Testing CSV Batch Import Transactions Ingestion (Whitepaper 7.3) ---');
+  // 模拟批量从 CSV 导入 5 笔流水 (包含支出、收入、转账、借贷)
+  const csvImportBatch = {
+    transactions: [
+      {
+        transaction_id: `tx_csv_wx_${Date.now()}_1`,
+        ledger_id: defaultLedgerId,
+        type: 'expense',
+        amount: 2500, // 25.00 CNY
+        category_id: 'cat_exp_food_lunch',
+        from_account: '微信零钱',
+        transaction_date: '2026-08-20T12:00:00.000Z',
+        remark: '美团外卖 - 午餐便当 (微信导入)',
+      },
+      {
+        transaction_id: `tx_csv_ali_${Date.now()}_2`,
+        ledger_id: defaultLedgerId,
+        type: 'expense',
+        amount: 500, // 5.00 CNY
+        category_id: 'cat_exp_tr_metro',
+        from_account: '花呗',
+        transaction_date: '2026-08-20T18:00:00.000Z',
+        remark: '申通地铁 - 乘车码 (支付宝导入)',
+      },
+      {
+        transaction_id: `tx_csv_sal_${Date.now()}_3`,
+        ledger_id: defaultLedgerId,
+        type: 'income',
+        amount: 1500000, // 15000.00 CNY
+        category_id: 'cat_inc_sal_base',
+        to_account: '招商银行',
+        transaction_date: '2026-08-15T09:00:00.000Z',
+        remark: '公司薪资发放 (标准CSV导入)',
+      },
+      {
+        transaction_id: `tx_csv_tr_${Date.now()}_4`,
+        ledger_id: defaultLedgerId,
+        type: 'transfer',
+        amount: 20000, // 200.00 CNY
+        category_id: 'cat_tr_internal',
+        from_account: '微信零钱',
+        to_account: '招商银行',
+        transaction_date: '2026-08-19T14:00:00.000Z',
+        remark: '零钱提现 (导入)',
+      },
+      {
+        transaction_id: `tx_csv_loan_${Date.now()}_5`,
+        ledger_id: defaultLedgerId,
+        type: 'loan',
+        amount: 100000, // 1000.00 CNY
+        category_id: 'cat_loan_lend',
+        from_account: '招商银行',
+        to_account: '张三',
+        transaction_date: '2026-08-18T16:00:00.000Z',
+        remark: '借给张三 (借贷导入)',
+      },
+    ],
+  };
+
+  const csvImportRes = await fetch(`${BASE}/api/transactions/sync`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify(csvImportBatch),
+  });
+  assert.strictEqual(csvImportRes.status, 200, 'Batch CSV import push should return 200');
+  const csvImportJson = await csvImportRes.json();
+  console.log('CSV Batch Import Response:', csvImportJson.data);
+  assert.strictEqual(csvImportJson.data.synced_ids.length, 5);
+
+  // 查询确认入库
+  const verifyCsvRes = await fetch(`${BASE}/api/transactions?search=导入`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const verifyCsvJson = await verifyCsvRes.json();
+  assert.strictEqual(verifyCsvJson.data.length, 5, 'All 5 imported CSV transactions must exist in D1');
+  console.log('CSV Batch Import Verified Successfully in Cloudflare D1!');
+
+  console.log('\n🎉 ALL PIPELINE, MULTI-LEDGER, BUDGET & CSV IMPORT TESTS PASSED SUCCESSFULLY! 🎉');
+
 }
 
 testPipeline().catch((err) => {

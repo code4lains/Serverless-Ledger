@@ -88,6 +88,7 @@ import { BudgetProgressCard } from './components/BudgetProgressCard';
 import { StatisticsView } from './components/StatisticsView';
 import { CategoriesView } from './components/CategoriesView';
 import { ProfileView } from './components/ProfileView';
+import { DataManagementModal } from './components/DataManagementModal';
 
 export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profile';
 
@@ -101,8 +102,11 @@ export function App() {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState<boolean>(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState<boolean>(false);
+  const [isDataModalOpen, setIsDataModalOpen] = useState<boolean>(false);
+  const [dataModalMode, setDataModalMode] = useState<'export' | 'import'>('export');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
+
 
   // 账本状态 (多账本体系)
   const [ledgers, setLedgers] = useState<Ledger[]>([]);
@@ -1330,10 +1334,36 @@ export function App() {
             onSync={handleSync}
             onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
             onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+            onOpenDataModal={(mode) => {
+              setDataModalMode(mode || 'export');
+              setIsDataModalOpen(true);
+            }}
             onLogout={handleRequestLogout}
             onOpenAuthModal={() => setIsAuthModalOpen(true)}
           />
         )}
+
+        {/* 数据与资产管理 弹窗 (白皮书 7.3: CSV 导入与导出) */}
+        <DataManagementModal
+          isOpen={isDataModalOpen}
+          initialTab={dataModalMode}
+          currentUser={currentUser}
+          ledgers={ledgers}
+          categories={categories}
+          transactions={transactions}
+          activeLedgerId={activeLedgerId}
+          onClose={() => setIsDataModalOpen(false)}
+          onImportSuccess={async () => {
+            await refreshLedgers();
+            await refreshBudgets();
+            await refreshCategories();
+            await loadLocalData();
+            if (currentUser) {
+              syncManager.syncAll(true).catch(() => {});
+            }
+          }}
+          onRequireAuth={() => setIsAuthModalOpen(true)}
+        />
 
         {/* 登录/注册 弹窗 */}
         <AuthModal
@@ -1398,6 +1428,7 @@ export function App() {
           <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
             <div className="w-full max-w-xs bg-white dark:bg-neutral-800 rounded-3xl p-5 shadow-2xl border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
               <div className="flex items-center gap-2.5">
+
                 {pendingCount > 0 ? (
                   <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-sm shrink-0">
                     <AlertTriangle className="w-4 h-4" />

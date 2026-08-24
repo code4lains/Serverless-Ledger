@@ -22,6 +22,9 @@ import {
   Target,
   HardDrive,
   Activity,
+  FolderDown,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { AuthUser, Ledger, Transaction } from '@ledger/shared';
 import { networkMonitor, NetworkInfo } from '../api/network';
@@ -40,9 +43,11 @@ interface ProfileViewProps {
   onSync: () => Promise<void>;
   onOpenLedgerModal: () => void;
   onOpenBudgetModal?: () => void;
+  onOpenDataModal?: (initialTab?: 'export' | 'import') => void;
   onLogout: () => void;
   onOpenAuthModal?: () => void;
 }
+
 
 export function ProfileView({
   currentUser,
@@ -56,6 +61,7 @@ export function ProfileView({
   onSync,
   onOpenLedgerModal,
   onOpenBudgetModal,
+  onOpenDataModal,
   onLogout,
   onOpenAuthModal,
 }: ProfileViewProps) {
@@ -355,7 +361,63 @@ export function ProfileView({
         </button>
       </div>
 
+      {/* 3.5 数据与资产管理中心 (白皮书 7.3: CSV 数据导入与导出) */}
+      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
+              <FolderDown className="w-3.5 h-3.5" />
+            </div>
+            <div>
+              <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">数据与资产管理</h4>
+              <p className="text-[10px] text-gray-400">CSV 账单导入 · 多格式全量导出 · 资产掌控</p>
+            </div>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-semibold">
+            白皮书 7.3
+          </span>
+        </div>
+
+        {/* 快捷操作入口 */}
+        <div className="grid grid-cols-2 gap-2.5 pt-1">
+          <button
+            type="button"
+            onClick={() => onOpenDataModal && onOpenDataModal('export')}
+            className="p-3 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 hover:bg-gray-100 dark:hover:bg-neutral-700/60 transition-colors flex flex-col gap-1 text-left group cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-neutral-700"
+          >
+            <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400">
+              <div className="flex items-center gap-1.5 font-bold text-xs">
+                <Download className="w-3.5 h-3.5" />
+                <span>导出账单数据</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+            <p className="text-[10px] text-gray-400">
+              支持 CSV (Excel防乱码) / JSON 备份
+            </p>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onOpenDataModal && onOpenDataModal('import')}
+            className="p-3 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 hover:bg-gray-100 dark:hover:bg-neutral-700/60 transition-colors flex flex-col gap-1 text-left group cursor-pointer border border-transparent hover:border-gray-200 dark:hover:border-neutral-700"
+          >
+            <div className="flex items-center justify-between text-indigo-600 dark:text-indigo-400">
+              <div className="flex items-center gap-1.5 font-bold text-xs">
+                <Upload className="w-3.5 h-3.5" />
+                <span>导入 CSV 账单</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </div>
+            <p className="text-[10px] text-gray-400">
+              智能识别微信/支付宝/通用账单
+            </p>
+          </button>
+        </div>
+      </div>
+
       {/* 4. 系统首选项与暗黑模式 */}
+
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
         <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">偏好设置</h4>
 

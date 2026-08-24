@@ -1057,3 +1057,79 @@ export async function pullAndMergeServerBudgets(): Promise<number> {
   }
   return 0;
 }
+
+/**
+ * 批量导入账单流水 (离线优先 + 分批推送 D1，遵循白皮书 6.3 Worker CPU 限制规范)
+ */
+export async function batchImportTransactions(
+  transactions: Transaction[],
+  onProgress?: (percent: number) => void
+): Promise<{ success: boolean; importedCount: number; error?: string }> {
+  if (!transactions || transactions.length === 0) {
+    return { success: true, importedCount: 0 };
+  }
+
+  const user = getStoredUser();
+  const userId = user?.user_id || 'default_user';
+  const now = new Date().toISOString();
+
+  // 1. 本地 IndexedDB 极速批量写入
+  const preparedTxs: Transaction[] = transactions.map((t) => ({
+    ...t,
+    user_id: userId,
+    sync_status: (user ? 'pending' : 'synced') as 'pending' | 'synced',
+    created_at: t.created_at || now,
+    updated_at: t.updated_at || now,
+  }));
+
+  await localDb.transactions.bulkPut(preparedTxs);
+  if (onProgress) onProgress(40);
+
+  // 2. 如果用户已登录且网络在线，按批次分批推送至 Cloudflare D1
+  const token = getStoredToken();
+  const net = networkMonitor.getInfo();
+
+  if (user && token && net.isOnline) {
+    const CHUNK_SIZE = 100;
+    const totalChunks = Math.ceil(preparedTxs.length / CHUNK_SIZE);
+
+    for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+      const chunk = preparedTxs.slice(chunkIdx * CHUNK_SIZE, (chunkIdx + 1) * CHUNK_SIZE);
+      try {
+        const res = await fetch(`${API_BASE}/transactions/sync`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ transactions: chunk }),
+          signal: AbortSignal.timeout(6000),
+        });
+
+        if (res.ok) {
+          const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
+          if (json.success && json.data) {
+            const syncedIds = new Set(json.data.synced_ids);
+            for (const tx of chunk) {
+              if (syncedIds.has(tx.transaction_id)) {
+                await localDb.transactions.update(tx.transaction_id, { sync_status: 'synced' });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Batch chunk sync notice (will retry in background):', err);
+      }
+
+      if (onProgress) {
+        const currentPercent = 40 + Math.round(((chunkIdx + 1) / totalChunks) * 60);
+        onProgress(Math.min(currentPercent, 100));
+      }
+    }
+  } else {
+    if (onProgress) onProgress(100);
+  }
+
+  return {
+    success: true,
+    importedCount: preparedTxs.length,
+  };
+}
+
