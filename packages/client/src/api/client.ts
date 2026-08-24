@@ -25,6 +25,12 @@ import {
   InviteCode,
   InviteEligibilityInfo,
   ResetPasswordRequest,
+  RecurringRule,
+  CreateRecurringRuleRequest,
+  UpdateRecurringRuleRequest,
+  ExecuteDueRecurringResult,
+  calculateNextRunDate,
+  formatDateOnly,
 } from '@ledger/shared';
 import { localDb, enqueueSyncAction, removeSyncQueueItem } from '../db';
 import { networkMonitor } from './network';
@@ -1236,5 +1242,250 @@ export async function batchImportTransactions(
     success: true,
     importedCount: preparedTxs.length,
   };
+}
+
+/**
+ * ==========================================
+ * 周期记账规则 API (离线优先 + 自动云端同步)
+ * ==========================================
+ */
+
+/**
+ * 获取当前用户的周期记账规则列表 (优先读取本地，在线时从云端拉取增量合并)
+ */
+export async function getRecurringRules(): Promise<RecurringRule[]> {
+  const user = getStoredUser();
+  const userId = user?.user_id;
+
+  if (userId) {
+    const list = await localDb.recurring_rules.where('user_id').equals(userId).toArray();
+    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  } else {
+    // 访客/未登录用户本地规则
+    const list = await localDb.recurring_rules.toArray();
+    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+}
+
+/**
+ * 创建新周期记账规则 (离线优先)
+ */
+export async function createRecurringRule(
+  req: CreateRecurringRuleRequest
+): Promise<RecurringRule> {
+  const user = getStoredUser();
+  const userId = user?.user_id || 'default_user';
+  const ruleId = req.rule_id || `rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const now = new Date().toISOString();
+  const startDate = req.start_date ? req.start_date.slice(0, 10) : formatDateOnly(new Date());
+
+  let nextRunDate = req.next_run_date ? req.next_run_date.slice(0, 10) : '';
+  if (!nextRunDate) {
+    nextRunDate = calculateNextRunDate(
+      {
+        frequency: req.frequency,
+        interval: req.interval || 1,
+        day_of_month: req.day_of_month,
+        day_of_week: req.day_of_week,
+        month_of_year: req.month_of_year,
+        start_date: startDate,
+      },
+      startDate
+    );
+  }
+
+  const newRule: RecurringRule = {
+    rule_id: ruleId,
+    user_id: userId,
+    ledger_id: req.ledger_id,
+    name: req.name.trim(),
+    type: req.type,
+    amount: Math.round(req.amount),
+    category_id: req.category_id || null,
+    from_account: req.from_account || null,
+    to_account: req.to_account || null,
+    remark: req.remark || null,
+    frequency: req.frequency,
+    interval: req.interval || 1,
+    day_of_month: req.day_of_month || null,
+    day_of_week: req.day_of_week || null,
+    month_of_year: req.month_of_year || null,
+    start_date: startDate,
+    end_date: req.end_date ? req.end_date.slice(0, 10) : null,
+    next_run_date: nextRunDate,
+    last_run_date: null,
+    status: req.status || 'active',
+    auto_record: req.auto_record !== undefined ? req.auto_record : 1,
+    created_at: now,
+    updated_at: now,
+  };
+
+  // 1. 本地持久化
+  await localDb.recurring_rules.put(newRule);
+
+  // 2. 加入离线同步队列
+  if (user) {
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'recurring',
+      entity_id: ruleId,
+      action: 'create',
+      payload: newRule,
+    });
+
+    // 3. 尝试即时异步推送
+    fetch(`${API_BASE}/recurring`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(newRule),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：新周期规则已暂存本地。');
+      });
+  }
+
+  return newRule;
+}
+
+/**
+ * 修改周期记账规则 (离线优先)
+ */
+export async function updateRecurringRule(
+  ruleId: string,
+  updates: UpdateRecurringRuleRequest
+): Promise<RecurringRule | null> {
+  const existing = await localDb.recurring_rules.get(ruleId);
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  const updated: RecurringRule = {
+    ...existing,
+    ...updates,
+    updated_at: now,
+  };
+
+  await localDb.recurring_rules.put(updated);
+
+  const user = getStoredUser();
+  if (user) {
+    const queueItem = await enqueueSyncAction({
+      user_id: user.user_id,
+      entity_type: 'recurring',
+      entity_id: ruleId,
+      action: 'update',
+      payload: updates,
+    });
+
+    fetch(`${API_BASE}/recurring/${ruleId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {});
+  }
+
+  return updated;
+}
+
+/**
+ * 删除周期记账规则 (离线优先)
+ */
+export async function deleteRecurringRule(ruleId: string): Promise<void> {
+  await localDb.recurring_rules.delete(ruleId);
+
+  const user = getStoredUser();
+  if (user) {
+    const queueItem = await enqueueSyncAction({
+      user_id: user.user_id,
+      entity_type: 'recurring',
+      entity_id: ruleId,
+      action: 'delete',
+    });
+
+    fetch(`${API_BASE}/recurring/${ruleId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {});
+  }
+}
+
+/**
+ * 云端拉取周期规则并与本地合并
+ */
+export async function pullAndMergeServerRecurringRules(userId: string): Promise<RecurringRule[]> {
+  try {
+    const res = await fetch(`${API_BASE}/recurring`, {
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(5000),
+    });
+
+    if (!res.ok) return await getRecurringRules();
+
+    const json = (await res.json()) as ApiResponse<RecurringRule[]>;
+    if (json.success && json.data) {
+      const serverRules = json.data;
+
+      // 提取本地待同步队列中正在操作的规则 ID
+      const pendingQueue = await localDb.syncQueue
+        .where('entity_type')
+        .equals('recurring')
+        .toArray();
+      const pendingIds = new Set(pendingQueue.map((q) => q.entity_id));
+
+      for (const sRule of serverRules) {
+        if (!pendingIds.has(sRule.rule_id)) {
+          await localDb.recurring_rules.put(sRule);
+        }
+      }
+
+      return await getRecurringRules();
+    }
+  } catch (err) {
+    console.warn('拉取云端周期规则失败，使用本地缓存:', err);
+  }
+
+  return await getRecurringRules();
+}
+
+/**
+ * 触发服务端执行到期周期规则
+ */
+export async function executeDueRecurringRules(
+  asOfDate?: string
+): Promise<ApiResponse<ExecuteDueRecurringResult>> {
+  try {
+    const res = await fetch(`${API_BASE}/recurring/execute-due`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ as_of_date: asOfDate }),
+      signal: AbortSignal.timeout(6000),
+    });
+
+    return (await res.json()) as ApiResponse<ExecuteDueRecurringResult>;
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || '网络请求错误，无法执行到期周期规则',
+    };
+  }
 }
 

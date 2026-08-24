@@ -147,12 +147,13 @@ Wrangler 将自动按顺序执行 `packages/server/migrations/` 中的所有迁�
 - `0003_category_color.sql`：分类莫兰迪色系与图标拓展
 - `0004_invite_codes.sql`：邀请码管理表与系统初始创世邀请码
 - `0005_recovery_code.sql`：用户密码恢复码绑定字段
+- `0006_recurring_rules.sql`：周期记账规则表与执行索引
 
 #### 备用方式 B：在 Cloudflare Dashboard 控制台中手动执行
 若未配置本地 Wrangler 登录，可直接在控制台操作：
 1. 进入该 D1 数据库详情页，切换到 **Console（控制台）** 标签页。
-2. 依次打开项目 `packages/server/migrations/` 目录下的 SQL 文件（从 `0001` 到 `0005`），将其中的 SQL 内容复制粘贴进控制台并点击 **Execute（执行）**。
-3. 执行完成后切换到 **Tables** 标签页，确认 `users`、`ledgers`、`categories`、`transactions`、`budgets`、`invite_codes` 均已就绪。
+2. 依次打开项目 `packages/server/migrations/` 目录下的 SQL 文件（从 `0001` 到 `0006`），将其中的 SQL 内容复制粘贴进控制台并点击 **Execute（执行）**。
+3. 执行完成后切换到 **Tables** 标签页，确认 `users`、`ledgers`、`categories`、`transactions`、`budgets`、`invite_codes`、`recurring_rules` 均已就绪。
 
 ---
 

@@ -993,12 +993,156 @@ async function testPipeline() {
   assert.strictEqual(verifyCsvJson.data.length, 5, 'All 5 imported CSV transactions must exist in D1');
   console.log('CSV Batch Import Verified Successfully in Cloudflare D1!');
 
-  console.log('\n--- 17. Testing Account Deletion (Deregistration) & Data Cascade Cleanup ---');
-  // 17.1 未携带 Token 调用注销接口 -> 401
+  console.log('\n--- 17. Testing Recurring Rules (周期记账 CRUD, 自动到期执行, 状态暂停, 补齐流水) ---');
+  // 17.1 创建月度房租周期规则 (设 next_run_date 为过去日期以测试到期自动记账)
+  const createRec1Res = await fetch(`${BASE}/api/recurring`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      ledger_id: defaultLedgerId,
+      name: '月度房租',
+      type: 'expense',
+      amount: 320000, // 3200.00 CNY
+      category_id: 'cat_exp_ho_rent',
+      from_account: '招商银行',
+      frequency: 'monthly',
+      interval: 1,
+      day_of_month: 1,
+      start_date: '2026-07-01',
+      next_run_date: '2026-07-01', // 过去日期，应补齐 7月1日、8月1日 两期
+      remark: '房东张阿姨',
+      status: 'active',
+      auto_record: 1,
+    }),
+  });
+  assert.strictEqual(createRec1Res.status, 201, 'Create recurring rule should return 201');
+  const createRec1Json = await createRec1Res.json();
+  console.log('Created Recurring Rule 1 (Rent):', createRec1Json.data);
+  assert.strictEqual(createRec1Json.data.name, '月度房租');
+  assert.strictEqual(createRec1Json.data.amount, 320000);
+  const rec1Id = createRec1Json.data.rule_id;
+
+  // 17.2 创建每周咖啡周期规则
+  const createRec2Res = await fetch(`${BASE}/api/recurring`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      ledger_id: defaultLedgerId,
+      name: '每周精品咖啡',
+      type: 'expense',
+      amount: 3500, // 35.00 CNY
+      category_id: 'cat_exp_food_bf',
+      from_account: '微信零钱',
+      frequency: 'weekly',
+      interval: 1,
+      day_of_week: 1, // 每周一
+      start_date: '2026-08-24',
+      next_run_date: '2026-08-24',
+      status: 'active',
+      auto_record: 1,
+    }),
+  });
+  assert.strictEqual(createRec2Res.status, 201, 'Create recurring rule 2 should return 201');
+  const createRec2Json = await createRec2Res.json();
+  const rec2Id = createRec2Json.data.rule_id;
+
+  // 17.3 获取用户周期规则列表 (GET /api/recurring)
+  const getRecListRes = await fetch(`${BASE}/api/recurring`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(getRecListRes.status, 200, 'Fetch recurring rules should return 200');
+  const getRecListJson = await getRecListRes.json();
+  console.log('Fetched Recurring Rules Count:', getRecListJson.data.length);
+  assert.strictEqual(getRecListJson.data.length, 2, 'Should have 2 recurring rules');
+
+  // 17.4 修改周期规则 (PUT /api/recurring/:id)
+  const updateRecRes = await fetch(`${BASE}/api/recurring/${rec1Id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({
+      name: '月度精装房租 (含物业)',
+      amount: 350000,
+    }),
+  });
+  assert.strictEqual(updateRecRes.status, 200, 'Update recurring rule should return 200');
+  const updateRecJson = await updateRecRes.json();
+  assert.strictEqual(updateRecJson.data.name, '月度精装房租 (含物业)');
+  assert.strictEqual(updateRecJson.data.amount, 350000);
+
+  // 17.5 执行到期周期规则 (POST /api/recurring/execute-due) 截至 2026-08-24
+  const execDueRes = await fetch(`${BASE}/api/recurring/execute-due`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({ as_of_date: '2026-08-24' }),
+  });
+  assert.strictEqual(execDueRes.status, 200, 'Execute due recurring rules should return 200');
+  const execDueJson = await execDueRes.json();
+  console.log('Execute Due Result:', execDueJson.data);
+  assert.strictEqual(execDueJson.data.executed_rules_count, 2, '2 rules should be executed');
+  // 规则1生成 2026-07-01 和 2026-08-01 (共2笔)；规则2生成 2026-08-24 (1笔)，共3笔
+  assert.strictEqual(execDueJson.data.created_transactions.length, 3, 'Should create 3 auto transactions in total');
+
+  // 17.6 验证生成的自动记账流水已在 transactions 表中可查
+  const searchAutoTxRes = await fetch(`${BASE}/api/transactions?search=周期自动`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const searchAutoTxJson = await searchAutoTxRes.json();
+  assert.strictEqual(searchAutoTxJson.data.length, 3, 'All 3 recurring auto transactions should exist in D1');
+  console.log('Recurring Auto Transactions Verified in D1:', searchAutoTxJson.data.map((t) => ({ amount: t.amount, remark: t.remark, date: t.transaction_date })));
+
+  // 17.7 暂停规则 2 (status: 'paused') 并再次调用 execute-due
+  await fetch(`${BASE}/api/recurring/${rec2Id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({ status: 'paused' }),
+  });
+
+  const execDueAgainRes = await fetch(`${BASE}/api/recurring/execute-due`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${userToken}`,
+    },
+    body: JSON.stringify({ as_of_date: '2026-08-24' }),
+  });
+  const execDueAgainJson = await execDueAgainRes.json();
+  assert.strictEqual(execDueAgainJson.data.executed_rules_count, 0, 'No more due rules should execute');
+
+  // 17.8 删除规则 2 (DELETE /api/recurring/:id)
+  const delRecRes = await fetch(`${BASE}/api/recurring/${rec2Id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  assert.strictEqual(delRecRes.status, 200, 'Delete recurring rule should return 200');
+
+  const afterDelListRes = await fetch(`${BASE}/api/recurring`, {
+    headers: { Authorization: `Bearer ${userToken}` },
+  });
+  const afterDelListJson = await afterDelListRes.json();
+  assert.strictEqual(afterDelListJson.data.length, 1, 'Only 1 recurring rule should remain');
+  console.log('Recurring Rules CRUD & Auto Execution Verified Successfully!');
+
+  console.log('\n--- 18. Testing Account Deletion (Deregistration) & Data Cascade Cleanup ---');
+  // 18.1 未携带 Token 调用注销接口 -> 401
   const unauthDelAcc = await fetch(`${BASE}/api/auth/account`, { method: 'DELETE' });
   assert.strictEqual(unauthDelAcc.status, 401, 'Deleting account without token must return 401');
 
-  // 17.2 携带有效 Token 调用注销接口 -> 200
+  // 18.2 携带有效 Token 调用注销接口 -> 200
   const delAccRes = await fetch(`${BASE}/api/auth/account`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${userToken}` },
@@ -1008,7 +1152,7 @@ async function testPipeline() {
   console.log('Account Deletion Response:', delAccJson);
   assert.strictEqual(delAccJson.success, true);
 
-  // 17.3 注销后使用原账号密码登录 -> 401
+  // 18.3 注销后使用原账号密码登录 -> 401
   const loginAfterDel = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1017,14 +1161,14 @@ async function testPipeline() {
   assert.strictEqual(loginAfterDel.status, 401, 'Login with deleted account must fail with 401');
   console.log('Login after account deletion rejected as expected: 401 Unauthorized');
 
-  // 17.4 注销后使用原 Token 访问受保护接口 -> 404 (用户不存在或已注销)
+  // 18.4 注销后使用原 Token 访问受保护接口 -> 404 (用户不存在或已注销)
   const meAfterDel = await fetch(`${BASE}/api/auth/me`, {
     headers: { Authorization: `Bearer ${userToken}` },
   });
   assert.strictEqual(meAfterDel.status, 404, 'Accessing /api/auth/me with token of deleted user must return 404');
   console.log('Account Deletion & Data Cascade Cleanup Verified Successfully!');
 
-  console.log('\n🎉 ALL PIPELINE, RECOVERY CODES, PASSWORD RESET, ACCOUNT DELETION & CSV TESTS PASSED! 🎉');
+  console.log('\n🎉 ALL PIPELINE, RECURRING RULES, RECOVERY CODES, PASSWORD RESET, ACCOUNT DELETION & CSV TESTS PASSED! 🎉');
 
 }
 

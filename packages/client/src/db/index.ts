@@ -1,7 +1,7 @@
 import Dexie, { type Table } from 'dexie';
-import { Transaction, Category, Ledger, Budget, getDefaultCategories } from '@ledger/shared';
+import { Transaction, Category, Ledger, Budget, RecurringRule, getDefaultCategories } from '@ledger/shared';
 
-export type SyncEntityType = 'transaction' | 'category' | 'ledger' | 'budget';
+export type SyncEntityType = 'transaction' | 'category' | 'ledger' | 'budget' | 'recurring';
 export type SyncActionType = 'create' | 'update' | 'delete' | 'reorder' | 'set_default' | 'batch_set';
 
 /**
@@ -28,6 +28,7 @@ export class LedgerLocalDatabase extends Dexie {
   categories!: Table<Category, string>;
   ledgers!: Table<Ledger, string>;
   budgets!: Table<Budget, string>;
+  recurring_rules!: Table<RecurringRule, string>;
   syncQueue!: Table<SyncQueueItem, string>;
 
   constructor() {
@@ -44,6 +45,15 @@ export class LedgerLocalDatabase extends Dexie {
       categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
       ledgers: 'ledger_id, user_id, is_default, updated_at',
       budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at',
+      syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
+    });
+
+    this.version(3).stores({
+      transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at',
+      categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
+      ledgers: 'ledger_id, user_id, is_default, updated_at',
+      budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at',
+      recurring_rules: 'rule_id, user_id, ledger_id, frequency, status, next_run_date, updated_at',
       syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
     });
   }
@@ -220,6 +230,7 @@ export async function clearLocalDatabase() {
   await localDb.categories.clear();
   await localDb.ledgers.clear();
   await localDb.budgets.clear();
+  await localDb.recurring_rules.clear();
   await localDb.syncQueue.clear();
   await seedLocalCategories();
   await seedLocalLedgers();

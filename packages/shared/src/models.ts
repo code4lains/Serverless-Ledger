@@ -330,3 +330,84 @@ export interface TotalsSummary {
   totalLoanCollected: number; // 收款 (流入)
   balance: number; // 结余 (分)
 }
+
+/**
+ * 6. 周期记账规则模型
+ */
+export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
+export type RecurringStatus = 'active' | 'paused';
+
+export interface RecurringRule {
+  rule_id: string;
+  user_id: string;
+  ledger_id: string;
+  name: string; // 规则名称 (如 "每月房租", "发薪日", "iCloud订阅")
+  type: TransactionType;
+  amount: number; // 分
+  category_id?: string | null;
+  from_account?: string | null;
+  to_account?: string | null;
+  remark?: string | null;
+  frequency: RecurringFrequency; // 周期类型: 每天, 每周, 每月, 每年
+  interval: number; // 间隔周期数 (默认 1，如每 2 周)
+  day_of_month?: number | null; // 针对每月/每年: 1-31 号
+  day_of_week?: number | null; // 针对每周: 1(周一) - 7(周日)
+  month_of_year?: number | null; // 针对每年: 1-12 月
+  start_date: string; // 开始日期 (YYYY-MM-DD 或 ISO 格式)
+  end_date?: string | null; // 结束日期 (可选)
+  next_run_date: string; // 下次执行日期 (YYYY-MM-DD 或 ISO 格式)
+  last_run_date?: string | null; // 最近一次执行日期
+  status: RecurringStatus; // active | paused
+  auto_record: number; // 1: 到期自动记账, 0: 到期提醒
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRecurringRuleRequest {
+  rule_id?: string;
+  ledger_id: string;
+  name: string;
+  type: TransactionType;
+  amount: number; // 分
+  category_id?: string | null;
+  from_account?: string | null;
+  to_account?: string | null;
+  remark?: string | null;
+  frequency: RecurringFrequency;
+  interval?: number;
+  day_of_month?: number | null;
+  day_of_week?: number | null;
+  month_of_year?: number | null;
+  start_date?: string;
+  end_date?: string | null;
+  next_run_date?: string;
+  status?: RecurringStatus;
+  auto_record?: number;
+}
+
+export interface UpdateRecurringRuleRequest {
+  ledger_id?: string;
+  name?: string;
+  type?: TransactionType;
+  amount?: number;
+  category_id?: string | null;
+  from_account?: string | null;
+  to_account?: string | null;
+  remark?: string | null;
+  frequency?: RecurringFrequency;
+  interval?: number;
+  day_of_month?: number | null;
+  day_of_week?: number | null;
+  month_of_year?: number | null;
+  start_date?: string;
+  end_date?: string | null;
+  next_run_date?: string;
+  status?: RecurringStatus;
+  auto_record?: number;
+}
+
+export interface ExecuteDueRecurringResult {
+  executed_rules_count: number;
+  created_transactions: Transaction[];
+  updated_rules: RecurringRule[];
+}

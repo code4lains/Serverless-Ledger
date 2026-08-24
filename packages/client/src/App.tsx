@@ -91,6 +91,9 @@ import { ProfileView } from './components/ProfileView';
 import { DataManagementModal } from './components/DataManagementModal';
 import { RecoveryCodeModal } from './components/RecoveryCodeModal';
 import { DeleteAccountModal } from './components/DeleteAccountModal';
+import { RecurringManagementModal } from './components/RecurringManagementModal';
+import { recurringEngine } from './api/recurringEngine';
+import { pullAndMergeServerRecurringRules } from './api/client';
 
 export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profile';
 
@@ -112,6 +115,7 @@ export function App() {
   const [isRecoveryCodeModalOpen, setIsRecoveryCodeModalOpen] = useState<boolean>(false);
   const [activeRecoveryCode, setActiveRecoveryCode] = useState<string>('');
   const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState<boolean>(false);
+  const [isRecurringModalOpen, setIsRecurringModalOpen] = useState<boolean>(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
   const [selectedTxForDetail, setSelectedTxForDetail] = useState<Transaction | null>(null);
   const [feedbackToast, setFeedbackToast] = useState<{ message: string; type?: 'success' | 'info' | 'error' } | null>(null);
@@ -235,9 +239,23 @@ export function App() {
 
     await refreshBudgets();
     await loadLocalData(null);
+    await triggerRecurringAutoProcess(null);
 
     const health = await checkServerHealth();
     setServerStatus({ ok: health.isOnline, data: health });
+  };
+
+  // 检查并自动执行本地到期周期记账规则
+  const triggerRecurringAutoProcess = async (user?: AuthUser | null) => {
+    try {
+      const res = await recurringEngine.processDueRules(false);
+      if (res.createdTransactions.length > 0 && res.summaryText) {
+        showToast(`🔔 ${res.summaryText}`, 'success');
+        await loadLocalData(user);
+      }
+    } catch (err) {
+      console.warn('周期记账自动处理通知:', err);
+    }
   };
 
   // 载入并同步当前用户数据
@@ -265,10 +283,14 @@ export function App() {
 
     if (health.isOnline) {
       await syncManager.syncAll(true);
+      await pullAndMergeServerRecurringRules(user.user_id).catch(() => {});
       await refreshLedgers();
       await refreshBudgets();
       await refreshCategories();
       await loadLocalData(user);
+      await triggerRecurringAutoProcess(user);
+    } else {
+      await triggerRecurringAutoProcess(user);
     }
   };
 
@@ -1404,8 +1426,26 @@ export function App() {
               setActiveRecoveryCode(code);
               setIsRecoveryCodeModalOpen(true);
             }}
+            onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
           />
         )}
+
+        {/* 周期记账规则管理弹窗 */}
+        <RecurringManagementModal
+          isOpen={isRecurringModalOpen}
+          currentUser={currentUser}
+          ledgers={ledgers}
+          categories={categories}
+          activeLedgerId={activeLedgerId}
+          onClose={() => setIsRecurringModalOpen(false)}
+          onRulesChanged={async () => {
+            await triggerRecurringAutoProcess(currentUser);
+          }}
+          onTriggerAutoProcess={async () => {
+            await loadLocalData(currentUser);
+          }}
+          onRequireAuth={() => setIsAuthModalOpen(true)}
+        />
 
         {/* 密码恢复凭证弹窗 */}
         <RecoveryCodeModal

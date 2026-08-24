@@ -514,6 +514,9 @@ authRouter.delete('/account', requireAuth, async (c) => {
     await c.env.DB.prepare('DELETE FROM invite_codes WHERE creator_id = ?').bind(userId).run();
     await c.env.DB.prepare('UPDATE invite_codes SET used_by = NULL WHERE used_by = ?').bind(userId).run();
 
+    // 5.5 删除用户的所有周期记账规则
+    await c.env.DB.prepare('DELETE FROM recurring_rules WHERE user_id = ?').bind(userId).run();
+
     // 6. 删除用户记录
     await c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId).run();
 

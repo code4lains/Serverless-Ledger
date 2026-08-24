@@ -31,6 +31,7 @@ import {
   Plus,
   KeyRound,
   Trash2,
+  Repeat,
 } from 'lucide-react';
 import { AuthUser, Ledger, Transaction, InviteEligibilityInfo } from '@ledger/shared';
 import { networkMonitor, NetworkInfo } from '../api/network';
@@ -55,6 +56,7 @@ interface ProfileViewProps {
   onOpenAuthModal?: () => void;
   onOpenDeleteAccountModal?: () => void;
   onOpenRecoveryCodeModal?: (code: string) => void;
+  onOpenRecurringModal?: () => void;
 }
 
 
@@ -75,6 +77,7 @@ export function ProfileView({
   onOpenAuthModal,
   onOpenDeleteAccountModal,
   onOpenRecoveryCodeModal,
+  onOpenRecurringModal,
 }: ProfileViewProps) {
   const [networkInfo, setNetworkInfo] = useState<NetworkInfo>(() => networkMonitor.getInfo());
   const [syncStats, setSyncStats] = useState<SyncStats>(() => syncManager.getStats());
@@ -598,6 +601,28 @@ export function ProfileView({
             </p>
           </button>
         </div>
+
+        {/* 周期记账快捷入口 */}
+        <button
+          type="button"
+          onClick={onOpenRecurringModal}
+          className="p-3 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 hover:bg-indigo-100/70 dark:hover:bg-indigo-900/40 transition-colors flex items-center justify-between group cursor-pointer border border-indigo-100/60 dark:border-indigo-900/40"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center">
+              <Repeat className="w-4 h-4" />
+            </div>
+            <div className="text-left">
+              <span className="font-bold text-xs text-gray-800 dark:text-gray-200 block group-hover:text-indigo-600 dark:group-hover:text-indigo-400">
+                周期记账管理
+              </span>
+              <span className="text-[10px] text-gray-400">
+                设定房租、工资、会员订阅，到期自动记录
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-indigo-400 group-hover:translate-x-0.5 transition-transform" />
+        </button>
       </div>
 
       {/* 4. 系统首选项与暗黑模式 */}
