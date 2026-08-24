@@ -601,7 +601,7 @@ export function App() {
   };
 
   return (
-    <div className="min-h-screen bg-morandi-bg dark:bg-morandi-darkBg text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 pb-32 sm:pb-36 font-sans transition-colors duration-200">
+    <div className="min-h-screen bg-morandi-bg dark:bg-morandi-darkBg text-gray-800 dark:text-gray-100 flex flex-col items-center p-3 sm:p-6 pb-32 md:pb-12 font-sans transition-colors duration-200">
       {/* 浮动微动效反馈 Toast */}
       {feedbackToast && (
         <div className="fixed top-4 z-60 max-w-sm px-4 py-2.5 rounded-2xl bg-white/95 dark:bg-neutral-800/95 text-gray-900 dark:text-white shadow-xl shadow-indigo-500/10 border border-gray-100 dark:border-neutral-700/80 backdrop-blur-md animate-toast-in flex items-center gap-2.5 text-xs font-semibold">
@@ -612,10 +612,10 @@ export function App() {
         </div>
       )}
 
-      <div className="w-full max-w-md flex flex-col gap-4">
-        {/* 顶部导航与状态栏 */}
-        <header className="flex justify-between items-center py-2 px-1">
-          <div className="flex items-center gap-2.5">
+      <div className="w-full max-w-md md:max-w-3xl lg:max-w-5xl xl:max-w-6xl flex flex-col gap-4 sm:gap-6 transition-all duration-300">
+        {/* 顶部导航与状态栏 (适配移动端与桌面端) */}
+        <header className="flex justify-between items-center py-2 px-1 gap-3">
+          <div className="flex items-center gap-2.5 shrink-0">
             <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center font-bold text-sm shadow-sm shadow-indigo-500/25 transition-transform hover:scale-105 active:scale-95">
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
@@ -624,7 +624,41 @@ export function App() {
               <p className="text-[10px] text-gray-400 font-medium">Serverless Ledger</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          {/* 桌面端专属顶部横向导航切换栏 (md: 及以上显示) */}
+          <nav className="hidden md:flex items-center bg-gray-100/90 dark:bg-neutral-800/90 p-1 rounded-2xl border border-gray-200/60 dark:border-neutral-700/60 shadow-2xs">
+            {[
+              { id: 'detail', label: '明细', icon: Receipt },
+              { id: 'stats', label: '统计', icon: PieChart },
+              { id: 'record', label: '记账', icon: PlusCircle, isHighlight: true },
+              { id: 'category', label: '分类', icon: Tag },
+              { id: 'profile', label: '我的', icon: UserIcon },
+            ].map((item) => {
+              const Icon = item.icon;
+              const isActive = navTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setNavTab(item.id as NavigationTab)}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer ${
+                    isActive
+                      ? item.isHighlight
+                        ? 'bg-indigo-600 text-white shadow-xs scale-102'
+                        : 'bg-white dark:bg-neutral-700 text-gray-900 dark:text-white shadow-2xs'
+                      : item.isHighlight
+                      ? 'text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-bold'
+                      : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="flex items-center gap-2 shrink-0">
             {currentUser ? (
               <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 text-xs">
                 <UserIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
@@ -634,7 +668,7 @@ export function App() {
                 <button
                   onClick={handleRequestLogout}
                   title="退出登录"
-                  className="p-0.5 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg text-gray-400 hover:text-red-500 transition-colors"
+                  className="p-0.5 hover:bg-gray-100 dark:hover:bg-neutral-700 rounded-lg text-gray-400 hover:text-red-500 transition-colors cursor-pointer"
                 >
                   <LogOut className="w-3 h-3" />
                 </button>
@@ -642,7 +676,7 @@ export function App() {
             ) : (
               <button
                 onClick={() => setIsAuthModalOpen(true)}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all"
+                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5" />
                 <span>登录/注册</span>
@@ -690,137 +724,140 @@ export function App() {
         {/* 弱网/离线感知与同步状态条 */}
         <NetworkStatusBar pendingCount={pendingCount} onSync={handleSync} />
 
-        {/* 1. 【明细】板块 (结余汇总与流水时间轴列表) */}
+        {/* 1. 【明细】板块 (结余汇总与流水时间轴列表 - 响应式双栏布局) */}
         {navTab === 'detail' && (
-          <div className="flex flex-col gap-4">
-            {/* 快捷多账本切换胶囊栏 */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5">
-              {/* 全部账本透视 */}
-              <button
-                type="button"
-                onClick={() => handleSwitchLedger('all')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                  activeLedgerId === 'all'
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
-                }`}
-              >
-                <span>全部账本</span>
-                <span className={`text-[10px] px-1 py-0.2 rounded-full ${
-                  activeLedgerId === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-100 dark:bg-neutral-700 text-gray-400'
-                }`}>
-                  {transactions.length}
-                </span>
-              </button>
+          <div className="lg:grid lg:grid-cols-12 lg:gap-6 items-start flex flex-col gap-4">
+            {/* 左侧区域 (lg:col-span-5): 账本选择器 + 结余汇总大卡片 + 月度预算看板 */}
+            <div className="lg:col-span-5 w-full flex flex-col gap-4 lg:sticky lg:top-4">
+              {/* 快捷多账本切换胶囊栏 */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5">
+                {/* 全部账本透视 */}
+                <button
+                  type="button"
+                  onClick={() => handleSwitchLedger('all')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                    activeLedgerId === 'all'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
+                  }`}
+                >
+                  <span>全部账本</span>
+                  <span className={`text-[10px] px-1 py-0.2 rounded-full ${
+                    activeLedgerId === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-100 dark:bg-neutral-700 text-gray-400'
+                  }`}>
+                    {transactions.length}
+                  </span>
+                </button>
 
-              {/* 各独立账本 */}
-              {ledgers.map((led) => {
-                const isCur = activeLedgerId === led.ledger_id;
-                return (
-                  <button
-                    key={led.ledger_id}
-                    type="button"
-                    onClick={() => handleSwitchLedger(led.ledger_id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                      isCur
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
-                    }`}
-                  >
-                    <span>{led.name}</span>
-                    {led.is_default === 1 && (
-                      <span className="text-[10px] text-amber-400" title="默认日常账本">★</span>
-                    )}
-                    <span className={`text-[10px] font-normal ${
-                      isCur ? 'text-indigo-200' : 'text-gray-400'
-                    }`}>
-                      {led.currency}
-                    </span>
-                  </button>
-                );
-              })}
+                {/* 各独立账本 */}
+                {ledgers.map((led) => {
+                  const isCur = activeLedgerId === led.ledger_id;
+                  return (
+                    <button
+                      key={led.ledger_id}
+                      type="button"
+                      onClick={() => handleSwitchLedger(led.ledger_id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+                        isCur
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-white dark:bg-neutral-800/90 text-gray-600 dark:text-gray-300 border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span>{led.name}</span>
+                      {led.is_default === 1 && (
+                        <span className="text-[10px] text-amber-400" title="默认日常账本">★</span>
+                      )}
+                      <span className={`text-[10px] font-normal ${
+                        isCur ? 'text-indigo-200' : 'text-gray-400'
+                      }`}>
+                        {led.currency}
+                      </span>
+                    </button>
+                  );
+                })}
 
-              {/* 新建/管理账本快捷入口 */}
-              <button
-                type="button"
-                onClick={() => setIsLedgerModalOpen(true)}
-                className="px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/60 hover:bg-emerald-100 transition-colors flex items-center gap-1 shrink-0"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>管理/新建</span>
-              </button>
-            </div>
-
-            {/* 概览卡片 (独立账本核算与结余汇总) */}
-            <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-800 text-white rounded-3xl p-5 shadow-lg shadow-indigo-600/15 dark:from-neutral-800 dark:via-neutral-850 dark:to-neutral-900 dark:shadow-none">
-              <div className="flex justify-between items-center text-xs text-indigo-100 dark:text-neutral-400 mb-1">
-                <span className="flex items-center gap-1 font-medium">
-                  <BookOpen className="w-3.5 h-3.5 text-indigo-200 dark:text-indigo-400" />
-                  {activeLedger ? `${activeLedger.name} · 结余 (${activeLedger.currency})` : '全部账本 · 汇总结余 (CNY)'}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 dark:bg-neutral-700 text-white dark:text-neutral-300 font-medium backdrop-blur-xs">
-                  {activeLedger ? (activeLedger.is_default === 1 ? '★ 默认账本' : '独立核算') : '全局汇总透视'}
-                </span>
-              </div>
-              <div className="text-2xl font-extrabold tracking-tight mb-3 text-white">
-                {formatMoney(totals.balance, currentCurrencySymbol)}
+                {/* 新建/管理账本快捷入口 */}
+                <button
+                  type="button"
+                  onClick={() => setIsLedgerModalOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-900/60 hover:bg-emerald-100 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>管理/新建</span>
+                </button>
               </div>
 
-              {/* 收支统计 */}
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/15 dark:border-neutral-700/60 text-xs">
-                <div>
-                  <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
-                    <ArrowDownLeft className="w-3.5 h-3.5 text-orange-300 dark:text-[#D08770]" /> 总支出
-                  </div>
-                  <div className="text-sm font-semibold mt-0.5 text-orange-200 dark:text-[#D08770]">
-                    {formatMoney(totals.totalExpense, currentCurrencySymbol)}
-                  </div>
+              {/* 概览卡片 (独立账本核算与结余汇总) */}
+              <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-slate-800 text-white rounded-3xl p-5 shadow-lg shadow-indigo-600/15 dark:from-neutral-800 dark:via-neutral-850 dark:to-neutral-900 dark:shadow-none">
+                <div className="flex justify-between items-center text-xs text-indigo-100 dark:text-neutral-400 mb-1">
+                  <span className="flex items-center gap-1 font-medium">
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-200 dark:text-indigo-400" />
+                    {activeLedger ? `${activeLedger.name} · 结余 (${activeLedger.currency})` : '全部账本 · 汇总结余 (CNY)'}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 dark:bg-neutral-700 text-white dark:text-neutral-300 font-medium backdrop-blur-xs">
+                    {activeLedger ? (activeLedger.is_default === 1 ? '★ 默认账本' : '独立核算') : '全局汇总透视'}
+                  </span>
                 </div>
-                <div>
-                  <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
-                    <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300 dark:text-[#A3BE8C]" /> 总收入
-                  </div>
-                  <div className="text-sm font-semibold mt-0.5 text-emerald-200 dark:text-[#A3BE8C]">
-                    {formatMoney(totals.totalIncome, currentCurrencySymbol)}
-                  </div>
+                <div className="text-2xl sm:text-3xl font-extrabold tracking-tight mb-3 text-white">
+                  {formatMoney(totals.balance, currentCurrencySymbol)}
                 </div>
-              </div>
 
-              {/* 转账与借贷辅助汇总 */}
-              {(totals.totalTransfer > 0 || (totals.totalLoanLent + totals.totalLoanBorrowed + totals.totalLoanRepaid + totals.totalLoanCollected) > 0) && (
-                <div className="grid grid-cols-2 gap-3 pt-2.5 mt-2.5 border-t border-white/15 dark:border-neutral-700/40 text-[11px]">
+                {/* 收支统计 */}
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/15 dark:border-neutral-700/60 text-xs">
                   <div>
                     <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
-                      <ArrowRightLeft className="w-3 h-3 text-blue-300 dark:text-blue-400" /> 内部转账
+                      <ArrowDownLeft className="w-3.5 h-3.5 text-orange-300 dark:text-[#D08770]" /> 总支出
                     </div>
-                    <div className="font-medium mt-0.5 text-blue-100 dark:text-blue-300">
-                      {formatMoney(totals.totalTransfer, currentCurrencySymbol)}
+                    <div className="text-sm font-semibold mt-0.5 text-orange-200 dark:text-[#D08770]">
+                      {formatMoney(totals.totalExpense, currentCurrencySymbol)}
                     </div>
                   </div>
                   <div>
                     <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
-                      <Landmark className="w-3 h-3 text-purple-300 dark:text-purple-400" /> 借贷流动
+                      <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300 dark:text-[#A3BE8C]" /> 总收入
                     </div>
-                    <div className="font-medium mt-0.5 text-purple-100 dark:text-purple-300 flex items-center gap-1.5">
-                      <span>出: {formatMoney(totals.totalLoanLent + totals.totalLoanRepaid, currentCurrencySymbol)}</span>
-                      <span>·</span>
-                      <span>入: {formatMoney(totals.totalLoanBorrowed + totals.totalLoanCollected, currentCurrencySymbol)}</span>
+                    <div className="text-sm font-semibold mt-0.5 text-emerald-200 dark:text-[#A3BE8C]">
+                      {formatMoney(totals.totalIncome, currentCurrencySymbol)}
                     </div>
                   </div>
                 </div>
-              )}
+
+                {/* 转账与借贷辅助汇总 */}
+                {(totals.totalTransfer > 0 || (totals.totalLoanLent + totals.totalLoanBorrowed + totals.totalLoanRepaid + totals.totalLoanCollected) > 0) && (
+                  <div className="grid grid-cols-2 gap-3 pt-2.5 mt-2.5 border-t border-white/15 dark:border-neutral-700/40 text-[11px]">
+                    <div>
+                      <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
+                        <ArrowRightLeft className="w-3 h-3 text-blue-300 dark:text-blue-400" /> 内部转账
+                      </div>
+                      <div className="font-medium mt-0.5 text-blue-100 dark:text-blue-300">
+                        {formatMoney(totals.totalTransfer, currentCurrencySymbol)}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-indigo-100 dark:text-neutral-400 flex items-center gap-1">
+                        <Landmark className="w-3 h-3 text-purple-300 dark:text-purple-400" /> 借贷流动
+                      </div>
+                      <div className="font-medium mt-0.5 text-purple-100 dark:text-purple-300 flex items-center gap-1.5">
+                        <span>出: {formatMoney(totals.totalLoanLent + totals.totalLoanRepaid, currentCurrencySymbol)}</span>
+                        <span>·</span>
+                        <span>入: {formatMoney(totals.totalLoanBorrowed + totals.totalLoanCollected, currentCurrencySymbol)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 月度总预算及大分类预算进度条看板 */}
+              <BudgetProgressCard
+                overview={budgetOverview}
+                currencySymbol={currentCurrencySymbol}
+                onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+                ledgerName={activeLedger ? activeLedger.name : '全部账本'}
+              />
             </div>
 
-            {/* 月度总预算及大分类预算进度条看板 */}
-            <BudgetProgressCard
-              overview={budgetOverview}
-              currencySymbol={currentCurrencySymbol}
-              onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
-              ledgerName={activeLedger ? activeLedger.name : '全部账本'}
-            />
-
-            {/* 账单流水明细列表 */}
-            <div className="bg-white dark:bg-neutral-800 rounded-3xl p-4 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
+            {/* 右侧区域 (lg:col-span-7): 账单流水明细列表 */}
+            <div className="lg:col-span-7 w-full bg-white dark:bg-neutral-800 rounded-3xl p-4 sm:p-5 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3">
               {/* 列表头部与筛选器 */}
               <div className="flex flex-col gap-2.5 pb-2 border-b border-gray-100 dark:border-neutral-700/60">
                 <div className="flex justify-between items-center">
@@ -831,7 +868,7 @@ export function App() {
                 </div>
 
                 {/* 筛选切换 (全部 / 支出 / 收入 / 转账 / 借贷) & 搜索 */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <div className="flex bg-gray-100 dark:bg-neutral-900 rounded-xl p-0.5 text-xs overflow-x-auto no-scrollbar">
                     {(['all', 'expense', 'income', 'transfer', 'loan'] as const).map((t) => {
                       const labels: Record<string, string> = {
@@ -847,9 +884,9 @@ export function App() {
                           key={t}
                           type="button"
                           onClick={() => setFilterType(t)}
-                          className={`px-2 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                          className={`px-2 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap cursor-pointer ${
                             isCur
-                              ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs'
+                              ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-2xs font-semibold'
                               : 'text-gray-500 hover:text-gray-800'
                           }`}
                         >
@@ -860,7 +897,7 @@ export function App() {
                   </div>
 
                   {/* 搜索框 */}
-                  <div className="relative flex-1">
+                  <div className="relative flex-1 min-w-[140px]">
                     <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       type="text"
@@ -875,28 +912,40 @@ export function App() {
 
               {/* 按日期分组的时间轴列表 */}
               {dayGroups.length === 0 ? (
-                <div className="py-12 text-center text-xs text-gray-400 flex flex-col items-center gap-2">
-                  <Inbox className="w-8 h-8 text-gray-300 dark:text-neutral-600" />
-                  <span>{searchKeyword ? '没有找到匹配的记账明细' : '当前账本暂无流水记录，快去记一笔吧'}</span>
+                <div className="py-12 flex flex-col items-center justify-center text-center">
+                  <div className="w-12 h-12 rounded-2xl bg-gray-50 dark:bg-neutral-900 flex items-center justify-center text-gray-300 dark:text-neutral-600 mb-2">
+                    <Receipt className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs text-gray-400 font-medium">
+                    {searchKeyword ? '没有找到匹配的记账明细' : '当前账本暂无流水记录，快去记一笔吧'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setNavTab('record')}
+                    className="mt-3 text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>立即记一笔</span>
+                  </button>
                 </div>
               ) : (
                 <div className="flex flex-col gap-4">
                   {dayGroups.map((group) => (
                     <div key={group.date} className="flex flex-col gap-1.5">
-                      {/* 日期分组头部 (含当日收支小计) */}
-                      <div className="flex justify-between items-center text-[11px] font-medium text-gray-400 dark:text-gray-500 px-1 pt-1">
-                        <span className="font-semibold text-gray-700 dark:text-gray-300">
-                          {group.displayDate}
-                        </span>
+                      {/* 日期分组标题 */}
+                      <div className="flex justify-between items-center px-1 text-[11px] text-gray-400 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-gray-600 dark:text-gray-300">{group.displayDate}</span>
+                        </div>
                         <div className="flex items-center gap-2 text-[10px]">
                           {group.totalExpense > 0 && (
-                            <span>支: <strong className="text-[#D08770]">{formatMoney(group.totalExpense, currentCurrencySymbol)}</strong></span>
+                            <span className="text-[#D08770]">支 {formatMoney(group.totalExpense, currentCurrencySymbol)}</span>
                           )}
                           {group.totalIncome > 0 && (
-                            <span>收: <strong className="text-[#A3BE8C]">{formatMoney(group.totalIncome, currentCurrencySymbol)}</strong></span>
+                            <span className="text-[#A3BE8C]">收 {formatMoney(group.totalIncome, currentCurrencySymbol)}</span>
                           )}
                           {group.totalTransfer > 0 && (
-                            <span>转: <strong className="text-blue-500">{formatMoney(group.totalTransfer, currentCurrencySymbol)}</strong></span>
+                            <span className="text-blue-500">转 {formatMoney(group.totalTransfer, currentCurrencySymbol)}</span>
                           )}
                         </div>
                       </div>
@@ -1041,11 +1090,11 @@ export function App() {
           />
         )}
 
-        {/* 3. 【记账】板块 (居中核心记账录入) */}
+        {/* 3. 【记账】板块 (居中核心记账录入与桌面端双栏看板) */}
         {navTab === 'record' && (
-          <div className="flex flex-col gap-4">
-            {/* 3秒极简记账录入卡片 */}
-            <div className="bg-white dark:bg-neutral-800 rounded-3xl p-4 shadow-sm border border-gray-100 dark:border-neutral-700">
+          <div className="lg:grid lg:grid-cols-12 lg:gap-6 items-start flex flex-col gap-4">
+            {/* 左侧区域 (lg:col-span-7): 3秒极简记账录入卡片 */}
+            <div className="lg:col-span-7 w-full bg-white dark:bg-neutral-800 rounded-3xl p-4 sm:p-5 shadow-sm border border-gray-100 dark:border-neutral-700">
               {/* 头部标题与当前账本提示 */}
               <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100 dark:border-neutral-700/60">
                 <div className="flex items-center gap-2">
@@ -1061,7 +1110,7 @@ export function App() {
                   <button
                     type="button"
                     onClick={() => setIsLedgerModalOpen(true)}
-                    className="text-[11px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 px-2.5 py-1 rounded-xl border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors flex items-center gap-1.5"
+                    className="text-[11px] text-gray-600 dark:text-gray-300 bg-gray-50 dark:bg-neutral-900 px-2.5 py-1 rounded-xl border border-gray-100 dark:border-neutral-700/60 hover:bg-gray-100 dark:hover:bg-neutral-700 transition-colors flex items-center gap-1.5 cursor-pointer"
                   >
                     <BookOpen className="w-3 h-3 text-indigo-500" />
                     <span className="font-semibold">{ledgers.find((l) => l.ledger_id === selectedLedgerForRecord)?.name || '日常账本'}</span>
@@ -1084,7 +1133,7 @@ export function App() {
                       key={type}
                       type="button"
                       onClick={() => handleTabChange(type)}
-                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all ${
+                      className={`flex-1 py-1.5 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
                         isActive
                           ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-xs'
                           : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
@@ -1112,7 +1161,7 @@ export function App() {
                           key={lt}
                           type="button"
                           onClick={() => handleLoanTypeChange(lt)}
-                          className={`flex-1 py-1.5 px-1 text-[11px] font-semibold rounded-xl transition-all flex items-center justify-center gap-1 ${
+                          className={`flex-1 py-1.5 px-1 text-[11px] font-semibold rounded-xl transition-all flex items-center justify-center gap-1 cursor-pointer ${
                             isLtActive
                               ? 'bg-white dark:bg-neutral-800 text-purple-700 dark:text-purple-300 shadow-xs'
                               : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
@@ -1163,7 +1212,7 @@ export function App() {
                           const current = parseFloat(amountStr) || 0;
                           setAmountStr((current + preset).toString());
                         }}
-                        className="px-2.5 py-1 rounded-xl bg-gray-100 dark:bg-neutral-800/80 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-neutral-700 active:scale-95 transition-all shadow-2xs font-semibold"
+                        className="px-2.5 py-1 rounded-xl bg-gray-100 dark:bg-neutral-800/80 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-neutral-700 active:scale-95 transition-all shadow-2xs font-semibold cursor-pointer"
                       >
                         +{preset}
                       </button>
@@ -1172,7 +1221,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={() => setAmountStr('')}
-                        className="px-2.5 py-1 rounded-xl text-gray-400 hover:text-red-500 dark:hover:text-red-400 text-[10px] font-medium active:scale-95 transition-all"
+                        className="px-2.5 py-1 rounded-xl text-gray-400 hover:text-red-500 dark:hover:text-red-400 text-[10px] font-medium active:scale-95 transition-all cursor-pointer"
                       >
                         清空
                       </button>
@@ -1190,7 +1239,7 @@ export function App() {
                     <select
                       value={selectedLedgerForRecord}
                       onChange={(e) => setSelectedLedgerForRecord(e.target.value)}
-                      className="bg-white dark:bg-neutral-800 text-xs font-semibold px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200 focus:outline-none"
+                      className="bg-white dark:bg-neutral-800 text-xs font-semibold px-2 py-1 rounded-lg border border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200 focus:outline-none cursor-pointer"
                     >
                       {ledgers.map((l) => (
                         <option key={l.ledger_id} value={l.ledger_id}>
@@ -1273,7 +1322,7 @@ export function App() {
                     <button
                       type="button"
                       onClick={() => setIsCategoryModalOpen(true)}
-                      className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-normal"
+                      className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-normal cursor-pointer"
                     >
                       <Settings className="w-3 h-3" />
                       <span>管理分类</span>
@@ -1288,85 +1337,105 @@ export function App() {
                   />
                 </div>
 
-                {/* 记账日期快捷切换 */}
-                <div className="flex flex-col gap-1 pt-1 border-t border-gray-100 dark:border-neutral-700/60">
-                  <div className="text-[11px] font-medium text-gray-400 px-0.5">记账日期</div>
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar text-xs">
-                    <button
-                      type="button"
-                      onClick={() => setRecordDateType('today')}
-                      className={`px-3 py-1 rounded-xl font-medium transition-all ${
-                        recordDateType === 'today'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                      }`}
-                    >
-                      今天
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRecordDateType('yesterday')}
-                      className={`px-3 py-1 rounded-xl font-medium transition-all ${
-                        recordDateType === 'yesterday'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                      }`}
-                    >
-                      昨天
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRecordDateType('beforeYesterday')}
-                      className={`px-3 py-1 rounded-xl font-medium transition-all ${
-                        recordDateType === 'beforeYesterday'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                      }`}
-                    >
-                      前天
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRecordDateType('custom')}
-                      className={`flex items-center gap-1 px-3 py-1 rounded-xl font-medium transition-all ${
-                        recordDateType === 'custom'
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200'
-                      }`}
-                    >
-                      <Calendar className="w-3 h-3" />
-                      <span>自定义</span>
-                    </button>
-                  </div>
+                {/* 日期 + 备注 (左侧) 与 方形大记账按钮 (右侧) 紧凑联动布局 */}
+                <div className="pt-2.5 border-t border-gray-100 dark:border-neutral-700/60 flex items-stretch gap-2.5">
+                  {/* 左侧：记账日期与备注输入框 */}
+                  <div className="flex-1 flex flex-col justify-between gap-2 min-w-0">
+                    {/* 记账日期快捷切换 */}
+                    <div className="flex flex-col gap-1">
+                      <div className="text-[11px] font-medium text-gray-400 px-0.5">记账日期</div>
+                      <div className="grid grid-cols-4 gap-1 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setRecordDateType('today')}
+                          className={`py-1.5 rounded-xl font-medium text-center transition-all cursor-pointer ${
+                            recordDateType === 'today'
+                              ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                              : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-neutral-700'
+                          }`}
+                        >
+                          今天
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRecordDateType('yesterday')}
+                          className={`py-1.5 rounded-xl font-medium text-center transition-all cursor-pointer ${
+                            recordDateType === 'yesterday'
+                              ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                              : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-neutral-700'
+                          }`}
+                        >
+                          昨天
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRecordDateType('beforeYesterday')}
+                          className={`py-1.5 rounded-xl font-medium text-center transition-all cursor-pointer ${
+                            recordDateType === 'beforeYesterday'
+                              ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                              : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-neutral-700'
+                          }`}
+                        >
+                          前天
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRecordDateType('custom')}
+                          className={`py-1.5 rounded-xl font-medium flex items-center justify-center gap-0.5 transition-all cursor-pointer ${
+                            recordDateType === 'custom'
+                              ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                              : 'bg-gray-100 dark:bg-neutral-700/60 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-neutral-700'
+                          }`}
+                        >
+                          <Calendar className="w-3 h-3 shrink-0" />
+                          <span>自定义</span>
+                        </button>
+                      </div>
 
-                  {recordDateType === 'custom' && (
-                    <div className="mt-1">
+                      {recordDateType === 'custom' && (
+                        <div className="mt-0.5">
+                          <input
+                            type="date"
+                            value={customDate}
+                            onChange={(e) => setCustomDate(e.target.value)}
+                            className="w-full px-2.5 py-1 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 focus:outline-none"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 备注输入框 */}
+                    <div className="flex flex-col gap-0.5">
                       <input
-                        type="date"
-                        value={customDate}
-                        onChange={(e) => setCustomDate(e.target.value)}
-                        className="w-full px-3 py-1.5 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 focus:outline-none"
+                        type="text"
+                        placeholder="添加备注 (可选)..."
+                        value={remark}
+                        onChange={(e) => setRemark(e.target.value)}
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none transition-all placeholder:text-gray-400"
                       />
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                {/* 备注与记一笔按钮 */}
-                <div className="flex gap-2 pt-1">
-                  <input
-                    type="text"
-                    placeholder="添加备注 (可选)..."
-                    value={remark}
-                    onChange={(e) => setRemark(e.target.value)}
-                    className="flex-1 px-3.5 py-2 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none"
-                  />
+                  {/* 右侧：方形大记账按钮 (明显、大尺寸正方形触控区) */}
                   <button
                     type="submit"
                     disabled={!amountStr || parseFloat(amountStr) <= 0}
-                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 disabled:opacity-40 transition-all flex items-center gap-1.5"
+                    className={`w-24 sm:w-28 rounded-2xl flex flex-col items-center justify-center gap-1.5 p-2 font-bold text-white shadow-lg active:scale-95 transition-all duration-200 shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+                      activeTab === 'expense'
+                        ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 shadow-indigo-600/30 hover:from-indigo-500 hover:to-indigo-600'
+                        : activeTab === 'income'
+                        ? 'bg-gradient-to-br from-emerald-600 to-teal-700 shadow-emerald-600/30 hover:from-emerald-500 hover:to-teal-600'
+                        : activeTab === 'transfer'
+                        ? 'bg-gradient-to-br from-blue-600 to-indigo-700 shadow-blue-600/30 hover:from-blue-500 hover:to-indigo-600'
+                        : 'bg-gradient-to-br from-purple-600 to-indigo-700 shadow-purple-600/30 hover:from-purple-500 hover:to-indigo-600'
+                    }`}
+                    style={{ minHeight: '86px' }}
+                    title="点击记录账目"
                   >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>
+                    <div className="w-7 h-7 rounded-xl bg-white/20 flex items-center justify-center backdrop-blur-xs">
+                      <Plus className="w-5 h-5 text-white stroke-[2.5]" />
+                    </div>
+                    <span className="text-xs tracking-wide">
                       {activeTab === 'expense'
                         ? '记支出'
                         : activeTab === 'income'
@@ -1380,13 +1449,68 @@ export function App() {
               </form>
             </div>
 
-            {/* 首页月度总预算与大分类预算进度条看板 */}
-            <BudgetProgressCard
-              overview={budgetOverview}
-              currencySymbol={currentCurrencySymbol}
-              onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
-              ledgerName={activeLedger ? activeLedger.name : undefined}
-            />
+            {/* 右侧区域 (lg:col-span-5): 预算进度看板 + 桌面端最近5笔记录速览 */}
+            <div className="lg:col-span-5 w-full flex flex-col gap-4">
+              <BudgetProgressCard
+                overview={budgetOverview}
+                currencySymbol={currentCurrencySymbol}
+                onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+                ledgerName={activeLedger ? activeLedger.name : undefined}
+              />
+
+              {/* 桌面端特有：最近5笔记录速览卡片 */}
+              <div className="hidden lg:flex flex-col gap-2.5 p-4 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700">
+                <div className="flex items-center justify-between pb-2 border-b border-gray-100 dark:border-neutral-700/60">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
+                    <Receipt className="w-3.5 h-3.5 text-indigo-500" />
+                    <span>最近记录速览</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setNavTab('detail')}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    查看全部明细 ➔
+                  </button>
+                </div>
+
+                {transactions.length === 0 ? (
+                  <div className="py-6 text-center text-xs text-gray-400">暂无记账流水，快记下第一笔吧</div>
+                ) : (
+                  <div className="flex flex-col divide-y divide-gray-100 dark:divide-neutral-750">
+                    {transactions.slice(0, 5).map((tx) => {
+                      const isExp = tx.type === 'expense';
+                      const isInc = tx.type === 'income';
+                      const catMeta = getCategoryMeta(tx.category_id, categories, tx.type);
+                      const txCur = getCurrencySymbol(ledgerMap.get(tx.ledger_id)?.currency);
+                      return (
+                        <div
+                          key={tx.transaction_id}
+                          onClick={() => setSelectedTxForDetail(tx)}
+                          className="py-2 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-neutral-750 px-1.5 rounded-xl transition-all cursor-pointer text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <CategoryIcon icon={catMeta.icon} className="w-3.5 h-3.5 text-gray-500" />
+                            <span className="font-semibold text-gray-800 dark:text-gray-200">{catMeta.name}</span>
+                            {tx.remark && (
+                              <span className="text-[11px] text-gray-400 truncate max-w-[120px]">· {tx.remark}</span>
+                            )}
+                          </div>
+                          <span
+                            className={`font-bold ${
+                              isExp ? 'text-gray-900 dark:text-white' : isInc ? 'text-[#A3BE8C]' : 'text-blue-500'
+                            }`}
+                          >
+                            {isExp ? '-' : isInc ? '+' : ''}
+                            {formatMoney(tx.amount, txCur)}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
 
@@ -1626,8 +1750,8 @@ export function App() {
         )}
       </div>
 
-      {/* 底部固定导航栏 (Bottom Navigation Bar - 5 图标无字精简模式) */}
-      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl border-t border-gray-200/80 dark:border-neutral-800 shadow-lg pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
+      {/* 底部固定导航栏 (仅在移动端屏幕 md:hidden 显示，桌面端统一使用顶部导航) */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-neutral-900/90 backdrop-blur-xl border-t border-gray-200/80 dark:border-neutral-800 shadow-lg pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] md:hidden">
         <div className="max-w-md mx-auto flex items-center justify-around py-2 px-3">
           {[
             { id: 'detail', label: '明细', icon: Receipt },

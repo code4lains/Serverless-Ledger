@@ -169,7 +169,7 @@ export function ProfileView({
   };
 
   return (
-    <div className="flex flex-col gap-4 animate-fadeIn">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start animate-fadeIn">
       {/* 1. 用户信息卡片 (适配已登录与访客模式) */}
       <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-sm border border-gray-100 dark:border-neutral-700 flex flex-col gap-3.5">
         <div className="flex items-center justify-between">

@@ -224,52 +224,59 @@ export function StatisticsView({
         </div>
       </div>
 
-      {/* 2. 核心财务看板大卡片 */}
-      <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-400">
-            {period === 'month' ? '本月结余' : period === 'year' ? '本年结余' : '累计净结余'}
-          </span>
-          <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-semibold">
-            {filteredTransactions.length} 笔流水
-          </span>
-        </div>
-
-        <div className="flex items-baseline gap-1">
-          <span className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
-            {formatMoney(totals.balance, currencySymbol)}
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100 dark:border-neutral-700/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#D08770] flex items-center justify-center">
-              <TrendingDown className="w-4 h-4" />
+      {/* 桌面端响应式双栏网格 (lg:grid lg:grid-cols-12 lg:gap-6 items-start) */}
+      <div className="lg:grid lg:grid-cols-12 lg:gap-6 items-start flex flex-col gap-4">
+        {/* 左侧区域 (lg:col-span-5): 核心财务看板卡片 */}
+        <div className="lg:col-span-5 w-full flex flex-col gap-4 lg:sticky lg:top-4">
+          {/* 2. 核心财务看板大卡片 */}
+          <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-gray-400">
+                {period === 'month' ? '本月结余' : period === 'year' ? '本年结余' : '累计净结余'}
+              </span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-semibold">
+                {filteredTransactions.length} 笔流水
+              </span>
             </div>
-            <div>
-              <p className="text-[10px] text-gray-400">总支出</p>
-              <p className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                {formatMoney(totals.totalExpense, currencySymbol)}
-              </p>
+
+            <div className="flex items-baseline gap-1">
+              <span className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
+                {formatMoney(totals.balance, currencySymbol)}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-100 dark:border-neutral-700/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/40 text-[#D08770] flex items-center justify-center">
+                  <TrendingDown className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400">总支出</p>
+                  <p className="text-sm font-bold text-gray-800 dark:text-gray-100">
+                    {formatMoney(totals.totalExpense, currencySymbol)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-[#A3BE8C] flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-400">总收入</p>
+                  <p className="text-sm font-bold text-gray-800 dark:text-gray-100">
+                    {formatMoney(totals.totalIncome, currencySymbol)}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-[#A3BE8C] flex items-center justify-center">
-              <TrendingUp className="w-4 h-4" />
-            </div>
-            <div>
-              <p className="text-[10px] text-gray-400">总收入</p>
-              <p className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                {formatMoney(totals.totalIncome, currencySymbol)}
-              </p>
-            </div>
-          </div>
         </div>
-      </div>
 
-      {/* 3. 分类排行榜 Tab 切换 */}
-      <div className="flex bg-gray-100/90 dark:bg-neutral-900/90 p-1 rounded-2xl text-xs font-semibold">
+        {/* 右侧区域 (lg:col-span-7): 分类排行榜 Tab 与列表明细 */}
+        <div className="lg:col-span-7 w-full flex flex-col gap-3">
+          {/* 3. 分类排行榜 Tab 切换 */}
+          <div className="flex bg-gray-100/90 dark:bg-neutral-900/90 p-1 rounded-2xl text-xs font-semibold">
         <button
           type="button"
           onClick={() => setSelectedType('expense')}
@@ -463,6 +470,8 @@ export function StatisticsView({
             </div>
           </div>
         )}
+        </div>
+        </div>
       </div>
     </div>
   );

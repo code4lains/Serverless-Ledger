@@ -261,10 +261,10 @@ export function CategoriesView({
         </button>
       </div>
 
-      {/* 3. 分类树形列表 */}
-      <div className="flex flex-col gap-3">
+      {/* 3. 分类树形列表 (移动端单列，桌面端双列自适应网格) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 items-start">
         {categoryTree.length === 0 ? (
-          <div className="p-10 rounded-3xl bg-white dark:bg-neutral-800 text-center text-xs text-gray-400 border border-gray-100 dark:border-neutral-700">
+          <div className="col-span-full p-10 rounded-3xl bg-white dark:bg-neutral-800 text-center text-xs text-gray-400 border border-gray-100 dark:border-neutral-700">
             暂无分类，点击右上角新建
           </div>
         ) : (
