@@ -1,0 +1,19 @@
+{
+  "name": "账盾 - 极简记账",
+  "short_name": "账盾",
+  "description": "极简、纯粹、离线优先的 Serverless 跨端记账应用",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#18191A",
+  "theme_color": "#4F46E5",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["finance", "productivity", "utilities"]
+}

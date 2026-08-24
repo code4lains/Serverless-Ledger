@@ -57,7 +57,7 @@ import {
   Budget,
   calculateBudgetOverview,
 } from '@ledger/shared';
-import { localDb, seedLocalCategories, seedLocalLedgers, DEFAULT_LOCAL_LEDGER_ID } from './db';
+import { localDb, seedLocalCategories, seedLocalLedgers, DEFAULT_LOCAL_LEDGER_ID, getLocalStorageStats } from './db';
 import {
   checkServerHealth,
   getCategories,
@@ -66,7 +66,6 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-  syncPendingTransactions,
   pullAndMergeServerTransactions,
   pullAndMergeServerLedgers,
   pullAndMergeServerBudgets,
@@ -74,6 +73,9 @@ import {
   fetchCurrentUser,
   clearSession,
 } from './api/client';
+import { networkMonitor, NetworkInfo } from './api/network';
+import { syncManager, SyncStats } from './api/syncManager';
+import { NetworkStatusBar } from './components/NetworkStatusBar';
 import { AuthModal } from './components/AuthModal';
 import { CategoryIcon } from './components/CategoryIcon';
 import { CategoryPicker } from './components/CategoryPicker';
@@ -144,18 +146,15 @@ export function App() {
     const effectiveUser = user !== undefined ? user : currentUser;
     if (!effectiveUser) {
       setTransactions([]);
-      setPendingCount(0);
+      const stats = await getLocalStorageStats();
+      setPendingCount(stats.totalPending);
       return;
     }
     const list = await localDb.transactions.where('user_id').equals(effectiveUser.user_id).sortBy('transaction_date');
     list.reverse();
     setTransactions(list);
-    const pending = await localDb.transactions
-      .where('user_id')
-      .equals(effectiveUser.user_id)
-      .and((t) => t.sync_status === 'pending')
-      .count();
-    setPendingCount(pending);
+    const stats = await getLocalStorageStats();
+    setPendingCount(stats.totalPending);
   };
 
   // 刷新账本列表
@@ -209,7 +208,7 @@ export function App() {
     await loadLocalData(null);
 
     const health = await checkServerHealth();
-    setServerStatus(health);
+    setServerStatus({ ok: health.isOnline, data: health });
   };
 
   // 载入并同步当前用户数据
@@ -233,20 +232,34 @@ export function App() {
     await loadLocalData(user);
 
     const health = await checkServerHealth();
-    setServerStatus(health);
+    setServerStatus({ ok: health.isOnline, data: health });
 
-    if (health.ok) {
-      await pullAndMergeServerLedgers();
-      await pullAndMergeServerTransactions();
-      await pullAndMergeServerBudgets();
+    if (health.isOnline) {
+      await syncManager.syncAll(true);
       await refreshLedgers();
       await refreshBudgets();
+      await refreshCategories();
       await loadLocalData(user);
     }
   };
 
   // 初始化应用 (免登录自由浏览体验)
   useEffect(() => {
+    // 启动网络感知器与后台自动同步
+    networkMonitor.start(15000);
+    syncManager.start();
+
+    // 订阅同步完成事件以自动刷新本地 UI
+    const unsubSync = syncManager.subscribe((stats) => {
+      setIsSyncing(stats.isSyncing);
+      if (!stats.isSyncing) {
+        refreshLedgers();
+        refreshBudgets();
+        refreshCategories();
+        loadLocalData();
+      }
+    });
+
     const init = async () => {
       // 验证当前 Token
       const stored = getStoredUser();
@@ -268,6 +281,12 @@ export function App() {
     };
 
     init();
+
+    return () => {
+      unsubSync();
+      networkMonitor.stop();
+      syncManager.stop();
+    };
   }, []);
 
   // 计算当前处于激活状态的账本对象
@@ -397,11 +416,12 @@ export function App() {
       return;
     }
     setIsSyncing(true);
-    await syncPendingTransactions();
+    await syncManager.syncAll();
     const health = await checkServerHealth();
-    setServerStatus(health);
+    setServerStatus({ ok: health.isOnline, data: health });
     await refreshLedgers();
     await refreshBudgets();
+    await refreshCategories();
     await loadLocalData();
     setIsSyncing(false);
   };
@@ -581,6 +601,9 @@ export function App() {
             </button>
           </div>
         </header>
+
+        {/* 弱网/离线感知与同步状态条 */}
+        <NetworkStatusBar pendingCount={pendingCount} onSync={handleSync} />
 
         {/* 1. 【明细】板块 (结余汇总与流水时间轴列表) */}
         {navTab === 'detail' && (
