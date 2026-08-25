@@ -196,8 +196,7 @@ export function calculateInviteEligibility(
 
   if (!hasRecordedTransaction) {
     totalEligible = 0;
-    const day3Time = regTime + 3 * DAY_MS;
-    nextUnlockDate = new Date(day3Time).toISOString();
+    nextUnlockDate = null; // 尚未记账，无法确定解锁时间
   } else {
     if (diffMs < 3 * DAY_MS) {
       totalEligible = 0;

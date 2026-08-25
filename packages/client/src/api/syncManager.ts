@@ -29,6 +29,7 @@ import {
   pullAndMergeServerTransactions,
   pullAndMergeServerLedgers,
   pullAndMergeServerBudgets,
+  pullAndMergeServerRecurringRules,
   getCategories,
 } from './client';
 
@@ -224,11 +225,12 @@ class SyncManager {
         }
       }
 
-      // 3. 双向增量拉取最新数据并合并 (分类、账本、预算、流水)
+      // 3. 双向增量拉取最新数据并合并 (分类、账本、预算、流水、周期规则)
       await getCategories();
       await pullAndMergeServerLedgers();
       await pullAndMergeServerBudgets();
       await pullAndMergeServerTransactions();
+      await pullAndMergeServerRecurringRules(user.user_id).catch(() => {});
 
       const now = new Date().toISOString();
       this.lastSyncedAt = now;
@@ -368,6 +370,34 @@ class SyncManager {
             return res.ok;
           } else if (item.action === 'delete') {
             const res = await fetch(`${API_BASE}/budgets/${item.entity_id}`, {
+              method: 'DELETE',
+              headers,
+              signal,
+            });
+            return res.ok || res.status === 404;
+          }
+          break;
+        }
+
+        case 'recurring': {
+          if (item.action === 'create') {
+            const res = await fetch(`${API_BASE}/recurring`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify(item.payload),
+              signal,
+            });
+            return res.ok || res.status === 409;
+          } else if (item.action === 'update') {
+            const res = await fetch(`${API_BASE}/recurring/${item.entity_id}`, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify(item.payload),
+              signal,
+            });
+            return res.ok;
+          } else if (item.action === 'delete') {
+            const res = await fetch(`${API_BASE}/recurring/${item.entity_id}`, {
               method: 'DELETE',
               headers,
               signal,

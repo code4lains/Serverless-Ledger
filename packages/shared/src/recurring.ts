@@ -79,7 +79,12 @@ export function calculateNextRunDate(
       : target.getDate();
 
     let targetYear = target.getFullYear();
-    let targetMonth = target.getMonth() + interval;
+    let targetMonth = target.getMonth();
+
+    // 仅当当月目标日已过（或就是今天）才向后推 interval 个月
+    if (target.getDate() >= desiredDayOfMonth) {
+      targetMonth += interval;
+    }
 
     while (targetMonth > 11) {
       targetYear += Math.floor(targetMonth / 12);
@@ -101,7 +106,14 @@ export function calculateNextRunDate(
       ? rule.day_of_month
       : target.getDate();
 
-    const targetYear = target.getFullYear() + interval;
+    // 仅当今年目标月/日已过才向后推 interval 年
+    let targetYear = target.getFullYear();
+    const currentMonth = target.getMonth();
+    const currentDay = target.getDate();
+    if (currentMonth > desiredMonth || (currentMonth === desiredMonth && currentDay >= desiredDay)) {
+      targetYear += interval;
+    }
+
     const maxDays = getDaysInMonth(targetYear, desiredMonth + 1);
     const finalDay = Math.min(desiredDay, maxDays);
 

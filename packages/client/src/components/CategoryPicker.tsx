@@ -46,14 +46,14 @@ export function CategoryPicker({
 
     // 查找选中的分类是哪个大类或其子类
     const current = categories.find((c) => c.category_id === selectedCategoryId);
-    if (current) {
+    if (current && current.type === targetType) {
       if (current.parent_id) {
         setActiveParentId(current.parent_id);
       } else {
         setActiveParentId(current.category_id);
       }
     } else {
-      // 若当前 selectedCategoryId 不在列表中，重置为首个
+      // 若当前 selectedCategoryId 不在当前类型列表中（如切换了交易类型），重置为首个
       const firstTreeItem = categoryTree[0];
       if (firstTreeItem) {
         setActiveParentId(firstTreeItem.category.category_id);

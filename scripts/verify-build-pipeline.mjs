@@ -14,6 +14,11 @@ function checkFile(relPath, description) {
   const fullPath = path.join(ROOT, relPath);
   if (fs.existsSync(fullPath)) {
     const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) {
+      console.error(`✗ [FAIL] Expected file but found directory: ${relPath} (${description})`);
+      errorCount++;
+      return false;
+    }
     console.log(`✓ [PASS] ${description}: ${relPath} (${stat.size} bytes)`);
     return true;
   } else {

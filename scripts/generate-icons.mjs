@@ -211,8 +211,8 @@ function createIco(pngBuffers) {
  */
 function createIcns(pngBuffers) {
   const icnsTypes = {
-    32: 'ic05',
-    64: 'ic06',
+    32: 'icp5',
+    64: 'ic12',
     128: 'ic07',
     256: 'ic08',
     512: 'ic09',
@@ -243,7 +243,7 @@ function createIcns(pngBuffers) {
 console.log('=== Generating Multi-Platform Icons for Serverless Ledger ===');
 
 // Generate distinct resolution PNG buffers
-const sizes = [16, 32, 48, 64, 128, 256, 512];
+const sizes = [16, 30, 32, 44, 48, 50, 64, 71, 89, 107, 128, 142, 150, 180, 192, 256, 284, 310, 512];
 const generatedBuffers = {};
 const pngItemsForIco = [];
 
@@ -260,16 +260,16 @@ const tauriFiles = {
   '128x128.png': generatedBuffers[128],
   '128x128@2x.png': generatedBuffers[256],
   'icon.png': generatedBuffers[512],
-  'Square30x30Logo.png': generatedBuffers[32],
-  'Square44x44Logo.png': generatedBuffers[48],
-  'Square71x71Logo.png': generatedBuffers[64],
-  'Square89x89Logo.png': generatedBuffers[128],
-  'Square107x107Logo.png': generatedBuffers[128],
-  'Square142x142Logo.png': generatedBuffers[128],
-  'Square150x150Logo.png': generatedBuffers[256],
-  'Square284x284Logo.png': generatedBuffers[256],
-  'Square310x310Logo.png': generatedBuffers[512],
-  'StoreLogo.png': generatedBuffers[64],
+  'Square30x30Logo.png': generatedBuffers[30],
+  'Square44x44Logo.png': generatedBuffers[44],
+  'Square71x71Logo.png': generatedBuffers[71],
+  'Square89x89Logo.png': generatedBuffers[89],
+  'Square107x107Logo.png': generatedBuffers[107],
+  'Square142x142Logo.png': generatedBuffers[142],
+  'Square150x150Logo.png': generatedBuffers[150],
+  'Square284x284Logo.png': generatedBuffers[284],
+  'Square310x310Logo.png': generatedBuffers[310],
+  'StoreLogo.png': generatedBuffers[50],
 };
 
 for (const [filename, buf] of Object.entries(tauriFiles)) {
@@ -302,9 +302,9 @@ fs.writeFileSync(path.join(TAURI_ICONS_DIR, 'icon.icns'), icnsBuffer);
 console.log('✓ Generated macOS ICNS: packages/client/src-tauri/icons/icon.icns');
 
 // 4. Web & PWA Icons in public/
-fs.writeFileSync(path.join(PUBLIC_DIR, 'pwa-192x192.png'), generatedBuffers[256]);
+fs.writeFileSync(path.join(PUBLIC_DIR, 'pwa-192x192.png'), generatedBuffers[192]);
 fs.writeFileSync(path.join(PUBLIC_DIR, 'pwa-512x512.png'), generatedBuffers[512]);
-fs.writeFileSync(path.join(PUBLIC_DIR, 'apple-touch-icon.png'), generatedBuffers[128]);
+fs.writeFileSync(path.join(PUBLIC_DIR, 'apple-touch-icon.png'), generatedBuffers[180]);
 fs.writeFileSync(path.join(PUBLIC_DIR, 'favicon.ico'), icoBuffer);
 console.log('✓ Generated PWA assets: pwa-192x192.png, pwa-512x512.png, apple-touch-icon.png, favicon.ico');
 
