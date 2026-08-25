@@ -84,18 +84,43 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Prepare APK Outputs
+      - name: Sign & Prepare APK Outputs
+        if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'release' || github.event.inputs.build_type == null
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           mkdir -p release-apks
+
+          # 寻找 Android Build-Tools 中的 apksigner 和 zipalign
+          BUILD_TOOLS_PATH="$ANDROID_HOME/build-tools/$(ls -1 $ANDROID_HOME/build-tools | sort -V | tail -n 1)"
+          
+          # 拷贝 Debug 包（如果存在）
           if [ -f packages/client/android/app/build/outputs/apk/debug/app-debug.apk ]; then
             cp packages/client/android/app/build/outputs/apk/debug/app-debug.apk release-apks/ServerlessLedger-Android-Debug.apk
           fi
-          if [ -f packages/client/android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp packages/client/android/app/build/outputs/apk/release/app-release.apk release-apks/ServerlessLedger-Android-Release.apk
+
+          # 对 Release 包进行 zipalign 对齐与 apksigner 签名
+          UNSIGNED_APK="packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED_APK="release-apks/ServerlessLedger-Android-Release.apk"
+
+          if [ -f "$UNSIGNED_APK" ]; then
+            echo "--- 对齐 APK (zipalign) ---"
+            $BUILD_TOOLS_PATH/zipalign -v -p 4 "$UNSIGNED_APK" "$SIGNED_APK"
+
+            echo "--- 签名 APK (apksigner) ---"
+            $BUILD_TOOLS_PATH/apksigner sign \
+              --ks android-release-key.jks \
+              --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+              "$SIGNED_APK"
+
+            echo "--- 验证签名 ---"
+            $BUILD_TOOLS_PATH/apksigner verify --verbose "$SIGNED_APK"
           fi
-          if [ -f packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk release-apks/ServerlessLedger-Android-Release-Unsigned.apk
-          fi
+
           ls -la release-apks/
 
       - name: Upload Android APK Artifacts
