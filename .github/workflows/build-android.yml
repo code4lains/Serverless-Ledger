@@ -61,6 +61,14 @@ jobs:
       - name: Make Gradlew Executable
         run: chmod +x packages/client/android/gradlew
 
+      # 添加签名配置
+      - name: Decode Keystore
+        if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'release' || github.event.inputs.build_type == null
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          echo "$ANDROID_KEYSTORE" | base64 -d > android-release-key.jks
+
       - name: Build Android Debug APK
         if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == null
         working-directory: packages/client/android
@@ -70,6 +78,11 @@ jobs:
         if: github.event.inputs.build_type == 'all' || github.event.inputs.build_type == 'release' || github.event.inputs.build_type == null
         working-directory: packages/client/android
         run: ./gradlew assembleRelease
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android-release-key.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Prepare APK Outputs
         run: |
@@ -77,11 +90,11 @@ jobs:
           if [ -f packages/client/android/app/build/outputs/apk/debug/app-debug.apk ]; then
             cp packages/client/android/app/build/outputs/apk/debug/app-debug.apk release-apks/ServerlessLedger-Android-Debug.apk
           fi
-          if [ -f packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk release-apks/ServerlessLedger-Android-Release-Unsigned.apk
-          fi
           if [ -f packages/client/android/app/build/outputs/apk/release/app-release.apk ]; then
             cp packages/client/android/app/build/outputs/apk/release/app-release.apk release-apks/ServerlessLedger-Android-Release.apk
+          fi
+          if [ -f packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk release-apks/ServerlessLedger-Android-Release-Unsigned.apk
           fi
           ls -la release-apks/
 
