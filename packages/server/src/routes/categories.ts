@@ -332,8 +332,16 @@ categoriesRouter.put('/:id', requireAuth, async (c) => {
       return c.json(res, 404);
     }
 
-    // 校验权限 (如果是系统预置分类，允许修改个性化名称/图标/颜色/排序或作为普通更新)
-    if (existing.user_id && existing.user_id !== authUser.userId) {
+    // 系统预置公共分类保护与权限校验
+    if (!existing.user_id) {
+      const res: ApiResponse = {
+        success: false,
+        error: '系统预置公共分类不可修改',
+      };
+      return c.json(res, 403);
+    }
+
+    if (existing.user_id !== authUser.userId) {
       const res: ApiResponse = {
         success: false,
         error: '无权修改其他用户的自定义分类',

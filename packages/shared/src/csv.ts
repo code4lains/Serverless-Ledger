@@ -1233,7 +1233,7 @@ export function parseXiaoxingLedgerWorkbook(
       const row = rawRows[rIdx];
 
       // 8.1 支出工作表
-      if (cleanSheetName === '支出' || '支出日期' in row || '支出金额' in row) {
+      if (cleanSheetName === '支出' || (!['应付款', '应收款', '转账', '借贷'].includes(cleanSheetName) && ('支出日期' in row || '支出金额' in row))) {
         const rawDate = row['支出日期'] || row['日期'] || row['时间'];
         const rawAmount = parseFloat(row['支出金额'] || row['金额']);
         if (isNaN(rawAmount) || rawAmount <= 0) {
@@ -1305,7 +1305,7 @@ export function parseXiaoxingLedgerWorkbook(
         items.push(item);
       }
       // 8.2 收入工作表
-      else if (cleanSheetName === '收入' || '收入日期' in row || '收入金额' in row) {
+      else if (cleanSheetName === '收入' || (!['应付款', '应收款', '转账', '借贷'].includes(cleanSheetName) && ('收入日期' in row || '收入金额' in row))) {
         const rawDate = row['收入日期'] || row['日期'] || row['时间'];
         const rawAmount = parseFloat(row['收入金额'] || row['金额']);
         if (isNaN(rawAmount) || rawAmount <= 0) {

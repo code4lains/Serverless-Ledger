@@ -16,6 +16,24 @@ export function formatDateOnly(date: Date): string {
 }
 
 /**
+ * 安全解析本地日期字符串（避免 YYYY-MM-DD 在负时区被解析为 UTC 导致日期回退一天）
+ */
+export function parseLocalDate(val?: Date | string | null): Date {
+  if (!val) return new Date();
+  if (val instanceof Date) return new Date(val.getTime());
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (m) {
+      return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12, 0, 0);
+    }
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
+/**
  * 安全获取某年某月的最大天数（处理闰年与大小月）
  * @param year 年份
  * @param month 月份 (1-12)
@@ -41,10 +59,10 @@ export function calculateNextRunDate(
   },
   fromDate?: Date | string
 ): string {
-  const baseDate = fromDate ? (typeof fromDate === 'string' ? new Date(fromDate) : new Date(fromDate)) : new Date();
+  const baseDate = parseLocalDate(fromDate);
   const interval = Math.max(1, rule.interval || 1);
 
-  const start = rule.start_date ? new Date(rule.start_date) : baseDate;
+  const start = rule.start_date ? parseLocalDate(rule.start_date) : baseDate;
 
   // 如果基准时间早于开始时间，首个执行点以 start_date 为参考点
   let target = new Date(baseDate.getTime());
@@ -131,7 +149,7 @@ export function calculateNextRunDate(
 export function getDueDatesForRule(rule: RecurringRule, upToDate?: Date | string): string[] {
   if (rule.status === 'paused') return [];
 
-  const now = upToDate ? (typeof upToDate === 'string' ? new Date(upToDate) : upToDate) : new Date();
+  const now = parseLocalDate(upToDate);
   const todayStr = formatDateOnly(now);
 
   const dueDates: string[] = [];

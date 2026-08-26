@@ -48,12 +48,34 @@ export function DeleteAccountModal({
   if (!isOpen || !currentUser) return null;
 
   const handleBackupCsv = () => {
-    exportTransactionsToCsv(transactions, categories, ledgers);
+    const content = exportTransactionsToCsv(transactions, categories, ledgers);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `账盾_全量账单备份_${dateStr}.csv`;
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     setBackupDownloaded('csv');
   };
 
   const handleBackupJson = () => {
-    exportTransactionsToJson(transactions, categories, ledgers);
+    const content = exportTransactionsToJson(transactions, categories, ledgers);
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `账盾_全量数据备份_${dateStr}.json`;
+    const blob = new Blob([content], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     setBackupDownloaded('json');
   };
 

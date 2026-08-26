@@ -394,12 +394,16 @@ ledgersRouter.delete('/:id', async (c) => {
       }
     }
 
-    // 级联清理该账本下的账单流水和预算
+    // 级联清理该账本下的账单流水、预算和周期记账规则
     await c.env.DB.prepare('DELETE FROM transactions WHERE ledger_id = ? AND user_id = ?')
       .bind(id, userId)
       .run();
 
     await c.env.DB.prepare('DELETE FROM budgets WHERE ledger_id = ? AND user_id = ?')
+      .bind(id, userId)
+      .run();
+
+    await c.env.DB.prepare('DELETE FROM recurring_rules WHERE ledger_id = ? AND user_id = ?')
       .bind(id, userId)
       .run();
 

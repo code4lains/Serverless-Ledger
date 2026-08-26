@@ -750,6 +750,30 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
     });
   }
 
+  // 本地级联删除该账本下的所有预算
+  const relatedBudgets = await localDb.budgets.where('ledger_id').equals(ledgerId).toArray();
+  for (const b of relatedBudgets) {
+    await localDb.budgets.delete(b.budget_id);
+    await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'budget',
+      entity_id: b.budget_id,
+      action: 'delete',
+    });
+  }
+
+  // 本地级联删除该账本下的所有周期记账规则
+  const relatedRules = await localDb.recurring_rules.where('ledger_id').equals(ledgerId).toArray();
+  for (const r of relatedRules) {
+    await localDb.recurring_rules.delete(r.rule_id);
+    await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'recurring',
+      entity_id: r.rule_id,
+      action: 'delete',
+    });
+  }
+
   // 本地删除账本
   await localDb.ledgers.delete(ledgerId);
 
