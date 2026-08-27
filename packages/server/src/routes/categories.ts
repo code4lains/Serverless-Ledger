@@ -194,10 +194,10 @@ categoriesRouter.post('/', requireAuth, async (c) => {
     const authUser = c.get('user')!;
     const body = (await c.req.json()) as CreateCategoryRequest;
 
-    if (!body.name || !body.name.trim()) {
+    if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
       const res: ApiResponse = {
         success: false,
-        error: '分类名称不能为空',
+        error: '分类名称不能为空且必须为字符串',
       };
       return c.json(res, 400);
     }
@@ -347,6 +347,14 @@ categoriesRouter.put('/:id', requireAuth, async (c) => {
         error: '无权修改其他用户的自定义分类',
       };
       return c.json(res, 403);
+    }
+
+    if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) {
+      const res: ApiResponse = {
+        success: false,
+        error: '分类名称不能为空且必须为字符串',
+      };
+      return c.json(res, 400);
     }
 
     const name = body.name !== undefined ? body.name.trim() : existing.name;

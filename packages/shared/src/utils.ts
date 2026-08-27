@@ -1,10 +1,28 @@
 import { Transaction, TransactionDayGroup, TotalsSummary } from './models.js';
 
 /**
+ * 安全解析本地日期字符串（避免 YYYY-MM-DD 在负时区被解析为 UTC 导致日期回退一天）
+ */
+export function parseLocalDate(val?: Date | string | null): Date {
+  if (!val) return new Date();
+  if (val instanceof Date) return new Date(val.getTime());
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) {
+      return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12, 0, 0);
+    }
+    const d = new Date(trimmed);
+    if (!isNaN(d.getTime())) return d;
+  }
+  return new Date();
+}
+
+/**
  * 格式化日期为 YYYY-MM-DD
  */
 export function formatDateKey(dateInput: string | Date): string {
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const d = typeof dateInput === 'string' ? parseLocalDate(dateInput) : dateInput;
   if (isNaN(d.getTime())) return '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -16,7 +34,7 @@ export function formatDateKey(dateInput: string | Date): string {
  * 格式化时间为 HH:mm
  */
 export function formatTime(dateInput: string | Date): string {
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  const d = typeof dateInput === 'string' ? parseLocalDate(dateInput) : dateInput;
   if (isNaN(d.getTime())) return '';
   const h = String(d.getHours()).padStart(2, '0');
   const m = String(d.getMinutes()).padStart(2, '0');
@@ -172,11 +190,12 @@ export function calculateInviteEligibility(
   userCreatedAt: string | Date,
   hasRecordedTransaction: boolean,
   claimedCount: number,
-  nowInput?: string | Date | number
+  nowInput?: string | Date | number,
+  firstTransactionDate?: string | Date | null
 ): InviteEligibilityCalculation {
   const maxLimit = 3;
-  const regDate = typeof userCreatedAt === 'string' ? new Date(userCreatedAt) : userCreatedAt;
-  const regTime = regDate.getTime();
+  const regDate = typeof userCreatedAt === 'string' ? parseLocalDate(userCreatedAt) : userCreatedAt;
+  const regTime = regDate ? regDate.getTime() : NaN;
   const now = nowInput ? (typeof nowInput === 'number' ? nowInput : new Date(nowInput).getTime()) : Date.now();
 
   if (isNaN(regTime)) {
@@ -190,7 +209,6 @@ export function calculateInviteEligibility(
     };
   }
 
-  const diffMs = Math.max(0, now - regTime);
   let totalEligible = 0;
   let nextUnlockDate: string | null = null;
 
@@ -198,15 +216,22 @@ export function calculateInviteEligibility(
     totalEligible = 0;
     nextUnlockDate = null; // 尚未记账，无法确定解锁时间
   } else {
+    // 计时起点：优先以首次记账时间为基准；若未传入则以注册时间为基准
+    const firstTxDate = firstTransactionDate
+      ? (typeof firstTransactionDate === 'string' ? parseLocalDate(firstTransactionDate) : firstTransactionDate)
+      : null;
+    const startTime = (firstTxDate && !isNaN(firstTxDate.getTime())) ? firstTxDate.getTime() : regTime;
+    const diffMs = Math.max(0, now - startTime);
+
     if (diffMs < 3 * DAY_MS) {
       totalEligible = 0;
-      nextUnlockDate = new Date(regTime + 3 * DAY_MS).toISOString();
+      nextUnlockDate = new Date(startTime + 3 * DAY_MS).toISOString();
     } else if (diffMs < 33 * DAY_MS) {
       totalEligible = 1;
-      nextUnlockDate = new Date(regTime + 33 * DAY_MS).toISOString();
+      nextUnlockDate = new Date(startTime + 33 * DAY_MS).toISOString();
     } else if (diffMs < 63 * DAY_MS) {
       totalEligible = 2;
-      nextUnlockDate = new Date(regTime + 63 * DAY_MS).toISOString();
+      nextUnlockDate = new Date(startTime + 63 * DAY_MS).toISOString();
     } else {
       totalEligible = 3;
       nextUnlockDate = null;

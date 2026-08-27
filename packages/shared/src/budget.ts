@@ -7,6 +7,7 @@ import {
   Category,
   Transaction,
 } from './models.js';
+import { parseLocalDate } from './utils.js';
 
 /**
  * 预算预警状态判断 (遵循白皮书 3.4 规范：达到 80% 或超支时触发预警)
@@ -108,11 +109,11 @@ export function calculateBudgetOverview(
 
     // 周期过滤 (默认按月度)
     if (period === 'monthly') {
-      const txDate = new Date(tx.transaction_date);
+      const txDate = parseLocalDate(tx.transaction_date);
       if (isNaN(txDate.getTime())) return false;
       return txDate.getFullYear() === targetYear && txDate.getMonth() === targetMonth;
     } else if (period === 'yearly') {
-      const txDate = new Date(tx.transaction_date);
+      const txDate = parseLocalDate(tx.transaction_date);
       if (isNaN(txDate.getTime())) return false;
       return txDate.getFullYear() === targetYear;
     }

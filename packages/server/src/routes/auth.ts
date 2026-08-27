@@ -89,9 +89,9 @@ authRouter.post('/register', async (c) => {
     }
 
     const body = await c.req.json<RegisterRequest>();
-    const email = body.email?.trim().toLowerCase();
-    const password = body.password;
-    const inviteCodeRaw = body.invite_code?.trim().toUpperCase();
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
+    const inviteCodeRaw = typeof body.invite_code === 'string' ? body.invite_code.trim().toUpperCase() : undefined;
 
     // 当 REG_MODE 为 1 时，必须提供有效邀请码
     let validInviteCodeRecord: InviteCode | null = null;
@@ -240,8 +240,8 @@ authRouter.post('/register', async (c) => {
 authRouter.post('/login', async (c) => {
   try {
     const body = await c.req.json<LoginRequest>();
-    const email = body.email?.trim().toLowerCase();
-    const password = body.password;
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body.password === 'string' ? body.password : '';
 
     // 1. Cloudflare Turnstile 人机验证
     const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for');
@@ -403,9 +403,9 @@ authRouter.get('/me', requireAuth, async (c) => {
 authRouter.post('/reset-password', async (c) => {
   try {
     const body = await c.req.json<ResetPasswordRequest>();
-    const email = body.email?.trim().toLowerCase();
-    const recoveryCodeInput = body.recovery_code?.trim().toUpperCase();
-    const newPassword = body.new_password;
+    const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const recoveryCodeInput = typeof body.recovery_code === 'string' ? body.recovery_code.trim().toUpperCase() : '';
+    const newPassword = typeof body.new_password === 'string' ? body.new_password : '';
 
     // 1. Cloudflare Turnstile 人机验证
     const clientIp = c.req.header('CF-Connecting-IP') || c.req.header('x-forwarded-for');
@@ -557,14 +557,15 @@ authRouter.get('/invite-codes', requireAuth, async (c) => {
       return c.json(res, 404);
     }
 
-    // 1. 查询用户是否已写入过记账数据
-    const txCountRow = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM transactions WHERE user_id = ?'
+    // 1. 查询用户是否已写入过记账数据及首次记账时间
+    const txRow = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count, MIN(created_at) as first_created_at, MIN(transaction_date) as first_tx_date FROM transactions WHERE user_id = ?'
     )
       .bind(user.user_id)
-      .first<{ count: number }>();
+      .first<{ count: number; first_created_at: string | null; first_tx_date: string | null }>();
 
-    const hasRecordedTransaction = (txCountRow?.count || 0) > 0;
+    const hasRecordedTransaction = (txRow?.count || 0) > 0;
+    const firstTxDate = txRow?.first_created_at || txRow?.first_tx_date || null;
 
     // 2. 查询用户已生成的邀请码
     const inviteCodesResult = await c.env.DB.prepare(
@@ -575,12 +576,13 @@ authRouter.get('/invite-codes', requireAuth, async (c) => {
 
     const inviteCodes = inviteCodesResult.results || [];
 
-    // 3. 计算获取资格
+    // 3. 计算获取资格 (基于首次记账时间)
     const eligibility = calculateInviteEligibility(
       user.created_at,
       hasRecordedTransaction,
       inviteCodes.length,
-      Date.now()
+      Date.now(),
+      firstTxDate
     );
 
     const data: InviteEligibilityInfo = {
@@ -625,14 +627,15 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
       return c.json(res, 404);
     }
 
-    // 1. 检查是否写入过记账数据
-    const txCountRow = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count FROM transactions WHERE user_id = ?'
+    // 1. 检查是否写入过记账数据及首次记账时间
+    const txRow = await c.env.DB.prepare(
+      'SELECT COUNT(*) as count, MIN(created_at) as first_created_at, MIN(transaction_date) as first_tx_date FROM transactions WHERE user_id = ?'
     )
       .bind(user.user_id)
-      .first<{ count: number }>();
+      .first<{ count: number; first_created_at: string | null; first_tx_date: string | null }>();
 
-    const hasRecordedTransaction = (txCountRow?.count || 0) > 0;
+    const hasRecordedTransaction = (txRow?.count || 0) > 0;
+    const firstTxDate = txRow?.first_created_at || txRow?.first_tx_date || null;
 
     // 2. 检查已生成的邀请码数量
     const inviteCodesResult = await c.env.DB.prepare(
@@ -643,12 +646,13 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
 
     const inviteCodes = inviteCodesResult.results || [];
 
-    // 3. 计算资格
+    // 3. 计算资格 (基于首次记账时间)
     const eligibility = calculateInviteEligibility(
       user.created_at,
       hasRecordedTransaction,
       inviteCodes.length,
-      Date.now()
+      Date.now(),
+      firstTxDate
     );
 
     if (!eligibility.can_generate) {

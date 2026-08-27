@@ -141,8 +141,22 @@ ledgersRouter.post('/', async (c) => {
     const authUser = c.get('user')!;
     const userId = authUser.userId;
     const body = await c.req.json<CreateLedgerRequest>();
-    const name = (body.name || '新建账本').trim();
-    const currency = (body.currency || 'CNY').trim().toUpperCase();
+    if (body.name !== undefined && typeof body.name !== 'string') {
+      const res: ApiResponse = {
+        success: false,
+        error: '账本名称必须为字符串',
+      };
+      return c.json(res, 400);
+    }
+    if (body.currency !== undefined && typeof body.currency !== 'string') {
+      const res: ApiResponse = {
+        success: false,
+        error: '币种必须为字符串',
+      };
+      return c.json(res, 400);
+    }
+    const name = (typeof body.name === 'string' ? body.name : '新建账本').trim();
+    const currency = (typeof body.currency === 'string' ? body.currency : 'CNY').trim().toUpperCase();
     const ledgerId = body.ledger_id || `led_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const now = new Date().toISOString();
 
@@ -228,6 +242,21 @@ ledgersRouter.put('/:id', async (c) => {
         error: '账本不存在或无权限修改',
       };
       return c.json(res, 404);
+    }
+
+    if (body.name !== undefined && typeof body.name !== 'string') {
+      const res: ApiResponse = {
+        success: false,
+        error: '账本名称必须为字符串',
+      };
+      return c.json(res, 400);
+    }
+    if (body.currency !== undefined && typeof body.currency !== 'string') {
+      const res: ApiResponse = {
+        success: false,
+        error: '币种必须为字符串',
+      };
+      return c.json(res, 400);
     }
 
     const name = body.name !== undefined ? body.name.trim() : existing.name;

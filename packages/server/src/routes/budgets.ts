@@ -27,24 +27,6 @@ async function resolveValidCategoryId(db: D1Database, categoryId?: string | null
 }
 
 /**
- * 确保 user 与 ledger 存在于数据库中
- */
-async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: string) {
-  const now = new Date().toISOString();
-  await db
-    .prepare('INSERT OR IGNORE INTO users (user_id, email, created_at, updated_at) VALUES (?, ?, ?, ?)')
-    .bind(userId, `${userId}@serverless.dev`, now, now)
-    .run();
-
-  await db
-    .prepare(
-      'INSERT OR IGNORE INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    )
-    .bind(ledgerId, userId, '默认账本', 'CNY', 1, now, now)
-    .run();
-}
-
-/**
  * 获取预算列表
  * GET /api/budgets?ledgerId=xxx&period=monthly
  */
@@ -96,7 +78,15 @@ budgetsRouter.post('/', async (c) => {
     const userId = authUser.userId;
     const body = await c.req.json<Partial<CreateBudgetRequest>>();
 
-    const ledgerId = body.ledger_id || 'default_ledger';
+    let ledgerId = body.ledger_id;
+    if (!ledgerId) {
+      const defLedger = await c.env.DB.prepare(
+        'SELECT ledger_id FROM ledgers WHERE user_id = ? ORDER BY is_default DESC, created_at ASC LIMIT 1'
+      )
+        .bind(userId)
+        .first<{ ledger_id: string }>();
+      ledgerId = defLedger?.ledger_id || 'default_ledger';
+    }
     const period: BudgetPeriod = body.period || 'monthly';
     const rawCategoryId = body.category_id || null;
     const categoryId = await resolveValidCategoryId(c.env.DB, rawCategoryId);
@@ -109,8 +99,6 @@ budgetsRouter.post('/', async (c) => {
       };
       return c.json(res, 400);
     }
-
-    await ensureUserAndLedger(c.env.DB, userId, ledgerId);
 
     const now = new Date().toISOString();
 
@@ -194,11 +182,17 @@ budgetsRouter.put('/batch', async (c) => {
     const userId = authUser.userId;
     const body = await c.req.json<BatchSetBudgetRequest>();
 
-    const ledgerId = body.ledger_id || 'default_ledger';
+    let ledgerId = body.ledger_id;
+    if (!ledgerId) {
+      const defLedger = await c.env.DB.prepare(
+        'SELECT ledger_id FROM ledgers WHERE user_id = ? ORDER BY is_default DESC, created_at ASC LIMIT 1'
+      )
+        .bind(userId)
+        .first<{ ledger_id: string }>();
+      ledgerId = defLedger?.ledger_id || 'default_ledger';
+    }
     const period: BudgetPeriod = body.period || 'monthly';
     const budgetsToSet = Array.isArray(body.budgets) ? body.budgets : [];
-
-    await ensureUserAndLedger(c.env.DB, userId, ledgerId);
 
     const now = new Date().toISOString();
 

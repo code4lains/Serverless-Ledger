@@ -53,8 +53,8 @@ recurringRouter.post('/', async (c) => {
   const userId = jwtUser.userId;
   const body = await c.req.json<CreateRecurringRuleRequest>();
 
-  if (!body.name || !body.name.trim()) {
-    return c.json({ success: false, error: '请输入周期规则名称' }, 400);
+  if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+    return c.json({ success: false, error: '请输入有效的周期规则名称' }, 400);
   }
 
   if (!body.amount || typeof body.amount !== 'number' || body.amount < 1) {
@@ -166,6 +166,9 @@ recurringRouter.put('/:id', async (c) => {
     }
 
     const now = new Date().toISOString();
+    if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) {
+      return c.json({ success: false, error: '周期规则名称不能为空且必须为字符串' }, 400);
+    }
     const name = body.name !== undefined ? body.name.trim() : existing.name;
     const type = body.type !== undefined ? body.type : existing.type;
     const amount = body.amount !== undefined ? Math.round(body.amount) : existing.amount;

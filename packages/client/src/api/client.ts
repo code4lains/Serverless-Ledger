@@ -272,16 +272,15 @@ export async function getCategories(): Promise<Category[]> {
     if (res.ok) {
       const json = (await res.json()) as ApiResponse<Category[]>;
       if (json.success && json.data && json.data.length > 0) {
-        // 检查本地是否有待删除的分类墓碑
-        const pendingDeletes = await localDb.syncQueue
+        // 检查本地待同步队列，保护所有未同步的本地操作 (创建、修改、删除)
+        const pendingQueue = await localDb.syncQueue
           .where('entity_type')
           .equals('category')
-          .and((q) => q.action === 'delete')
           .toArray();
-        const deletedIds = new Set(pendingDeletes.map((d) => d.entity_id));
+        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
         for (const cat of json.data) {
-          if (!deletedIds.has(cat.category_id)) {
+          if (!pendingIds.has(cat.category_id)) {
             await localDb.categories.put(cat);
           }
         }
@@ -527,16 +526,15 @@ export async function getLedgers(withSummary = false): Promise<Ledger[]> {
           ? (json.data as LedgerSummary[]).map((s) => s.ledger)
           : (json.data as Ledger[]);
 
-        // 检查墓碑
-        const pendingDeletes = await localDb.syncQueue
+        // 检查待同步队列，保护本地所有待同步操作 (创建、修改、删除)
+        const pendingQueue = await localDb.syncQueue
           .where('entity_type')
           .equals('ledger')
-          .and((q) => q.action === 'delete')
           .toArray();
-        const deletedIds = new Set(pendingDeletes.map((d) => d.entity_id));
+        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
         for (const l of rawLedgers) {
-          if (!deletedIds.has(l.ledger_id)) {
+          if (!pendingIds.has(l.ledger_id)) {
             await localDb.ledgers.put(l);
           }
         }
@@ -815,15 +813,14 @@ export async function pullAndMergeServerLedgers(): Promise<number> {
       const json = (await res.json()) as ApiResponse<Ledger[]>;
       if (json.success && Array.isArray(json.data)) {
         const serverLedgers = json.data;
-        const pendingDeletes = await localDb.syncQueue
+        const pendingQueue = await localDb.syncQueue
           .where('entity_type')
           .equals('ledger')
-          .and((q) => q.action === 'delete')
           .toArray();
-        const deletedIds = new Set(pendingDeletes.map((d) => d.entity_id));
+        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
         for (const sLed of serverLedgers) {
-          if (!deletedIds.has(sLed.ledger_id)) {
+          if (!pendingIds.has(sLed.ledger_id)) {
             await localDb.ledgers.put(sLed);
           }
         }
@@ -866,8 +863,12 @@ export async function createTransaction(
   })
     .then(async (res) => {
       if (res.ok) {
-        fullTx.sync_status = 'synced';
-        await localDb.transactions.update(fullTx.transaction_id, { sync_status: 'synced' });
+        // BUG-12 修复：竞态条件保护，仅当本地记录未被再次修改时才更新为 synced
+        const current = await localDb.transactions.get(fullTx.transaction_id);
+        if (current && current.updated_at === fullTx.updated_at) {
+          fullTx.sync_status = 'synced';
+          await localDb.transactions.update(fullTx.transaction_id, { sync_status: 'synced' });
+        }
       }
     })
     .catch(() => {
@@ -907,8 +908,12 @@ export async function updateTransaction(
   })
     .then(async (res) => {
       if (res.ok) {
-        updatedTx.sync_status = 'synced';
-        await localDb.transactions.update(transactionId, { sync_status: 'synced' });
+        // BUG-12 修复：竞态条件保护，仅当本地记录未被再次修改时才更新为 synced
+        const current = await localDb.transactions.get(transactionId);
+        if (current && current.updated_at === updatedTx.updated_at) {
+          updatedTx.sync_status = 'synced';
+          await localDb.transactions.update(transactionId, { sync_status: 'synced' });
+        }
       }
     })
     .catch(() => {
@@ -988,10 +993,10 @@ export async function pullAndMergeServerTransactions(): Promise<number> {
             // 本地没有，直接写入
             await localDb.transactions.put({ ...serverTx, sync_status: 'synced' });
           } else {
-            // 本地已有：若时间戳服务端更新或本地曾为 pending，更新并置为 synced
+            // BUG-05 修复：本地已有记录且为 pending 时，跳过覆盖以保留离线修改；仅当本地已同步且服务端更新时间较新时才覆盖
             const localUpdated = new Date(localTx.updated_at).getTime();
             const serverUpdated = new Date(serverTx.updated_at).getTime();
-            if (serverUpdated >= localUpdated || localTx.sync_status === 'pending') {
+            if (localTx.sync_status !== 'pending' && serverUpdated >= localUpdated) {
               await localDb.transactions.put({ ...serverTx, sync_status: 'synced' });
             }
           }
@@ -1022,15 +1027,15 @@ export async function getBudgets(ledgerId?: string, period: BudgetPeriod = 'mont
       const json = (await res.json()) as ApiResponse<Budget[]>;
       if (json.success && Array.isArray(json.data)) {
         const serverBudgets = json.data;
-        const pendingDeletes = await localDb.syncQueue
+        // BUG-06 修复：保护本地所有待推送的预算变更 (包括单个修改/删除与批量配置)
+        const pendingQueue = await localDb.syncQueue
           .where('entity_type')
           .equals('budget')
-          .and((q) => q.action === 'delete')
           .toArray();
-        const deletedIds = new Set(pendingDeletes.map((d) => d.entity_id));
+        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
         for (const b of serverBudgets) {
-          if (!deletedIds.has(b.budget_id)) {
+          if (!pendingIds.has(b.budget_id) && !pendingIds.has(`${b.ledger_id}_${b.period}`)) {
             await localDb.budgets.put(b);
           }
         }
@@ -1172,15 +1177,15 @@ export async function pullAndMergeServerBudgets(): Promise<number> {
       const json = (await res.json()) as ApiResponse<Budget[]>;
       if (json.success && Array.isArray(json.data)) {
         const serverBudgets = json.data;
-        const pendingDeletes = await localDb.syncQueue
+        // BUG-06 修复：保护本地所有待推送的预算变更
+        const pendingQueue = await localDb.syncQueue
           .where('entity_type')
           .equals('budget')
-          .and((q) => q.action === 'delete')
           .toArray();
-        const deletedIds = new Set(pendingDeletes.map((d) => d.entity_id));
+        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
         for (const b of serverBudgets) {
-          if (!deletedIds.has(b.budget_id)) {
+          if (!pendingIds.has(b.budget_id) && !pendingIds.has(`${b.ledger_id}_${b.period}`)) {
             await localDb.budgets.put(b);
           }
         }

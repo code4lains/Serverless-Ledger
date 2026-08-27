@@ -8,21 +8,6 @@ const transactionsRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>(
 // 所有流水接口均需通过 JWT 认证
 transactionsRouter.use('*', requireAuth);
 
-async function ensureUserAndLedger(db: D1Database, userId: string, ledgerId: string) {
-  const now = new Date().toISOString();
-  await db.prepare(
-    'INSERT OR IGNORE INTO users (user_id, email, created_at, updated_at) VALUES (?, ?, ?, ?)'
-  )
-    .bind(userId, `${userId}@serverless.dev`, now, now)
-    .run();
-
-  await db.prepare(
-    'INSERT OR IGNORE INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  )
-    .bind(ledgerId, userId, '默认账本', 'CNY', 1, now, now)
-    .run();
-}
-
 /**
  * 校验 category_id 是否存在于 categories 表中，若不存在则降级为 null 避免触发外键约束异常
  */
@@ -48,7 +33,9 @@ transactionsRouter.get('/', async (c) => {
     const startDate = c.req.query('startDate');
     const endDate = c.req.query('endDate');
     const search = c.req.query('search');
-    const limit = Math.min(parseInt(c.req.query('limit') || '200', 10), 500);
+    const rawLimit = c.req.query('limit');
+    const parsedLimit = rawLimit ? parseInt(rawLimit, 10) : 200;
+    const limit = isNaN(parsedLimit) || parsedLimit <= 0 ? 200 : Math.min(parsedLimit, 500);
 
     let query = 'SELECT * FROM transactions WHERE user_id = ?';
     const params: any[] = [userId];
@@ -153,7 +140,15 @@ transactionsRouter.post('/', async (c) => {
     const userId = authUser.userId;
     const body = await c.req.json<Partial<Transaction>>();
     const transactionId = body.transaction_id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const ledgerId = body.ledger_id || 'default_ledger';
+    let ledgerId = body.ledger_id;
+    if (!ledgerId) {
+      const defLedger = await c.env.DB.prepare(
+        'SELECT ledger_id FROM ledgers WHERE user_id = ? ORDER BY is_default DESC, created_at ASC LIMIT 1'
+      )
+        .bind(userId)
+        .first<{ ledger_id: string }>();
+      ledgerId = defLedger?.ledger_id || 'default_ledger';
+    }
     const type = body.type || 'expense';
     const amount = typeof body.amount === 'number' ? Math.round(body.amount) : 0;
 
@@ -174,8 +169,6 @@ transactionsRouter.post('/', async (c) => {
     const remark = body.remark || null;
     const syncStatus = 'synced';
     const now = new Date().toISOString();
-
-    await ensureUserAndLedger(c.env.DB, userId, ledgerId);
 
     await c.env.DB.prepare(
       `INSERT INTO transactions (
@@ -419,7 +412,7 @@ transactionsRouter.post('/sync', async (c) => {
             remark=excluded.remark,
             sync_status='synced',
             updated_at=excluded.updated_at
-          WHERE excluded.updated_at >= transactions.updated_at`
+          WHERE excluded.updated_at >= transactions.updated_at AND transactions.user_id = excluded.user_id`
         ).bind(
           tx.transaction_id,
           userId,

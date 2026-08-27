@@ -38,3 +38,6 @@ Thumbs.db
 
 # Backup files
 backup
+
+# Some Docs
+docs/Bug_List.md

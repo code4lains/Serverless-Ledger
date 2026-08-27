@@ -24,6 +24,22 @@ export async function requireAuth(c: AuthContext, next: Next) {
 
   try {
     const payload = await verifyJwtToken(token, secret);
+
+    // BUG-03 修复：校验数据库中用户是否仍存在，防止已删除用户的 JWT 仍可使用
+    if (c.env?.DB) {
+      const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
+        .bind(payload.userId)
+        .first<{ user_id: string }>();
+
+      if (!user) {
+        const res: ApiResponse = {
+          success: false,
+          error: '用户不存在或已被注销，请重新登录',
+        };
+        return c.json(res, 401);
+      }
+    }
+
     c.set('user', payload);
     await next();
   } catch (err: any) {
@@ -46,7 +62,16 @@ export async function optionalAuth(c: AuthContext, next: Next) {
     const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET;
     try {
       const payload = await verifyJwtToken(token, secret);
-      c.set('user', payload);
+      if (c.env?.DB) {
+        const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
+          .bind(payload.userId)
+          .first<{ user_id: string }>();
+        if (user) {
+          c.set('user', payload);
+        }
+      } else {
+        c.set('user', payload);
+      }
     } catch {
       // 忽略无效 token，以访客处理
     }

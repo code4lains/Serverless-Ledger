@@ -10,11 +10,11 @@
  */
 export function toCents(yuan: number | string): number {
   if (typeof yuan === 'string') {
-    const parsed = parseFloat(yuan);
-    if (isNaN(parsed) || parsed <= 0) return 0;
+    const parsed = parseFloat(yuan.trim());
+    if (isNaN(parsed)) return 0;
     return Math.round(parsed * 100);
   }
-  if (isNaN(yuan) || yuan <= 0) return 0;
+  if (typeof yuan !== 'number' || isNaN(yuan)) return 0;
   return Math.round(yuan * 100);
 }
 

@@ -4,6 +4,7 @@
  */
 
 import { RecurringFrequency, RecurringRule } from './models.js';
+import { parseLocalDate } from './utils.js';
 
 /**
  * 格式化为 YYYY-MM-DD 字符串
@@ -13,24 +14,6 @@ export function formatDateOnly(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
-}
-
-/**
- * 安全解析本地日期字符串（避免 YYYY-MM-DD 在负时区被解析为 UTC 导致日期回退一天）
- */
-export function parseLocalDate(val?: Date | string | null): Date {
-  if (!val) return new Date();
-  if (val instanceof Date) return new Date(val.getTime());
-  if (typeof val === 'string') {
-    const trimmed = val.trim();
-    const m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-    if (m) {
-      return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12, 0, 0);
-    }
-    const d = new Date(trimmed);
-    if (!isNaN(d.getTime())) return d;
-  }
-  return new Date();
 }
 
 /**
@@ -100,7 +83,10 @@ export function calculateNextRunDate(
     let targetMonth = target.getMonth();
 
     // 仅当当月目标日已过（或就是今天）才向后推 interval 个月
-    if (target.getDate() >= desiredDayOfMonth) {
+    // 注意：比较时需以当月有效最大天数（如2月28/29）为基准，避免超出当月天数时导致死循环
+    const currentMonthMaxDays = getDaysInMonth(targetYear, targetMonth + 1);
+    const effectiveCurrentDueDay = Math.min(desiredDayOfMonth, currentMonthMaxDays);
+    if (target.getDate() >= effectiveCurrentDueDay) {
       targetMonth += interval;
     }
 
@@ -128,7 +114,9 @@ export function calculateNextRunDate(
     let targetYear = target.getFullYear();
     const currentMonth = target.getMonth();
     const currentDay = target.getDate();
-    if (currentMonth > desiredMonth || (currentMonth === desiredMonth && currentDay >= desiredDay)) {
+    const currentYearDesiredMonthMaxDays = getDaysInMonth(targetYear, desiredMonth + 1);
+    const effectiveDesiredDay = Math.min(desiredDay, currentYearDesiredMonthMaxDays);
+    if (currentMonth > desiredMonth || (currentMonth === desiredMonth && currentDay >= effectiveDesiredDay)) {
       targetYear += interval;
     }
 
