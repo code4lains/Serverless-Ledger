@@ -56,6 +56,44 @@ export class LedgerLocalDatabase extends Dexie {
       recurring_rules: 'rule_id, user_id, ledger_id, frequency, status, next_run_date, updated_at',
       syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
     });
+
+    this.version(4)
+      .stores({
+        transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at, [user_id+transaction_date], [user_id+ledger_id]',
+        categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
+        ledgers: 'ledger_id, user_id, is_default, updated_at',
+        budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at, [user_id+ledger_id+period]',
+        recurring_rules: 'rule_id, user_id, ledger_id, frequency, status, next_run_date, updated_at',
+        syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
+      })
+      .upgrade(async (tx) => {
+        // 标准化流水状态与字段类型
+        await tx
+          .table('transactions')
+          .toCollection()
+          .modify((t: any) => {
+            if (!t.sync_status || (t.sync_status !== 'pending' && t.sync_status !== 'conflict')) {
+              t.sync_status = 'synced';
+            }
+            if (typeof t.amount !== 'number') {
+              t.amount = Number(t.amount) || 0;
+            }
+          });
+        // 标准化账本 is_default 标识为 0/1 整型
+        await tx
+          .table('ledgers')
+          .toCollection()
+          .modify((l: any) => {
+            l.is_default = l.is_default ? 1 : 0;
+          });
+        // 标准化周期规则 auto_record 为 0/1 整型
+        await tx
+          .table('recurring_rules')
+          .toCollection()
+          .modify((r: any) => {
+            r.auto_record = r.auto_record !== 0 ? 1 : 0;
+          });
+      });
   }
 }
 
@@ -220,6 +258,39 @@ export async function seedLocalLedgers(userId?: string) {
     };
     await localDb.ledgers.put(defaultLedger);
   }
+}
+
+/**
+ * 清除指定用户的本地私有数据，并在需要时重置基础访客数据 (BUG-C04)
+ */
+export async function clearUserData(userId?: string): Promise<void> {
+  if (!userId || userId === 'all') {
+    await clearLocalDatabase();
+    return;
+  }
+
+  await localDb.transaction(
+    'rw',
+    [
+      localDb.transactions,
+      localDb.categories,
+      localDb.ledgers,
+      localDb.budgets,
+      localDb.recurring_rules,
+      localDb.syncQueue,
+    ],
+    async () => {
+      await localDb.transactions.where('user_id').equals(userId).delete();
+      await localDb.categories.where('user_id').equals(userId).delete();
+      await localDb.ledgers.where('user_id').equals(userId).delete();
+      await localDb.budgets.where('user_id').equals(userId).delete();
+      await localDb.recurring_rules.where('user_id').equals(userId).delete();
+      await localDb.syncQueue.where('user_id').equals(userId).delete();
+    }
+  );
+
+  await seedLocalCategories();
+  await seedLocalLedgers();
 }
 
 /**

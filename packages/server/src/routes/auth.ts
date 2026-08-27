@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { Env, AppVariables } from '../types';
-import { hashPassword, verifyPassword, generateJwtToken, DEFAULT_JWT_SECRET, TOKEN_EXPIRY_SECONDS } from '../utils/auth';
+import { hashPassword, verifyPassword, generateJwtToken, getJwtSecret, timingSafeEqualString, TOKEN_EXPIRY_SECONDS } from '../utils/auth';
 import { verifyTurnstileToken } from '../utils/turnstile';
 import { requireAuth } from '../middleware/auth';
 import {
@@ -148,10 +148,34 @@ authRouter.post('/register', async (c) => {
       return c.json(res, 400);
     }
 
+    if (email.length > 100) {
+      const res: ApiResponse = {
+        success: false,
+        error: '邮箱长度不能超过 100 个字符',
+      };
+      return c.json(res, 400);
+    }
+
     if (!password || password.length < 6) {
       const res: ApiResponse = {
         success: false,
         error: '密码长度至少需 6 位',
+      };
+      return c.json(res, 400);
+    }
+
+    if (password.length > 128) {
+      const res: ApiResponse = {
+        success: false,
+        error: '密码长度不能超过 128 位',
+      };
+      return c.json(res, 400);
+    }
+
+    if (inviteCodeRaw && inviteCodeRaw.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '邀请码格式无效',
       };
       return c.json(res, 400);
     }
@@ -182,13 +206,22 @@ authRouter.post('/register', async (c) => {
       .bind(userId, email, passwordHash, invitedBy, recoveryCode, now, now)
       .run();
 
-    // 2. 若使用了有效邀请码，标记邀请码为已使用
+    // 2. 若使用了有效邀请码，标记邀请码为已使用 (BUG-S04 原子条件更新防 TOCTOU)
     if (validInviteCodeRecord) {
-      await c.env.DB.prepare(
-        'UPDATE invite_codes SET status = ?, used_by = ?, used_at = ? WHERE code = ?'
+      const updateResult = await c.env.DB.prepare(
+        'UPDATE invite_codes SET status = ?, used_by = ?, used_at = ? WHERE code = ? AND status = ?'
       )
-        .bind('used', userId, now, validInviteCodeRecord.code)
+        .bind('used', userId, now, validInviteCodeRecord.code, 'unused')
         .run();
+
+      if (regMode === 1 && (!updateResult.meta.changes || updateResult.meta.changes === 0)) {
+        await c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId).run();
+        const res: ApiResponse = {
+          success: false,
+          error: '邀请码已被其他用户同时使用，请更换邀请码',
+        };
+        return c.json(res, 400);
+      }
     }
 
     // 3. 自动为新用户创建默认日常账本
@@ -200,7 +233,7 @@ authRouter.post('/register', async (c) => {
       .run();
 
     // 4. 签发 JWT
-    const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+    const secret = getJwtSecret(c.env);
     const token = await generateJwtToken({ user_id: userId, email }, secret, TOKEN_EXPIRY_SECONDS);
 
     const authUser: AuthUser = {
@@ -262,6 +295,22 @@ authRouter.post('/login', async (c) => {
       return c.json(res, 400);
     }
 
+    if (email.length > 100) {
+      const res: ApiResponse = {
+        success: false,
+        error: '邮箱长度不能超过 100 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (password.length > 128) {
+      const res: ApiResponse = {
+        success: false,
+        error: '密码长度不能超过 128 位',
+      };
+      return c.json(res, 400);
+    }
+
     // 查询用户
     const user = await c.env.DB.prepare(
       'SELECT user_id, email, password_hash, invited_by, recovery_code, created_at, updated_at FROM users WHERE email = ?'
@@ -307,7 +356,7 @@ authRouter.post('/login', async (c) => {
       .first<Ledger>();
 
     // 签发 JWT
-    const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+    const secret = getJwtSecret(c.env);
     const token = await generateJwtToken(
       { user_id: user.user_id, email: user.email },
       secret,
@@ -426,6 +475,14 @@ authRouter.post('/reset-password', async (c) => {
       return c.json(res, 400);
     }
 
+    if (email.length > 100) {
+      const res: ApiResponse = {
+        success: false,
+        error: '邮箱长度不能超过 100 个字符',
+      };
+      return c.json(res, 400);
+    }
+
     if (!recoveryCodeInput) {
       const res: ApiResponse = {
         success: false,
@@ -434,10 +491,26 @@ authRouter.post('/reset-password', async (c) => {
       return c.json(res, 400);
     }
 
+    if (recoveryCodeInput.length > 32) {
+      const res: ApiResponse = {
+        success: false,
+        error: '恢复码格式无效',
+      };
+      return c.json(res, 400);
+    }
+
     if (!newPassword || newPassword.length < 6) {
       const res: ApiResponse = {
         success: false,
         error: '新密码长度至少需 6 位',
+      };
+      return c.json(res, 400);
+    }
+
+    if (newPassword.length > 128) {
+      const res: ApiResponse = {
+        success: false,
+        error: '新密码长度不能超过 128 位',
       };
       return c.json(res, 400);
     }
@@ -456,8 +529,9 @@ authRouter.post('/reset-password', async (c) => {
       return c.json(res, 400);
     }
 
-    // 恢复码校验 (不区分大小写，已转为全大写比对)
-    if (!user.recovery_code || user.recovery_code.trim().toUpperCase() !== recoveryCodeInput) {
+    // 恢复码校验 (不区分大小写，已转为全大写比对，使用常数时间比对防止时序攻击 BUG-S08)
+    const userRecoveryCode = (user.recovery_code || '').trim().toUpperCase();
+    if (!userRecoveryCode || !timingSafeEqualString(userRecoveryCode, recoveryCodeInput)) {
       const res: ApiResponse = {
         success: false,
         error: '密码恢复码错误，请核对后重试',
@@ -465,18 +539,22 @@ authRouter.post('/reset-password', async (c) => {
       return c.json(res, 400);
     }
 
-    // 密码加密并更新
+    // 密码加密并更新，轮换生成新的 8 位恢复码 (BUG-S03)
     const passwordHash = await hashPassword(newPassword);
+    const newRecoveryCode = generateRecoveryCode();
     const now = new Date().toISOString();
     await c.env.DB.prepare(
-      'UPDATE users SET password_hash = ?, updated_at = ? WHERE user_id = ?'
+      'UPDATE users SET password_hash = ?, recovery_code = ?, updated_at = ? WHERE user_id = ?'
     )
-      .bind(passwordHash, now, user.user_id)
+      .bind(passwordHash, newRecoveryCode, now, user.user_id)
       .run();
 
-    const res: ApiResponse = {
+    const res: ApiResponse<{ new_recovery_code: string }> = {
       success: true,
       message: '密码重置成功，请使用新密码登录',
+      data: {
+        new_recovery_code: newRecoveryCode,
+      },
     };
 
     return c.json(res, 200);
@@ -498,27 +576,19 @@ authRouter.delete('/account', requireAuth, async (c) => {
     const jwtUser = c.get('user')!;
     const userId = jwtUser.userId;
 
-    // 1. 删除用户的所有账单流水
-    await c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId).run();
+    // BUG-S12: 使用 D1 atomic batch 确保注销账户级联删除的事务原子性
+    const batchStatements: D1PreparedStatement[] = [
+      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM ledgers WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM categories WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM invite_codes WHERE creator_id = ?').bind(userId),
+      c.env.DB.prepare('UPDATE invite_codes SET used_by = NULL WHERE used_by = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM recurring_rules WHERE user_id = ?').bind(userId),
+      c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId),
+    ];
 
-    // 2. 删除用户的所有预算
-    await c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ?').bind(userId).run();
-
-    // 3. 删除用户的所有账本
-    await c.env.DB.prepare('DELETE FROM ledgers WHERE user_id = ?').bind(userId).run();
-
-    // 4. 删除用户创建的所有自定义分类
-    await c.env.DB.prepare('DELETE FROM categories WHERE user_id = ?').bind(userId).run();
-
-    // 5. 删除用户创建的邀请码，并将他人邀请码中已被该用户使用过的字段置空
-    await c.env.DB.prepare('DELETE FROM invite_codes WHERE creator_id = ?').bind(userId).run();
-    await c.env.DB.prepare('UPDATE invite_codes SET used_by = NULL WHERE used_by = ?').bind(userId).run();
-
-    // 5.5 删除用户的所有周期记账规则
-    await c.env.DB.prepare('DELETE FROM recurring_rules WHERE user_id = ?').bind(userId).run();
-
-    // 6. 删除用户记录
-    await c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId).run();
+    await c.env.DB.batch(batchStatements);
 
     const res: ApiResponse = {
       success: true,
@@ -691,11 +761,28 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
 
     const now = new Date().toISOString();
 
-    await c.env.DB.prepare(
-      'INSERT INTO invite_codes (code, creator_id, status, created_at) VALUES (?, ?, ?, ?)'
+    // BUG-S05: 原子条件插入，防止并发请求突破配额上限 (<= 3)
+    const insertResult = await c.env.DB.prepare(
+      `INSERT INTO invite_codes (code, creator_id, status, created_at)
+       SELECT ?, ?, 'unused', ?
+       WHERE (SELECT COUNT(*) FROM invite_codes WHERE creator_id = ?) < ?`
     )
-      .bind(newCode, user.user_id, 'unused', now)
+      .bind(
+        newCode,
+        user.user_id,
+        now,
+        user.user_id,
+        Math.min(eligibility.total_eligible, 3)
+      )
       .run();
+
+    if (!insertResult.meta.changes || insertResult.meta.changes === 0) {
+      const res: ApiResponse = {
+        success: false,
+        error: '已达到当前可领取的邀请码上限，请勿重复提交',
+      };
+      return c.json(res, 400);
+    }
 
     const createdInviteCode: InviteCode = {
       code: newCode,

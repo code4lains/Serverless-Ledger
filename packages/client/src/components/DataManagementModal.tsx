@@ -292,7 +292,7 @@ export function DataManagementModal({
     if (!parseResult || parseResult.items.length === 0) return;
 
     setIsImporting(true);
-    setImportProgress(10);
+    setImportProgress(0);
     setImportError(null);
 
     try {

@@ -146,19 +146,20 @@ export function calculateBudgetOverview(
     return true;
   });
 
-  // 5. 计算总预算进度 (category_id 为 null 或 undefined)
-  const totalBudgetRecord = targetBudgets.find((b) => !b.category_id);
+  // 5. 计算总预算进度 (category_id 为 null 或 undefined，支持多账本聚合累加)
+  const totalBudgetRecords = targetBudgets.filter((b) => !b.category_id);
   let totalBudgetProgress: BudgetProgressItem | null = null;
+  const totalBudgetAmount = totalBudgetRecords.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
-  if (totalBudgetRecord && totalBudgetRecord.amount > 0) {
-    const budgetAmount = Number(totalBudgetRecord.amount) || 0;
+  if (totalBudgetRecords.length > 0 && totalBudgetAmount > 0) {
+    const budgetAmount = totalBudgetAmount;
     const spentAmount = totalExpenseSpent;
     const remainingAmount = budgetAmount - spentAmount;
     const percentage = budgetAmount > 0 ? (spentAmount / budgetAmount) * 100 : 0;
     const status = getBudgetStatus(spentAmount, budgetAmount);
 
     totalBudgetProgress = {
-      budget_id: totalBudgetRecord.budget_id,
+      budget_id: totalBudgetRecords[0].budget_id,
       category_id: null,
       category_name: period === 'monthly' ? '月度总预算' : '年度总预算',
       is_total: true,
@@ -170,17 +171,27 @@ export function calculateBudgetOverview(
     };
   }
 
-  // 6. 计算各大分类预算进度
-  const categoryBudgetRecords = targetBudgets.filter((b) => !!b.category_id);
+  // 6. 计算各大分类预算进度 (按 category_id 聚合累加，防止多账本重复卡片与限额失真)
+  const categoryBudgetMap = new Map<string, { totalAmount: number; sampleBudget: Budget }>();
+  for (const b of targetBudgets) {
+    if (!b.category_id) continue;
+    const catId = b.category_id;
+    const amount = Number(b.amount) || 0;
+    if (amount <= 0) continue;
+
+    const existing = categoryBudgetMap.get(catId);
+    if (existing) {
+      existing.totalAmount += amount;
+    } else {
+      categoryBudgetMap.set(catId, { totalAmount: amount, sampleBudget: b });
+    }
+  }
+
   const categoryBudgets: BudgetProgressItem[] = [];
   let totalCategoryBudgetSum = 0;
 
-  for (const b of categoryBudgetRecords) {
-    const catId = b.category_id!;
+  for (const [catId, { totalAmount: budgetAmount, sampleBudget }] of categoryBudgetMap.entries()) {
     const cat = categoryMap.get(catId);
-    const budgetAmount = Number(b.amount) || 0;
-    if (budgetAmount <= 0) continue;
-
     totalCategoryBudgetSum += budgetAmount;
     const spentAmount = majorCategorySpentMap.get(catId) || 0;
     const remainingAmount = budgetAmount - spentAmount;
@@ -188,7 +199,7 @@ export function calculateBudgetOverview(
     const status = getBudgetStatus(spentAmount, budgetAmount);
 
     categoryBudgets.push({
-      budget_id: b.budget_id,
+      budget_id: sampleBudget.budget_id,
       category_id: catId,
       category_name: cat ? cat.name : '未知分类',
       category_icon: cat?.icon || 'Tag',

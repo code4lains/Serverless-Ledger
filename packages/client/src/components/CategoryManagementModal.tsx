@@ -736,8 +736,9 @@ export function CategoryManagementModal({
             <div className="flex gap-2 pt-2 justify-end">
               <button
                 type="button"
+                disabled={isDeleting}
                 onClick={() => setDeletingCategory(null)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 disabled:opacity-50"
               >
                 取消
               </button>
@@ -745,7 +746,7 @@ export function CategoryManagementModal({
                 type="button"
                 disabled={isDeleting}
                 onClick={handleConfirmDelete}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all"
+                className="px-3.5 py-1.5 rounded-xl text-xs font-medium text-white bg-red-600 hover:bg-red-700 shadow-sm transition-all disabled:opacity-50"
               >
                 {isDeleting ? '删除中...' : '确认删除'}
               </button>

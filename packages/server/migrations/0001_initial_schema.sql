@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS budgets (
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
     FOREIGN KEY (ledger_id) REFERENCES ledgers (ledger_id) ON DELETE CASCADE,
-    FOREIGN KEY (category_id) REFERENCES categories (category_id) ON DELETE CASCADE
+    FOREIGN KEY (category_id) REFERENCES categories (category_id) ON DELETE CASCADE,
+    UNIQUE (user_id, ledger_id, period, category_id)
 );
 
 CREATE TABLE IF NOT EXISTS invite_codes (
@@ -107,6 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions (user_id, 
 CREATE INDEX IF NOT EXISTS idx_transactions_ledger ON transactions (ledger_id);
 CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories (parent_id);
 CREATE INDEX IF NOT EXISTS idx_budgets_user_ledger ON budgets (user_id, ledger_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_budgets_user_ledger_period_cat ON budgets (user_id, ledger_id, period, category_id);
 CREATE INDEX IF NOT EXISTS idx_invite_codes_creator ON invite_codes (creator_id);
 CREATE INDEX IF NOT EXISTS idx_invite_codes_code_status ON invite_codes (code, status);
 CREATE INDEX IF NOT EXISTS idx_recurring_user ON recurring_rules (user_id, status);

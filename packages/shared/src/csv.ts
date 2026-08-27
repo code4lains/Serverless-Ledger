@@ -410,6 +410,21 @@ export const XIAOXING_CATEGORY_MAP: Record<string, string> = {
 };
 
 /**
+ * 表头列索引归一化模糊查找器
+ */
+export function findHeaderIdx(headerRow: string[], keywords: string[]): number {
+  if (!headerRow || !Array.isArray(headerRow)) return -1;
+  return headerRow.findIndex((cell) => {
+    if (!cell) return false;
+    const normalized = String(cell).replace(/[\s（）()]/g, '').toLowerCase();
+    return keywords.some((kw) => {
+      const normKw = kw.replace(/[\s（）()]/g, '').toLowerCase();
+      return normalized.includes(normKw);
+    });
+  });
+}
+
+/**
  * 将各类日期形式（ISO字符串、标准文本、时间戳数值、Date对象）统一转换为 ISO 字符串
  */
 export function parseExcelDateValue(val: any): string {
@@ -418,17 +433,18 @@ export function parseExcelDateValue(val: any): string {
     return !isNaN(val.getTime()) ? val.toISOString() : new Date().toISOString();
   }
   if (typeof val === 'number') {
+    if (val > 1000000) return new Date(val).toISOString();
     // Excel 序列日期数 (以 1900-01-01 为基准)
-    const utcMillis = (val - 25569) * 86400 * 1000;
+    const utcMillis = Math.round((val - 25569) * 86400 * 1000);
     const d = new Date(utcMillis);
     return !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
   }
   const str = String(val).trim();
-  try {
-    const d = new Date(str.replace(/-/g, '/'));
-    if (!isNaN(d.getTime())) return d.toISOString();
-  } catch {}
-  return new Date().toISOString();
+  let d = new Date(str);
+  if (isNaN(d.getTime())) {
+    d = new Date(str.replace(/-/g, '/'));
+  }
+  return !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
 }
 
 /**
@@ -707,7 +723,12 @@ function parseWeChatPayCsv(rows: string[][], categories: Category[], targetLedge
   let headerIndex = -1;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (r.includes('交易时间') && (r.includes('交易对方') || r.includes('收/支') || r.includes('金额(元)'))) {
+    if (
+      findHeaderIdx(r, ['交易时间', '时间', '日期']) >= 0 &&
+      (findHeaderIdx(r, ['交易对方', '商户名称', '交易伙伴']) >= 0 ||
+        findHeaderIdx(r, ['收/支', '收支', '资金流向']) >= 0 ||
+        findHeaderIdx(r, ['金额', '金额(元)', '金额（元）']) >= 0)
+    ) {
       headerIndex = i;
       break;
     }
@@ -718,16 +739,16 @@ function parseWeChatPayCsv(rows: string[][], categories: Category[], targetLedge
   }
 
   const header = rows[headerIndex];
-  const timeIdx = header.indexOf('交易时间');
-  const typeColIdx = header.indexOf('交易类型');
-  const peerIdx = header.indexOf('交易对方');
-  const prodIdx = header.indexOf('商品');
-  const inOutIdx = header.indexOf('收/支');
-  const amountIdx = header.indexOf('金额(元)');
-  const payMethodIdx = header.indexOf('支付方式');
-  const statusIdx = header.indexOf('当前状态');
-  const orderIdIdx = header.indexOf('交易单号');
-  const remarkIdx = header.indexOf('备注');
+  const timeIdx = findHeaderIdx(header, ['交易时间', '时间', '日期']);
+  const typeColIdx = findHeaderIdx(header, ['交易类型', '类型']);
+  const peerIdx = findHeaderIdx(header, ['交易对方', '商户名称', '交易伙伴']);
+  const prodIdx = findHeaderIdx(header, ['商品', '商品名称', '商品说明']);
+  const inOutIdx = findHeaderIdx(header, ['收/支', '收支', '资金流向']);
+  const amountIdx = findHeaderIdx(header, ['金额(元)', '金额（元）', '金额']);
+  const payMethodIdx = findHeaderIdx(header, ['支付方式', '收/付款方式', '收付款方式']);
+  const statusIdx = findHeaderIdx(header, ['当前状态', '交易状态', '状态']);
+  const orderIdIdx = findHeaderIdx(header, ['交易单号', '交易号', '商户单号', '订单号']);
+  const remarkIdx = findHeaderIdx(header, ['备注']);
 
   const items: ParsedBillItem[] = [];
   let totalExpense = 0;
@@ -741,15 +762,15 @@ function parseWeChatPayCsv(rows: string[][], categories: Category[], targetLedge
     const row = rows[i];
     if (row.length < 5) continue;
 
-    const timeStr = row[timeIdx] || '';
-    const peer = row[peerIdx] || '';
-    const prod = row[prodIdx] || '';
-    const inOut = row[inOutIdx] || '';
-    const amountStr = (row[amountIdx] || '').replace(/[¥, ]/g, '');
-    const payMethod = row[payMethodIdx] || '';
-    const status = row[statusIdx] || '';
-    const orderId = row[orderIdIdx] || '';
-    const customRemark = row[remarkIdx] || '';
+    const timeStr = (timeIdx >= 0 ? row[timeIdx] : '') || '';
+    const peer = (peerIdx >= 0 ? row[peerIdx] : '') || '';
+    const prod = (prodIdx >= 0 ? row[prodIdx] : '') || '';
+    const inOut = (inOutIdx >= 0 ? row[inOutIdx] : '') || '';
+    const amountStr = (amountIdx >= 0 ? row[amountIdx] : '').replace(/[¥, ]/g, '');
+    const payMethod = (payMethodIdx >= 0 ? row[payMethodIdx] : '') || '';
+    const status = (statusIdx >= 0 ? row[statusIdx] : '') || '';
+    const orderId = (orderIdIdx >= 0 ? row[orderIdIdx] : '') || '';
+    const customRemark = (remarkIdx >= 0 ? row[remarkIdx] : '') || '';
 
     // 跳过已关闭或已退款的无效交易
     if (status.includes('已全额退款') || status.includes('对方已退还') || status.includes('已退款') || status.includes('交易关闭')) {
@@ -774,7 +795,7 @@ function parseWeChatPayCsv(rows: string[][], categories: Category[], targetLedge
     }
 
     // 智能推断分类
-    const matchContext = `${peer} ${prod} ${customRemark} ${row[typeColIdx] || ''}`;
+    const matchContext = `${peer} ${prod} ${customRemark} ${(typeColIdx >= 0 ? row[typeColIdx] : '') || ''}`;
     const matched = matchCategoryByContext(matchContext, type, categories);
 
     // 构造备注
@@ -782,13 +803,7 @@ function parseWeChatPayCsv(rows: string[][], categories: Category[], targetLedge
     const finalRemark = customRemark && customRemark !== '/' ? `${remarkParts} (${customRemark})` : remarkParts;
 
     // ISO 时间标准化
-    let isoDate: string;
-    try {
-      const d = new Date(timeStr.replace(/-/g, '/'));
-      isoDate = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
-    } catch {
-      isoDate = new Date().toISOString();
-    }
+    const isoDate = parseExcelDateValue(timeStr);
 
     const item: ParsedBillItem = {
       id: orderId || `tx_wx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -836,7 +851,13 @@ function parseAlipayCsv(rows: string[][], categories: Category[], targetLedgerId
   let headerIndex = -1;
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (r.includes('交易时间') && (r.includes('交易分类') || r.includes('收/支') || r.includes('商品说明') || r.includes('金额'))) {
+    if (
+      findHeaderIdx(r, ['交易时间', '时间', '日期']) >= 0 &&
+      (findHeaderIdx(r, ['交易分类', '分类']) >= 0 ||
+        findHeaderIdx(r, ['收/支', '收支', '资金流向']) >= 0 ||
+        findHeaderIdx(r, ['商品说明', '商品名称', '商品']) >= 0 ||
+        findHeaderIdx(r, ['金额', '金额(元)', '金额（元）']) >= 0)
+    ) {
       headerIndex = i;
       break;
     }
@@ -847,16 +868,16 @@ function parseAlipayCsv(rows: string[][], categories: Category[], targetLedgerId
   }
 
   const header = rows[headerIndex];
-  const timeIdx = header.indexOf('交易时间');
-  const catIdx = header.indexOf('交易分类');
-  const peerIdx = header.indexOf('交易对方');
-  const prodIdx = header.indexOf('商品说明');
-  const inOutIdx = header.indexOf('收/支');
-  const amountIdx = header.indexOf('金额');
-  const payMethodIdx = header.indexOf('收/付款方式');
-  const statusIdx = header.indexOf('交易状态');
-  const orderIdIdx = header.indexOf('交易订单号');
-  const remarkIdx = header.indexOf('备注');
+  const timeIdx = findHeaderIdx(header, ['交易时间', '时间', '创建时间']);
+  const catIdx = findHeaderIdx(header, ['交易分类', '分类']);
+  const peerIdx = findHeaderIdx(header, ['交易对方', '商户名称', '交易伙伴']);
+  const prodIdx = findHeaderIdx(header, ['商品说明', '商品名称', '商品']);
+  const inOutIdx = findHeaderIdx(header, ['收/支', '收支', '资金流向']);
+  const amountIdx = findHeaderIdx(header, ['金额', '金额(元)', '金额（元）']);
+  const payMethodIdx = findHeaderIdx(header, ['收/付款方式', '收付款方式', '支付方式']);
+  const statusIdx = findHeaderIdx(header, ['交易状态', '当前状态', '状态']);
+  const orderIdIdx = findHeaderIdx(header, ['交易订单号', '交易号', '订单号', '交易单号']);
+  const remarkIdx = findHeaderIdx(header, ['备注']);
 
   const items: ParsedBillItem[] = [];
   let totalExpense = 0;
@@ -870,16 +891,16 @@ function parseAlipayCsv(rows: string[][], categories: Category[], targetLedgerId
     const row = rows[i];
     if (row.length < 5) continue;
 
-    const timeStr = row[timeIdx] || '';
-    const aliCat = row[catIdx] || '';
-    const peer = row[peerIdx] || '';
-    const prod = row[prodIdx] || '';
-    const inOut = row[inOutIdx] || '';
-    const amountStr = (row[amountIdx] || '').replace(/[¥, ]/g, '');
-    const payMethod = row[payMethodIdx] || '';
-    const status = row[statusIdx] || '';
-    const orderId = row[orderIdIdx] || '';
-    const customRemark = row[remarkIdx] || '';
+    const timeStr = (timeIdx >= 0 ? row[timeIdx] : '') || '';
+    const aliCat = (catIdx >= 0 ? row[catIdx] : '') || '';
+    const peer = (peerIdx >= 0 ? row[peerIdx] : '') || '';
+    const prod = (prodIdx >= 0 ? row[prodIdx] : '') || '';
+    const inOut = (inOutIdx >= 0 ? row[inOutIdx] : '') || '';
+    const amountStr = (amountIdx >= 0 ? row[amountIdx] : '').replace(/[¥, ]/g, '');
+    const payMethod = (payMethodIdx >= 0 ? row[payMethodIdx] : '') || '';
+    const status = (statusIdx >= 0 ? row[statusIdx] : '') || '';
+    const orderId = (orderIdIdx >= 0 ? row[orderIdIdx] : '') || '';
+    const customRemark = (remarkIdx >= 0 ? row[remarkIdx] : '') || '';
 
     // 跳过已关闭或退款成功的交易
     if (status.includes('交易关闭') || status.includes('退款成功') || status.includes('已关闭')) {
@@ -910,13 +931,7 @@ function parseAlipayCsv(rows: string[][], categories: Category[], targetLedgerId
     const remarkParts = [peer, prod].filter((p) => p && p !== '/').join(' - ');
     const finalRemark = customRemark && customRemark !== '/' ? `${remarkParts} (${customRemark})` : remarkParts;
 
-    let isoDate: string;
-    try {
-      const d = new Date(timeStr.replace(/-/g, '/'));
-      isoDate = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
-    } catch {
-      isoDate = new Date().toISOString();
-    }
+    const isoDate = parseExcelDateValue(timeStr);
 
     const item: ParsedBillItem = {
       id: orderId || `tx_ali_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1026,13 +1041,7 @@ function parseStandardLedgerCsv(rows: string[][], categories: Category[], target
     const type: TransactionType = typeReverseMap[rawType.trim()] || 'expense';
     const amountInCents = toCents(rawAmount);
 
-    let isoDate: string;
-    try {
-      const d = new Date(rawTime.replace(/-/g, '/'));
-      isoDate = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
-    } catch {
-      isoDate = new Date().toISOString();
-    }
+    const isoDate = parseExcelDateValue(rawTime);
 
     const matched = matchCategoryByContext(rawCat, type, categories);
 
@@ -1150,15 +1159,7 @@ function parseGenericBillCsv(rows: string[][], categories: Category[], targetLed
     }
 
     const amountInCents = toCents(absAmount);
-
-    let isoDate: string;
-    try {
-      const d = new Date(rawTime.replace(/-/g, '/'));
-      isoDate = !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
-    } catch {
-      isoDate = new Date().toISOString();
-    }
-
+    const isoDate = parseExcelDateValue(rawTime);
     const matched = matchCategoryByContext(`${rawCat} ${rawRemark}`, type, categories);
 
     const item: ParsedBillItem = {
@@ -1833,11 +1834,40 @@ export function detectAndParseBillFile(
     try {
       const u8 = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
       text = new TextDecoder('utf-8').decode(u8);
+      // 如果 UTF-8 解码含有乱码替换字符 '\uFFFD'，尝试 GBK 解码
+      if (text.includes('\uFFFD')) {
+        try {
+          const gbkText = new TextDecoder('gbk').decode(u8);
+          text = gbkText;
+        } catch {
+          // GBK decode failed, keep utf-8 text
+        }
+      }
     } catch {
       text = '';
     }
   }
 
-  return detectAndParseBillCsv(text, categories, targetLedgerId);
+  let result = detectAndParseBillCsv(text, categories, targetLedgerId);
+
+  // 如果解析为 generic 且有效行数为 0，且输入是二进制数据，尝试用 gbk 重新解析
+  if (
+    result.format_type === 'generic' &&
+    result.valid_rows === 0 &&
+    typeof fileData !== 'string'
+  ) {
+    try {
+      const u8 = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
+      const gbkText = new TextDecoder('gbk').decode(u8);
+      if (gbkText && gbkText !== text) {
+        const gbkResult = detectAndParseBillCsv(gbkText, categories, targetLedgerId);
+        if (gbkResult.valid_rows > 0 || gbkResult.format_type !== 'generic') {
+          return gbkResult;
+        }
+      }
+    } catch {}
+  }
+
+  return result;
 }
 

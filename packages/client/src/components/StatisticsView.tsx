@@ -18,6 +18,7 @@ import {
   formatMoney,
   getCurrencySymbol,
   calculateTotals,
+  formatDateKey,
 } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -59,11 +60,13 @@ export function StatisticsView({
 
   const currencySymbol = getCurrencySymbol(currentLedger?.currency);
 
-  // 根据账本与时间周期筛选流水
+  // 根据账本与时间周期筛选流水 (BUG-C07: 统一采用本地时区日期字符串 YYYY-MM-DD 比对，防止 UTC 时区偏移导致首尾日边界流水丢失)
   const filteredTransactions = useMemo(() => {
     const now = new Date();
     const currentYear = now.getFullYear();
-    const currentMonth = now.getMonth(); // 0-indexed
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const currentYearPrefix = `${currentYear}-`;
+    const currentMonthPrefix = `${currentYear}-${String(currentMonth).padStart(2, '0')}-`;
 
     return transactions.filter((tx) => {
       // 账本筛选
@@ -74,15 +77,15 @@ export function StatisticsView({
       // 时间周期筛选
       if (period === 'all') return true;
 
-      const txDate = new Date(tx.transaction_date);
-      if (isNaN(txDate.getTime())) return true;
+      const dateKey = formatDateKey(tx.transaction_date);
+      if (!dateKey) return true;
 
       if (period === 'year') {
-        return txDate.getFullYear() === currentYear;
+        return dateKey.startsWith(currentYearPrefix);
       }
 
       if (period === 'month') {
-        return txDate.getFullYear() === currentYear && txDate.getMonth() === currentMonth;
+        return dateKey.startsWith(currentMonthPrefix);
       }
 
       return true;

@@ -25,16 +25,17 @@ export interface ProcessDueResult {
 }
 
 class RecurringEngine {
+  private isExecuting = false;
   private isProcessing = false;
   private lastProcessedTimestamp = 0;
 
   /**
-   * 扫描并执行所有到期的周期记账规则
+   * 扫描并执行所有到期的周期记账规则 (BUG-C02: 支持内存互斥锁与幂等防重键)
    * @param force 是否强制执行（忽略 5 秒防抖）
    */
   public async processDueRules(force = false): Promise<ProcessDueResult> {
     const nowTs = Date.now();
-    if (this.isProcessing) {
+    if (this.isExecuting || this.isProcessing) {
       return { executedRulesCount: 0, createdTransactions: [], summaryText: null };
     }
 
@@ -42,6 +43,7 @@ class RecurringEngine {
       return { executedRulesCount: 0, createdTransactions: [], summaryText: null };
     }
 
+    this.isExecuting = true;
     this.isProcessing = true;
     this.lastProcessedTimestamp = nowTs;
 
@@ -75,11 +77,20 @@ class RecurringEngine {
         const dueDates = getDueDatesForRule(rule, todayStr);
         if (dueDates.length === 0) continue;
 
-        executedRuleNames.push(rule.name);
         const lastDueDate = dueDates[dueDates.length - 1];
+        let ruleExecuted = false;
 
         for (const dDate of dueDates) {
-          const txId = `tx_rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          const occurrenceTimestamp = new Date(`${dDate}T12:00:00.000Z`).getTime();
+          // BUG-C02 修复：基于规则 ID 与执行日期的幂等唯一键，杜绝切换 Tab 或重连时并发生成重复流水
+          const txId = `tx_rec_${rule.rule_id}_${occurrenceTimestamp}`;
+
+          // 幂等防重检查：若本地或队列已存在同规则同周期的流水，则跳过生成
+          const existingTx = await localDb.transactions.get(txId);
+          if (existingTx) {
+            continue;
+          }
+
           const txDateIso = new Date(`${dDate}T12:00:00.000Z`).toISOString();
           const txRemark = rule.remark ? `${rule.remark} (周期自动)` : `${rule.name} (周期自动)`;
 
@@ -102,6 +113,7 @@ class RecurringEngine {
           // 写入本地数据库
           await localDb.transactions.put(newTx);
           createdTransactions.push(newTx);
+          ruleExecuted = true;
 
           // 加入离线同步队列
           if (user) {
@@ -113,6 +125,10 @@ class RecurringEngine {
               payload: newTx,
             });
           }
+        }
+
+        if (ruleExecuted && !executedRuleNames.includes(rule.name)) {
+          executedRuleNames.push(rule.name);
         }
 
         // 计算更新后的 next_run_date
@@ -165,6 +181,7 @@ class RecurringEngine {
       console.error('[RecurringEngine] 周期规则处理发生错误:', err);
       return { executedRulesCount: 0, createdTransactions: [], summaryText: null };
     } finally {
+      this.isExecuting = false;
       this.isProcessing = false;
     }
   }

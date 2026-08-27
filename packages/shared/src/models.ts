@@ -11,6 +11,36 @@ export type CategoryType = 'expense' | 'income' | 'transfer' | 'loan';
 export type LoanType = 'lend' | 'borrow' | 'repay' | 'collect';
 
 /**
+ * JWT Token 载荷接口定义
+ */
+export interface JwtPayload {
+  userId: string;
+  email: string;
+  exp?: number;
+  iat?: number;
+}
+
+/**
+ * 将 SQLite 整数 (0/1) 或布尔值安全转换为布尔值 (boolean)
+ */
+export function toBoolean(val: boolean | number | string | null | undefined): boolean {
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val === 1;
+  if (typeof val === 'string') {
+    const s = val.trim().toLowerCase();
+    return s === '1' || s === 'true' || s === 'yes';
+  }
+  return false;
+}
+
+/**
+ * 将布尔值或数字安全转换为 SQLite 存储用整型 (0/1)
+ */
+export function toSqliteBoolean(val: boolean | number | string | null | undefined): number {
+  return toBoolean(val) ? 1 : 0;
+}
+
+/**
  * 1. 用户表模型
  */
 export interface User {
@@ -40,13 +70,13 @@ export interface CreateLedgerRequest {
   ledger_id?: string;
   name: string;
   currency?: string;
-  is_default?: number;
+  is_default?: number | boolean;
 }
 
 export interface UpdateLedgerRequest {
   name?: string;
   currency?: string;
-  is_default?: number;
+  is_default?: number | boolean;
 }
 
 export interface LedgerSummary {
@@ -382,7 +412,7 @@ export interface CreateRecurringRuleRequest {
   end_date?: string | null;
   next_run_date?: string;
   status?: RecurringStatus;
-  auto_record?: number;
+  auto_record?: number | boolean;
 }
 
 export interface UpdateRecurringRuleRequest {
@@ -403,7 +433,7 @@ export interface UpdateRecurringRuleRequest {
   end_date?: string | null;
   next_run_date?: string;
   status?: RecurringStatus;
-  auto_record?: number;
+  auto_record?: number | boolean;
 }
 
 export interface ExecuteDueRecurringResult {

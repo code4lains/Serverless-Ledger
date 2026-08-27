@@ -168,6 +168,22 @@ ledgersRouter.post('/', async (c) => {
       return c.json(res, 400);
     }
 
+    if (name.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '账本名称长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (currency.length > 10) {
+      const res: ApiResponse = {
+        success: false,
+        error: '币种代码长度不能超过 10 个字符',
+      };
+      return c.json(res, 400);
+    }
+
     // 检查该用户是否已有账本
     const existingCountRes = await c.env.DB.prepare(
       'SELECT COUNT(*) as count FROM ledgers WHERE user_id = ?'
@@ -268,6 +284,22 @@ ledgersRouter.put('/:id', async (c) => {
       const res: ApiResponse = {
         success: false,
         error: '账本名称不能为空',
+      };
+      return c.json(res, 400);
+    }
+
+    if (name.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '账本名称长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (currency.length > 10) {
+      const res: ApiResponse = {
+        success: false,
+        error: '币种代码长度不能超过 10 个字符',
       };
       return c.json(res, 400);
     }

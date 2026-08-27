@@ -24,12 +24,14 @@ export function NetworkStatusBar({ pendingCount, onSync }: NetworkStatusBarProps
 
   useEffect(() => {
     let prevOnline = networkInfo.isOnline;
+    let toastTimer: any = null;
 
     const unsubNet = networkMonitor.subscribe((info) => {
       // 网络恢复提示
       if (!prevOnline && info.isOnline) {
         setShowSuccessToast(true);
-        setTimeout(() => setShowSuccessToast(false), 4000);
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => setShowSuccessToast(false), 4000);
       }
       prevOnline = info.isOnline;
       setNetworkInfo(info);
@@ -40,6 +42,7 @@ export function NetworkStatusBar({ pendingCount, onSync }: NetworkStatusBarProps
     });
 
     return () => {
+      if (toastTimer) clearTimeout(toastTimer);
       unsubNet();
       unsubSync();
     };

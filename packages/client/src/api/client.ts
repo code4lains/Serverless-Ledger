@@ -66,6 +66,27 @@ export function clearSession() {
   localStorage.removeItem(USER_KEY);
 }
 
+/**
+ * 全局统一 401/403 会话失效与未授权处理器 (BUG-C05)
+ */
+export function handleUnauthorizedResponse() {
+  clearSession();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+  }
+}
+
+/**
+ * 带有统一 401/403 拦截与状态码分发的全局 API 请求封装 (BUG-C05)
+ */
+export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status === 401 || res.status === 403) {
+    handleUnauthorizedResponse();
+  }
+  return res;
+}
+
 export function getAuthHeaders(customHeaders: Record<string, string> = {}): HeadersInit {
   const token = getStoredToken();
   const headers: Record<string, string> = {
@@ -83,7 +104,7 @@ export function getAuthHeaders(customHeaders: Record<string, string> = {}): Head
  */
 export async function registerUser(req: RegisterRequest): Promise<ApiResponse<AuthResponse>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/register`, {
+    const res = await apiFetch(`${API_BASE}/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
@@ -107,7 +128,7 @@ export async function registerUser(req: RegisterRequest): Promise<ApiResponse<Au
  */
 export async function loginUser(req: LoginRequest): Promise<ApiResponse<AuthResponse>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await apiFetch(`${API_BASE}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
@@ -136,7 +157,7 @@ export async function fetchCurrentUser(): Promise<ApiResponse<AuthUser>> {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await apiFetch(`${API_BASE}/auth/me`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(4000),
     });
@@ -157,7 +178,7 @@ export async function fetchCurrentUser(): Promise<ApiResponse<AuthUser>> {
  */
 export async function getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/config`, {
+    const res = await apiFetch(`${API_BASE}/auth/config`, {
       signal: AbortSignal.timeout(3000),
     });
     const json = (await res.json()) as ApiResponse<AuthConfig>;
@@ -175,7 +196,7 @@ export async function getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
  */
 export async function getInviteCodes(): Promise<ApiResponse<InviteEligibilityInfo>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/invite-codes`, {
+    const res = await apiFetch(`${API_BASE}/auth/invite-codes`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(4000),
     });
@@ -194,7 +215,7 @@ export async function getInviteCodes(): Promise<ApiResponse<InviteEligibilityInf
  */
 export async function claimInviteCode(): Promise<ApiResponse<InviteCode>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/invite-codes`, {
+    const res = await apiFetch(`${API_BASE}/auth/invite-codes`, {
       method: 'POST',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(4000),
@@ -214,7 +235,7 @@ export async function claimInviteCode(): Promise<ApiResponse<InviteCode>> {
  */
 export async function resetPassword(req: ResetPasswordRequest): Promise<ApiResponse<void>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    const res = await apiFetch(`${API_BASE}/auth/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
@@ -235,7 +256,7 @@ export async function resetPassword(req: ResetPasswordRequest): Promise<ApiRespo
  */
 export async function deleteAccount(): Promise<ApiResponse<void>> {
   try {
-    const res = await fetch(`${API_BASE}/auth/account`, {
+    const res = await apiFetch(`${API_BASE}/auth/account`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(8000),
@@ -265,7 +286,7 @@ export async function checkServerHealth() {
  */
 export async function getCategories(): Promise<Category[]> {
   try {
-    const res = await fetch(`${API_BASE}/categories`, {
+    const res = await apiFetch(`${API_BASE}/categories`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
@@ -341,7 +362,7 @@ export async function createCategory(req: CreateCategoryRequest): Promise<Catego
   });
 
   // 3. 异步尝试向服务端推送
-  fetch(`${API_BASE}/categories`, {
+  apiFetch(`${API_BASE}/categories`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(newCat),
@@ -395,7 +416,7 @@ export async function updateCategory(
   });
 
   // 3. 异步尝试推送
-  fetch(`${API_BASE}/categories/${categoryId}`, {
+  apiFetch(`${API_BASE}/categories/${categoryId}`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify(updates),
@@ -423,40 +444,53 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
 
-  // 1. 如果是大分类，级联删除本地子分类
-  if (!existing.parent_id) {
-    const children = await localDb.categories.where('parent_id').equals(categoryId).toArray();
-    for (const child of children) {
-      await localDb.categories.delete(child.category_id);
-      await enqueueSyncAction({
-        user_id: userId,
-        entity_type: 'category',
-        entity_id: child.category_id,
-        action: 'delete',
-      });
+  let childrenToDelete: Category[] = [];
+  let mainQueueItem: any = null;
+
+  // 1. 在 Dexie 事务中原子级联清理所有子分类与大分类，并写入同步队列防复活墓碑
+  await localDb.transaction('rw', [localDb.categories, localDb.syncQueue], async () => {
+    if (!existing.parent_id) {
+      childrenToDelete = await localDb.categories.where('parent_id').equals(categoryId).toArray();
+      for (const child of childrenToDelete) {
+        await localDb.categories.delete(child.category_id);
+        await enqueueSyncAction({
+          user_id: userId,
+          entity_type: 'category',
+          entity_id: child.category_id,
+          action: 'delete',
+        });
+      }
     }
-  }
 
-  // 2. 本地删除
-  await localDb.categories.delete(categoryId);
+    // 删除大分类/当前分类
+    await localDb.categories.delete(categoryId);
 
-  // 3. 记录防复活删除墓碑
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'category',
-    entity_id: categoryId,
-    action: 'delete',
+    // 记录防复活删除墓碑
+    mainQueueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'category',
+      entity_id: categoryId,
+      action: 'delete',
+    });
   });
 
-  // 4. 异步尝试向服务端删除
-  fetch(`${API_BASE}/categories/${categoryId}`, {
+  // 2. 异步尝试向服务端推送删除子分类与大分类
+  for (const child of childrenToDelete) {
+    apiFetch(`${API_BASE}/categories/${child.category_id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
+  }
+
+  apiFetch(`${API_BASE}/categories/${categoryId}`, {
     method: 'DELETE',
     headers: getAuthHeaders(),
     signal: AbortSignal.timeout(3000),
   })
     .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
+      if (res.ok && mainQueueItem) {
+        await removeSyncQueueItem(mainQueueItem.id);
       }
     })
     .catch(() => {
@@ -491,7 +525,7 @@ export async function reorderCategories(items: ReorderCategoryItem[]): Promise<b
   });
 
   // 3. 异步尝试推送
-  fetch(`${API_BASE}/categories/reorder`, {
+  apiFetch(`${API_BASE}/categories/reorder`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify({ items }),
@@ -515,7 +549,7 @@ export async function reorderCategories(items: ReorderCategoryItem[]): Promise<b
 export async function getLedgers(withSummary = false): Promise<Ledger[]> {
   try {
     const url = `${API_BASE}/ledgers${withSummary ? '?withSummary=true' : ''}`;
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
@@ -592,7 +626,7 @@ export async function createLedger(req: CreateLedgerRequest): Promise<Ledger> {
   });
 
   // 3. 异步尝试推送
-  fetch(`${API_BASE}/ledgers`, {
+  apiFetch(`${API_BASE}/ledgers`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(newLedger),
@@ -652,7 +686,7 @@ export async function updateLedger(
     payload: updates,
   });
 
-  fetch(`${API_BASE}/ledgers/${ledgerId}`, {
+  apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify(updates),
@@ -696,7 +730,7 @@ export async function setDefaultLedger(ledgerId: string): Promise<boolean> {
     action: 'set_default',
   });
 
-  fetch(`${API_BASE}/ledgers/${ledgerId}/default`, {
+  apiFetch(`${API_BASE}/ledgers/${ledgerId}/default`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     signal: AbortSignal.timeout(3000),
@@ -783,7 +817,7 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
     action: 'delete',
   });
 
-  fetch(`${API_BASE}/ledgers/${ledgerId}`, {
+  apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
     method: 'DELETE',
     headers: getAuthHeaders(),
     signal: AbortSignal.timeout(3000),
@@ -805,7 +839,7 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
  */
 export async function pullAndMergeServerLedgers(): Promise<number> {
   try {
-    const res = await fetch(`${API_BASE}/ledgers`, {
+    const res = await apiFetch(`${API_BASE}/ledgers`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
@@ -855,7 +889,7 @@ export async function createTransaction(
   await localDb.transactions.put(fullTx);
 
   // 2. 异步尝试向 Cloudflare Workers D1 推送
-  fetch(`${API_BASE}/transactions`, {
+  apiFetch(`${API_BASE}/transactions`, {
     method: 'POST',
     headers: getAuthHeaders(),
     body: JSON.stringify(fullTx),
@@ -900,7 +934,7 @@ export async function updateTransaction(
   await localDb.transactions.put(updatedTx);
 
   // 2. 异步尝试推送
-  fetch(`${API_BASE}/transactions/${transactionId}`, {
+  apiFetch(`${API_BASE}/transactions/${transactionId}`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify(updatedTx),
@@ -942,7 +976,7 @@ export async function deleteTransaction(transactionId: string): Promise<boolean>
   });
 
   // 3. 异步尝试向服务端发送删除请求
-  fetch(`${API_BASE}/transactions/${transactionId}`, {
+  apiFetch(`${API_BASE}/transactions/${transactionId}`, {
     method: 'DELETE',
     headers: getAuthHeaders(),
     signal: AbortSignal.timeout(3000),
@@ -960,11 +994,11 @@ export async function deleteTransaction(transactionId: string): Promise<boolean>
 }
 
 /**
- * 从服务器拉取最新账单并与本地双向合并 (遵循 Last-Write-Wins 策略与防复活墓碑检查)
+ * 从服务器拉取最新账单并与本地双向合并 (遵循 Last-Write-Wins 策略与防复活墓碑检查 BUG-C01)
  */
 export async function pullAndMergeServerTransactions(): Promise<number> {
   try {
-    const res = await fetch(`${API_BASE}/transactions?limit=500`, {
+    const res = await apiFetch(`${API_BASE}/transactions?limit=500`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3500),
     });
@@ -990,10 +1024,10 @@ export async function pullAndMergeServerTransactions(): Promise<number> {
 
           const localTx = await localDb.transactions.get(serverTx.transaction_id);
           if (!localTx) {
-            // 本地没有，直接写入
+            // 本地没有，直接写入并设置 synced 状态
             await localDb.transactions.put({ ...serverTx, sync_status: 'synced' });
           } else {
-            // BUG-05 修复：本地已有记录且为 pending 时，跳过覆盖以保留离线修改；仅当本地已同步且服务端更新时间较新时才覆盖
+            // 本地已有记录且为 pending 时，跳过覆盖以保留离线修改；仅当本地已同步且服务端更新时间较新时才覆盖
             const localUpdated = new Date(localTx.updated_at).getTime();
             const serverUpdated = new Date(serverTx.updated_at).getTime();
             if (localTx.sync_status !== 'pending' && serverUpdated >= localUpdated) {
@@ -1019,7 +1053,7 @@ export async function getBudgets(ledgerId?: string, period: BudgetPeriod = 'mont
     if (ledgerId && ledgerId !== 'all') {
       url += `&ledgerId=${ledgerId}`;
     }
-    const res = await fetch(url, {
+    const res = await apiFetch(url, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
@@ -1109,7 +1143,7 @@ export async function saveBatchBudgets(
   });
 
   // 4. 异步尝试向服务端同步
-  fetch(`${API_BASE}/budgets/batch`, {
+  apiFetch(`${API_BASE}/budgets/batch`, {
     method: 'PUT',
     headers: getAuthHeaders(),
     body: JSON.stringify({
@@ -1147,7 +1181,7 @@ export async function deleteBudget(budgetId: string): Promise<boolean> {
     action: 'delete',
   });
 
-  fetch(`${API_BASE}/budgets/${budgetId}`, {
+  apiFetch(`${API_BASE}/budgets/${budgetId}`, {
     method: 'DELETE',
     headers: getAuthHeaders(),
     signal: AbortSignal.timeout(3000),
@@ -1169,7 +1203,7 @@ export async function deleteBudget(budgetId: string): Promise<boolean> {
  */
 export async function pullAndMergeServerBudgets(): Promise<number> {
   try {
-    const res = await fetch(`${API_BASE}/budgets`, {
+    const res = await apiFetch(`${API_BASE}/budgets`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
@@ -1199,7 +1233,7 @@ export async function pullAndMergeServerBudgets(): Promise<number> {
 }
 
 /**
- * 批量导入账单流水 (离线优先 + 分批推送 D1，遵循白皮书 6.3 Worker CPU 限制规范)
+ * 批量导入账单流水 (分批分 Chunk 切片导入 200~300 条/批，离线优先 + 增量推送 D1)
  */
 export async function batchImportTransactions(
   transactions: Transaction[],
@@ -1212,8 +1246,9 @@ export async function batchImportTransactions(
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
   const now = new Date().toISOString();
+  const CHUNK_SIZE = 250; // 每批 200~300 条分 Chunk 切片
 
-  // 1. 本地 IndexedDB 极速批量写入
+  // 1. 本地 IndexedDB 极速分批写入
   const preparedTxs: Transaction[] = transactions.map((t) => ({
     ...t,
     user_id: userId,
@@ -1222,21 +1257,27 @@ export async function batchImportTransactions(
     updated_at: t.updated_at || now,
   }));
 
-  await localDb.transactions.bulkPut(preparedTxs);
-  if (onProgress) onProgress(40);
+  const localTotalChunks = Math.ceil(preparedTxs.length / CHUNK_SIZE);
+  for (let i = 0; i < localTotalChunks; i++) {
+    const chunk = preparedTxs.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+    await localDb.transactions.bulkPut(chunk);
+    if (onProgress) {
+      const localPercent = Math.round(((i + 1) / localTotalChunks) * 40);
+      onProgress(localPercent);
+    }
+  }
 
-  // 2. 如果用户已登录且网络在线，按批次分批推送至 Cloudflare D1
+  // 2. 如果用户已登录且网络在线，按批次 (250条/chunk) 分批推送至 Cloudflare D1
   const token = getStoredToken();
   const net = networkMonitor.getInfo();
 
   if (user && token && net.isOnline) {
-    const CHUNK_SIZE = 100;
     const totalChunks = Math.ceil(preparedTxs.length / CHUNK_SIZE);
 
     for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
       const chunk = preparedTxs.slice(chunkIdx * CHUNK_SIZE, (chunkIdx + 1) * CHUNK_SIZE);
       try {
-        const res = await fetch(`${API_BASE}/transactions/sync`, {
+        const res = await apiFetch(`${API_BASE}/transactions/sync`, {
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({ transactions: chunk }),
@@ -1247,15 +1288,15 @@ export async function batchImportTransactions(
           const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
           if (json.success && json.data) {
             const syncedIds = new Set(json.data.synced_ids);
-            const syncedTxs: Transaction[] = [];
-            for (const tx of chunk) {
-              if (syncedIds.has(tx.transaction_id)) {
-                syncedTxs.push({ ...tx, sync_status: 'synced' });
+            await localDb.transaction('rw', localDb.transactions, async () => {
+              for (const tx of chunk) {
+                if (syncedIds.has(tx.transaction_id)) {
+                  await localDb.transactions.update(tx.transaction_id, {
+                    sync_status: 'synced',
+                  });
+                }
               }
-            }
-            if (syncedTxs.length > 0) {
-              await localDb.transactions.bulkPut(syncedTxs);
-            }
+            });
           }
         }
       } catch (err) {
@@ -1348,7 +1389,7 @@ export async function createRecurringRule(
     next_run_date: nextRunDate,
     last_run_date: null,
     status: req.status || 'active',
-    auto_record: req.auto_record !== undefined ? req.auto_record : 1,
+    auto_record: req.auto_record !== undefined ? (typeof req.auto_record === 'boolean' ? (req.auto_record ? 1 : 0) : req.auto_record) : 1,
     created_at: now,
     updated_at: now,
   };
@@ -1367,7 +1408,7 @@ export async function createRecurringRule(
     });
 
     // 3. 尝试即时异步推送
-    fetch(`${API_BASE}/recurring`, {
+    apiFetch(`${API_BASE}/recurring`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(newRule),
@@ -1397,9 +1438,14 @@ export async function updateRecurringRule(
   if (!existing) return null;
 
   const now = new Date().toISOString();
+  const autoRecord = updates.auto_record !== undefined
+    ? (typeof updates.auto_record === 'boolean' ? (updates.auto_record ? 1 : 0) : updates.auto_record)
+    : existing.auto_record;
+
   const updated: RecurringRule = {
     ...existing,
     ...updates,
+    auto_record: autoRecord,
     updated_at: now,
   };
 
@@ -1415,7 +1461,7 @@ export async function updateRecurringRule(
       payload: updates,
     });
 
-    fetch(`${API_BASE}/recurring/${ruleId}`, {
+    apiFetch(`${API_BASE}/recurring/${ruleId}`, {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -1447,7 +1493,7 @@ export async function deleteRecurringRule(ruleId: string): Promise<void> {
       action: 'delete',
     });
 
-    fetch(`${API_BASE}/recurring/${ruleId}`, {
+    apiFetch(`${API_BASE}/recurring/${ruleId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -1466,7 +1512,7 @@ export async function deleteRecurringRule(ruleId: string): Promise<void> {
  */
 export async function pullAndMergeServerRecurringRules(userId: string): Promise<RecurringRule[]> {
   try {
-    const res = await fetch(`${API_BASE}/recurring`, {
+    const res = await apiFetch(`${API_BASE}/recurring`, {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(5000),
     });
@@ -1506,7 +1552,7 @@ export async function executeDueRecurringRules(
   asOfDate?: string
 ): Promise<ApiResponse<ExecuteDueRecurringResult>> {
   try {
-    const res = await fetch(`${API_BASE}/recurring/execute-due`, {
+    const res = await apiFetch(`${API_BASE}/recurring/execute-due`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ as_of_date: asOfDate }),

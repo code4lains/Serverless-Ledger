@@ -128,8 +128,15 @@ class NetworkMonitor {
    * 启动后台周期性心跳探测 (默认 30 秒间隔，温和且平稳)
    */
   public start(intervalMs: number = 30000) {
+    this.startHeartbeat(intervalMs);
+  }
+
+  public startHeartbeat(intervalMs: number = 30000) {
     this.checkHealth();
-    if (this.checkTimer) clearInterval(this.checkTimer);
+    if (this.checkTimer) {
+      clearInterval(this.checkTimer);
+      this.checkTimer = null;
+    }
     this.checkTimer = setInterval(() => {
       // 仅在页面处于前台时轮询心跳
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
@@ -139,10 +146,24 @@ class NetworkMonitor {
   }
 
   public stop() {
+    this.stopHeartbeat();
+  }
+
+  public stopHeartbeat() {
     if (this.checkTimer) {
       clearInterval(this.checkTimer);
       this.checkTimer = null;
     }
+  }
+
+  public destroy() {
+    this.stopHeartbeat();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', this.handleBrowserOnline);
+      window.removeEventListener('offline', this.handleBrowserOffline);
+      document.removeEventListener('visibilitychange', this.handleVisibilityChange);
+    }
+    this.listeners.clear();
   }
 
   /**

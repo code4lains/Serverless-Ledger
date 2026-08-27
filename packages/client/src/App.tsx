@@ -57,7 +57,15 @@ import {
   Budget,
   calculateBudgetOverview,
 } from '@ledger/shared';
-import { localDb, seedLocalCategories, seedLocalLedgers, DEFAULT_LOCAL_LEDGER_ID, getLocalStorageStats } from './db';
+import {
+  localDb,
+  seedLocalCategories,
+  seedLocalLedgers,
+  DEFAULT_LOCAL_LEDGER_ID,
+  getLocalStorageStats,
+  clearUserData,
+  clearLocalDatabase,
+} from './db';
 import {
   checkServerHealth,
   getCategories,
@@ -338,10 +346,27 @@ export function App() {
 
     init();
 
+    const handleUnauthorized = async () => {
+      const prevUser = getStoredUser();
+      clearSession();
+      setCurrentUser(null);
+      if (prevUser) {
+        await clearUserData(prevUser.user_id);
+      } else {
+        await clearLocalDatabase();
+      }
+      await loadGuestData();
+      setIsAuthModalOpen(true);
+      showToast('登录凭证已过期或失效，请重新登录', 'error');
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+
     return () => {
       unsubSync();
       networkMonitor.stop();
       syncManager.stop();
+      window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
   }, []);
 
@@ -493,16 +518,26 @@ export function App() {
     setShowLogoutConfirm(true);
   };
 
-  // 确认退出登录
+  // 确认退出登录 (BUG-C04: 彻底清理本地 IndexedDB 私有数据)
   const handleConfirmLogout = async () => {
     setShowLogoutConfirm(false);
+    const prevUser = currentUser;
     clearSession();
     setCurrentUser(null);
+    if (prevUser) {
+      await clearUserData(prevUser.user_id);
+    } else {
+      await clearLocalDatabase();
+    }
     await loadGuestData();
+    showToast('已安全退出登录，本地私有数据已清除', 'info');
   };
 
-  // 登录/注册成功回调
+  // 登录/注册成功回调 (BUG-C04: 切换账号时先清理前一个用户的本地私有数据)
   const handleAuthSuccess = async (user: AuthUser, newRecoveryCode?: string | null) => {
+    if (currentUser && currentUser.user_id !== user.user_id) {
+      await clearUserData(currentUser.user_id);
+    }
     setCurrentUser(user);
     setIsAuthModalOpen(false);
     await loadUserData(user);
@@ -512,11 +547,17 @@ export function App() {
     }
   };
 
-  // 账号注销成功回调
+  // 账号注销成功回调 (BUG-C04: 注销时原子清理本地私有数据与缓存)
   const handleDeleteAccountSuccess = async () => {
+    const prevUser = currentUser;
     setIsDeleteAccountModalOpen(false);
     clearSession();
     setCurrentUser(null);
+    if (prevUser) {
+      await clearUserData(prevUser.user_id);
+    } else {
+      await clearLocalDatabase();
+    }
     await loadGuestData();
     showToast('账号及所有关联数据已成功注销', 'info');
   };

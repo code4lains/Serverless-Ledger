@@ -8,6 +8,7 @@ import {
   CreateBudgetRequest,
   BatchSetBudgetRequest,
 } from '@ledger/shared';
+import { resolveUserLedgerId } from '../utils/ledger';
 
 const budgetsRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -35,7 +36,19 @@ budgetsRouter.get('/', async (c) => {
     const authUser = c.get('user')!;
     const userId = authUser.userId;
     const ledgerId = c.req.query('ledgerId');
-    const period = (c.req.query('period') as BudgetPeriod) || undefined;
+    const rawPeriod = c.req.query('period');
+
+    let period: BudgetPeriod | undefined = undefined;
+    if (rawPeriod) {
+      if (!['monthly', 'yearly'].includes(rawPeriod)) {
+        const res: ApiResponse = {
+          success: false,
+          error: '无效的预算周期，必须为 monthly 或 yearly',
+        };
+        return c.json(res, 400);
+      }
+      period = rawPeriod as BudgetPeriod;
+    }
 
     let query = 'SELECT * FROM budgets WHERE user_id = ?';
     const params: any[] = [userId];
@@ -78,16 +91,19 @@ budgetsRouter.post('/', async (c) => {
     const userId = authUser.userId;
     const body = await c.req.json<Partial<CreateBudgetRequest>>();
 
-    let ledgerId = body.ledger_id;
-    if (!ledgerId) {
-      const defLedger = await c.env.DB.prepare(
-        'SELECT ledger_id FROM ledgers WHERE user_id = ? ORDER BY is_default DESC, created_at ASC LIMIT 1'
-      )
-        .bind(userId)
-        .first<{ ledger_id: string }>();
-      ledgerId = defLedger?.ledger_id || 'default_ledger';
-    }
+    // 严格校验周期枚举 (BUG-S11)
     const period: BudgetPeriod = body.period || 'monthly';
+    if (!['monthly', 'yearly'].includes(period)) {
+      const res: ApiResponse = {
+        success: false,
+        error: '无效的预算周期，必须为 monthly 或 yearly',
+      };
+      return c.json(res, 400);
+    }
+
+    // 校验账本归属权 (BUG-S06)
+    const ledgerId = await resolveUserLedgerId(c.env.DB, userId, body.ledger_id);
+
     const rawCategoryId = body.category_id || null;
     const categoryId = await resolveValidCategoryId(c.env.DB, rawCategoryId);
     const amount = typeof body.amount === 'number' ? Math.round(body.amount) : 0;
@@ -182,28 +198,29 @@ budgetsRouter.put('/batch', async (c) => {
     const userId = authUser.userId;
     const body = await c.req.json<BatchSetBudgetRequest>();
 
-    let ledgerId = body.ledger_id;
-    if (!ledgerId) {
-      const defLedger = await c.env.DB.prepare(
-        'SELECT ledger_id FROM ledgers WHERE user_id = ? ORDER BY is_default DESC, created_at ASC LIMIT 1'
-      )
-        .bind(userId)
-        .first<{ ledger_id: string }>();
-      ledgerId = defLedger?.ledger_id || 'default_ledger';
-    }
+    // 严格校验周期枚举 (BUG-S11)
     const period: BudgetPeriod = body.period || 'monthly';
-    const budgetsToSet = Array.isArray(body.budgets) ? body.budgets : [];
+    if (!['monthly', 'yearly'].includes(period)) {
+      const res: ApiResponse = {
+        success: false,
+        error: '无效的预算周期，必须为 monthly 或 yearly',
+      };
+      return c.json(res, 400);
+    }
 
+    // 校验账本归属权 (BUG-S06)
+    const ledgerId = await resolveUserLedgerId(c.env.DB, userId, body.ledger_id);
+
+    const budgetsToSet = Array.isArray(body.budgets) ? body.budgets : [];
     const now = new Date().toISOString();
 
-    // 1. 删除该账本与周期下的旧预算
-    await c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ? AND ledger_id = ? AND period = ?')
-      .bind(userId, ledgerId, period)
-      .run();
+    // BUG-S12: 将 DELETE 与 INSERT 一并放入 D1 batch 中执行，保证原子性
+    const batchStatements: D1PreparedStatement[] = [
+      c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ? AND ledger_id = ? AND period = ?')
+        .bind(userId, ledgerId, period),
+    ];
 
-    // 2. 批量插入有效预算项 (amount > 0)
     const resultBudgets: Budget[] = [];
-    const validStatements: D1PreparedStatement[] = [];
 
     for (const item of budgetsToSet) {
       const amount = typeof item.amount === 'number' ? Math.round(item.amount) : 0;
@@ -212,7 +229,7 @@ budgetsRouter.put('/batch', async (c) => {
       const categoryId = await resolveValidCategoryId(c.env.DB, item.category_id);
       const budgetId = `bud_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-      validStatements.push(
+      batchStatements.push(
         c.env.DB.prepare(
           `INSERT INTO budgets (budget_id, user_id, ledger_id, category_id, period, amount, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -231,9 +248,7 @@ budgetsRouter.put('/batch', async (c) => {
       });
     }
 
-    if (validStatements.length > 0) {
-      await c.env.DB.batch(validStatements);
-    }
+    await c.env.DB.batch(batchStatements);
 
     const res: ApiResponse<Budget[]> = {
       success: true,

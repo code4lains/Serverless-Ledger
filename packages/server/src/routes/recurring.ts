@@ -12,6 +12,7 @@ import {
   getDueDatesForRule,
   formatDateOnly,
 } from '@ledger/shared';
+import { resolveUserLedgerId } from '../utils/ledger';
 
 const recurringRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -57,17 +58,41 @@ recurringRouter.post('/', async (c) => {
     return c.json({ success: false, error: '请输入有效的周期规则名称' }, 400);
   }
 
+  if (body.name.trim().length > 50) {
+    return c.json({ success: false, error: '周期规则名称不能超过 50 个字符' }, 400);
+  }
+
   if (!body.amount || typeof body.amount !== 'number' || body.amount < 1) {
     return c.json({ success: false, error: '金额必须为大于 0 的整数分' }, 400);
   }
 
+  // 严格校验交易类型枚举 (BUG-S11)
   if (!body.type || !['expense', 'income', 'transfer', 'loan'].includes(body.type)) {
     return c.json({ success: false, error: '无效的交易类型' }, 400);
   }
 
+  // 严格校验周期频率枚举 (BUG-S11)
   if (!body.frequency || !['daily', 'weekly', 'monthly', 'yearly'].includes(body.frequency)) {
     return c.json({ success: false, error: '无效的周期频率' }, 400);
   }
+
+  if (body.status && !['active', 'paused'].includes(body.status)) {
+    return c.json({ success: false, error: '无效的规则状态' }, 400);
+  }
+
+  // 字符串最大长度校验 (BUG-S13)
+  if (body.remark && body.remark.length > 500) {
+    return c.json({ success: false, error: '备注长度不能超过 500 个字符' }, 400);
+  }
+  if (body.from_account && body.from_account.length > 100) {
+    return c.json({ success: false, error: '账户名称长度不能超过 100 个字符' }, 400);
+  }
+  if (body.to_account && body.to_account.length > 100) {
+    return c.json({ success: false, error: '账户名称长度不能超过 100 个字符' }, 400);
+  }
+
+  // 校验账本归属权 (BUG-S06)
+  const ledgerId = await resolveUserLedgerId(c.env.DB, userId, body.ledger_id);
 
   const ruleId = body.rule_id || `rec_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const now = new Date().toISOString();
@@ -102,7 +127,7 @@ recurringRouter.post('/', async (c) => {
       .bind(
         ruleId,
         userId,
-        body.ledger_id,
+        ledgerId,
         body.name.trim(),
         body.type,
         Math.round(body.amount),
@@ -166,13 +191,49 @@ recurringRouter.put('/:id', async (c) => {
     }
 
     const now = new Date().toISOString();
-    if (body.name !== undefined && (typeof body.name !== 'string' || !body.name.trim())) {
-      return c.json({ success: false, error: '周期规则名称不能为空且必须为字符串' }, 400);
+    if (body.name !== undefined) {
+      if (typeof body.name !== 'string' || !body.name.trim()) {
+        return c.json({ success: false, error: '周期规则名称不能为空且必须为字符串' }, 400);
+      }
+      if (body.name.trim().length > 50) {
+        return c.json({ success: false, error: '周期规则名称不能超过 50 个字符' }, 400);
+      }
     }
+
+    // 校验交易类型枚举 (BUG-S11)
+    if (body.type !== undefined && !['expense', 'income', 'transfer', 'loan'].includes(body.type)) {
+      return c.json({ success: false, error: '无效的交易类型' }, 400);
+    }
+
+    // 校验周期频率枚举 (BUG-S11)
+    if (body.frequency !== undefined && !['daily', 'weekly', 'monthly', 'yearly'].includes(body.frequency)) {
+      return c.json({ success: false, error: '无效的周期频率' }, 400);
+    }
+
+    if (body.status !== undefined && !['active', 'paused'].includes(body.status)) {
+      return c.json({ success: false, error: '无效的规则状态' }, 400);
+    }
+
+    // 字符串最大长度校验 (BUG-S13)
+    if (body.remark !== undefined && body.remark !== null && body.remark.length > 500) {
+      return c.json({ success: false, error: '备注长度不能超过 500 个字符' }, 400);
+    }
+    if (body.from_account !== undefined && body.from_account !== null && body.from_account.length > 100) {
+      return c.json({ success: false, error: '账户名称长度不能超过 100 个字符' }, 400);
+    }
+    if (body.to_account !== undefined && body.to_account !== null && body.to_account.length > 100) {
+      return c.json({ success: false, error: '账户名称长度不能超过 100 个字符' }, 400);
+    }
+
+    // 校验账本归属权 (BUG-S06)
+    let ledgerId = existing.ledger_id;
+    if (body.ledger_id !== undefined) {
+      ledgerId = await resolveUserLedgerId(c.env.DB, userId, body.ledger_id);
+    }
+
     const name = body.name !== undefined ? body.name.trim() : existing.name;
     const type = body.type !== undefined ? body.type : existing.type;
     const amount = body.amount !== undefined ? Math.round(body.amount) : existing.amount;
-    const ledgerId = body.ledger_id !== undefined ? body.ledger_id : existing.ledger_id;
     const categoryId = body.category_id !== undefined ? body.category_id : existing.category_id;
     const fromAccount = body.from_account !== undefined ? body.from_account : existing.from_account;
     const toAccount = body.to_account !== undefined ? body.to_account : existing.to_account;

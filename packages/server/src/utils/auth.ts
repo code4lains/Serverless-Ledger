@@ -5,6 +5,27 @@ export const DEFAULT_JWT_SECRET = 'serverless-ledger-default-secret-key-2026';
 export const TOKEN_EXPIRY_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 /**
+ * 获取或校验 JWT 密钥
+ * 在生产环境 (ENVIRONMENT === 'production' 或 NODE_ENV === 'production') 且未配置 JWT_SECRET 时抛出异常
+ */
+export function getJwtSecret(env?: { JWT_SECRET?: string; ENVIRONMENT?: string }): string {
+  const secret = env?.JWT_SECRET;
+  if (secret && secret.trim().length > 0) {
+    return secret.trim();
+  }
+
+  const envName = env?.ENVIRONMENT?.toLowerCase();
+  const isDevOrTest = envName === 'development' || envName === 'dev' || envName === 'test' || envName === 'local';
+  const isProd = envName === 'production' || envName === 'prod' || (!isDevOrTest && envName !== undefined && envName !== '');
+
+  if (isProd) {
+    throw new Error('生产环境未配置 JWT_SECRET 环境变量，禁止使用默认密钥');
+  }
+
+  return DEFAULT_JWT_SECRET;
+}
+
+/**
  * 使用 Web Crypto API 生成 PBKDF2 密码哈希 (带 Salt)
  * 格式: <salt_hex>:<hash_hex>
  */
@@ -38,6 +59,33 @@ export async function hashPassword(password: string): Promise<string> {
     .join('');
 
   return `${saltHex}:${hashHex}`;
+}
+
+/**
+ * 常数时间字符串比对（防止侧信道时序攻击）
+ */
+export function timingSafeEqualString(a: string, b: string): boolean {
+  if (typeof a !== 'string' || typeof b !== 'string') {
+    return false;
+  }
+
+  const encoder = new TextEncoder();
+  const bufA = encoder.encode(a);
+  const bufB = encoder.encode(b);
+
+  const lenA = bufA.length;
+  const lenB = bufB.length;
+  const maxLen = Math.max(lenA, lenB);
+
+  let mismatch = lenA === lenB ? 0 : 1;
+
+  for (let i = 0; i < maxLen; i++) {
+    const byteA = i < lenA ? bufA[i] : 0;
+    const byteB = i < lenB ? bufB[i] : 0;
+    mismatch |= (byteA ^ byteB);
+  }
+
+  return mismatch === 0;
 }
 
 /**
@@ -78,7 +126,7 @@ export async function verifyPassword(password: string, storedHash: string): Prom
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 
-  return hashHex === originalHashHex;
+  return timingSafeEqualString(hashHex, originalHashHex);
 }
 
 /**

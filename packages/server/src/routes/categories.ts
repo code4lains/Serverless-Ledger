@@ -153,6 +153,8 @@ categoriesRouter.get('/', async (c) => {
  */
 categoriesRouter.put('/reorder', requireAuth, async (c) => {
   try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
     const body = (await c.req.json()) as ReorderCategoriesRequest;
     if (!body || !Array.isArray(body.items) || body.items.length === 0) {
       const res: ApiResponse = {
@@ -164,8 +166,8 @@ categoriesRouter.put('/reorder', requireAuth, async (c) => {
 
     const statements = body.items.map((item) => {
       return c.env.DB.prepare(
-        'UPDATE categories SET sort_order = ?, updated_at = datetime(\'now\') WHERE category_id = ?'
-      ).bind(item.sort_order, item.category_id);
+        'UPDATE categories SET sort_order = ?, updated_at = datetime(\'now\') WHERE category_id = ? AND user_id = ?'
+      ).bind(item.sort_order, item.category_id, userId);
     });
 
     await c.env.DB.batch(statements);
@@ -202,6 +204,30 @@ categoriesRouter.post('/', requireAuth, async (c) => {
       return c.json(res, 400);
     }
 
+    if (body.name.trim().length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '分类名称长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (body.icon && body.icon.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '图标标识长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (body.color && body.color.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '颜色标识长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
     const validTypes: CategoryType[] = ['expense', 'income', 'transfer', 'loan'];
     if (!body.type || !validTypes.includes(body.type)) {
       const res: ApiResponse = {
@@ -218,7 +244,7 @@ categoriesRouter.post('/', requireAuth, async (c) => {
     const color = body.color || null;
     const parentId = body.parent_id || null;
 
-    // 若指定了 parent_id，校验父分类是否存在且不能嵌套超过2级
+    // 若指定了 parent_id，校验父分类是否存在、归属权、且不能嵌套超过2级
     if (parentId) {
       const parent = await c.env.DB.prepare(
         'SELECT * FROM categories WHERE category_id = ?'
@@ -230,6 +256,14 @@ categoriesRouter.post('/', requireAuth, async (c) => {
           error: `指定的父分类 (ID: ${parentId}) 不存在`,
         };
         return c.json(res, 400);
+      }
+
+      if (parent.user_id && parent.user_id !== userId) {
+        const res: ApiResponse = {
+          success: false,
+          error: '无权将分类挂载到其他用户的私有分类下',
+        };
+        return c.json(res, 403);
       }
 
       if (parent.parent_id) {
@@ -357,11 +391,35 @@ categoriesRouter.put('/:id', requireAuth, async (c) => {
       return c.json(res, 400);
     }
 
+    if (body.name !== undefined && body.name.trim().length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '分类名称长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (body.icon !== undefined && body.icon !== null && body.icon.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '图标标识长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
+    if (body.color !== undefined && body.color !== null && body.color.length > 50) {
+      const res: ApiResponse = {
+        success: false,
+        error: '颜色标识长度不能超过 50 个字符',
+      };
+      return c.json(res, 400);
+    }
+
     const name = body.name !== undefined ? body.name.trim() : existing.name;
     const icon = body.icon !== undefined ? body.icon : existing.icon;
     const color = body.color !== undefined ? body.color : existing.color;
     const sortOrder = body.sort_order !== undefined ? body.sort_order : existing.sort_order;
-    const parentId = body.parent_id !== undefined ? body.parent_id : existing.parent_id;
+    const parentId = body.parent_id !== undefined ? (body.parent_id || null) : existing.parent_id;
 
     if (parentId && parentId === categoryId) {
       const res: ApiResponse = {
@@ -369,6 +427,61 @@ categoriesRouter.put('/:id', requireAuth, async (c) => {
         error: '分类的父分类不能是自己',
       };
       return c.json(res, 400);
+    }
+
+    // 校验 parent_id 的合法性、归属权、层级及类型一致性 (BUG-S07)
+    if (parentId) {
+      const parent = await c.env.DB.prepare(
+        'SELECT * FROM categories WHERE category_id = ?'
+      ).bind(parentId).first<Category>();
+
+      if (!parent) {
+        const res: ApiResponse = {
+          success: false,
+          error: `指定的父分类 (ID: ${parentId}) 不存在`,
+        };
+        return c.json(res, 400);
+      }
+
+      // 验证父分类归属权：必须为系统预置或当前用户所有
+      if (parent.user_id && parent.user_id !== authUser.userId) {
+        const res: ApiResponse = {
+          success: false,
+          error: '无权将分类挂载到其他用户的私有分类下',
+        };
+        return c.json(res, 403);
+      }
+
+      // 验证父分类是否为顶级分类（防止3级以上嵌套）
+      if (parent.parent_id) {
+        const res: ApiResponse = {
+          success: false,
+          error: '不能在子分类下再设置子分类（仅支持大类+小类二级联动）',
+        };
+        return c.json(res, 400);
+      }
+
+      // 若当前分类自身已有子分类，则无法将其设置为其他分类的子分类
+      const hasChildren = await c.env.DB.prepare(
+        'SELECT category_id FROM categories WHERE parent_id = ? LIMIT 1'
+      ).bind(categoryId).first<{ category_id: string }>();
+
+      if (hasChildren) {
+        const res: ApiResponse = {
+          success: false,
+          error: '该分类下已有子分类，无法将其设置为其他分类的子分类',
+        };
+        return c.json(res, 400);
+      }
+
+      // 验证分类类型一致性
+      if (parent.type !== existing.type) {
+        const res: ApiResponse = {
+          success: false,
+          error: '子分类类型必须与父大类类型一致',
+        };
+        return c.json(res, 400);
+      }
     }
 
     const now = new Date().toISOString();

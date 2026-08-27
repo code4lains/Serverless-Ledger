@@ -8,40 +8,53 @@
  * 将浮点数金额（元）安全转换为整数（分）
  * 例如 12.34 -> 1234, "12.34" -> 1234
  */
-export function toCents(yuan: number | string): number {
-  if (typeof yuan === 'string') {
-    const parsed = parseFloat(yuan.trim());
-    if (isNaN(parsed)) return 0;
-    return Math.round(parsed * 100);
+export function toCents(yuan: number | string | null | undefined): number {
+  if (yuan === null || yuan === undefined) return 0;
+  if (typeof yuan === 'number') {
+    if (!Number.isFinite(yuan) || Math.abs(yuan) > Number.MAX_SAFE_INTEGER) return 0;
+    const rounded = Math.round(Number(yuan.toFixed(2)) * 100);
+    return rounded === 0 ? 0 : rounded;
   }
-  if (typeof yuan !== 'number' || isNaN(yuan)) return 0;
-  return Math.round(yuan * 100);
+  const cleanStr = String(yuan).trim().replace(/,/g, '').replace(/[^0-9.-]/g, '');
+  if (!cleanStr) return 0;
+  const parsed = parseFloat(cleanStr);
+  if (!Number.isFinite(parsed) || Math.abs(parsed) > Number.MAX_SAFE_INTEGER) return 0;
+  const rounded = Math.round(parsed * 100);
+  return rounded === 0 ? 0 : rounded;
 }
 
 /**
  * 将整数（分）转换为浮点数金额（元）
  * 例如 1234 -> 12.34
  */
-export function toYuan(cents: number): number {
-  if (isNaN(cents)) return 0;
-  return cents / 100;
+export function toYuan(cents: number | null | undefined): number {
+  if (cents === null || cents === undefined || typeof cents !== 'number') return 0;
+  if (!Number.isFinite(cents) || Math.abs(cents) > Number.MAX_SAFE_INTEGER) return 0;
+  if (cents === 0) return 0;
+  const yuan = cents / 100;
+  return yuan === 0 ? 0 : yuan;
 }
 
 export const fromCents = toYuan;
+export const centsToYuan = toYuan;
 
 /**
  * 格式化金额（分）为展示字符串
  * @param cents 存储的整数分
  * @param currencySymbol 货币符号，默认 "¥"
- * @returns 格式化后的字符串，例如 "¥12.34"
+ * @returns 格式化后的字符串，例如 "¥12.34", "-¥12.34"
  */
-export function formatMoney(cents: number, currencySymbol: string = '¥'): string {
-  const yuan = toYuan(cents);
-  const formatted = yuan.toLocaleString('zh-CN', {
+export function formatMoney(cents: number | null | undefined, currencySymbol: string = '¥'): string {
+  if (cents === null || cents === undefined || typeof cents !== 'number' || !Number.isFinite(cents)) {
+    return `${currencySymbol}0.00`;
+  }
+  const isNegative = cents < 0;
+  const absYuan = Math.abs(toYuan(cents));
+  const formatted = absYuan.toLocaleString('zh-CN', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  return `${currencySymbol}${formatted}`;
+  return `${isNegative ? '-' : ''}${currencySymbol}${formatted}`;
 }
 
 const CURRENCY_SYMBOL_MAP: Record<string, string> = {

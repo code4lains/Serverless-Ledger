@@ -204,7 +204,7 @@ export function buildCategoryTree(categories: Category[], type?: CategoryType): 
   const parentNodes: CategoryTreeNode[] = [];
   const parentMap = new Map<string, CategoryTreeNode>();
 
-  // 1. 提取所有大类
+  // 1. 提取所有顶级大类 (无 parent_id)
   for (const cat of filtered) {
     if (!cat.parent_id) {
       const node: CategoryTreeNode = { category: cat, children: [] };
@@ -213,11 +213,22 @@ export function buildCategoryTree(categories: Category[], type?: CategoryType): 
     }
   }
 
-  // 2. 挂载所有子类
-  for (const cat of filtered) {
-    if (cat.parent_id && parentMap.has(cat.parent_id)) {
-      parentMap.get(cat.parent_id)!.children.push(cat);
+  // 2. 挂载子类；若父级不存在（孤儿分类），提升为顶层节点以安全挂载，防止丢失历史分类信息
+  const remaining = filtered.filter((c) => !!c.parent_id);
+  const orphanNodes: CategoryTreeNode[] = [];
+
+  for (const cat of remaining) {
+    if (parentMap.has(cat.parent_id!)) {
+      parentMap.get(cat.parent_id!)!.children.push(cat);
+    } else {
+      const node: CategoryTreeNode = { category: cat, children: [] };
+      orphanNodes.push(node);
+      parentMap.set(cat.category_id, node);
     }
+  }
+
+  for (const orphan of orphanNodes) {
+    parentNodes.push(orphan);
   }
 
   // 3. 排序 (按 sort_order 升序，相同时按创建时间升序)

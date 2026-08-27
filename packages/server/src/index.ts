@@ -59,9 +59,14 @@ app.notFound((c) => {
 // 全局错误处理
 app.onError((err, c) => {
   console.error('Unhandled Server Error:', err);
+  const isDev = c.env?.ENVIRONMENT === 'development' || (typeof (globalThis as any).process !== 'undefined' && (globalThis as any).process?.env?.NODE_ENV === 'development');
+  const message = isDev
+    ? (err.message || 'Internal Server Error')
+    : '服务器内部错误，请稍后重试';
+
   const res: ApiResponse = {
     success: false,
-    error: err.message || 'Internal Server Error',
+    error: message,
   };
   return c.json(res, 500);
 });

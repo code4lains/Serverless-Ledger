@@ -18,5 +18,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     target: 'es2020',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-xlsx': ['xlsx'],
+          'vendor-dexie': ['dexie'],
+          'vendor-lucide': ['lucide-react'],
+        },
+      },
+    },
   },
 });

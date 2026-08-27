@@ -153,6 +153,7 @@ export function BudgetManagementModal({
   // 提交保存预算
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
     if (!currentUser) {
       onRequireAuth();
       return;
@@ -198,13 +199,20 @@ export function BudgetManagementModal({
 
   // 清空所有预算
   const handleClearAll = async () => {
+    if (isSaving) return;
     if (window.confirm('确定要清空当前账本的所有预算设置吗？')) {
-      setTotalBudgetStr('');
-      setCategoryBudgetsMap({});
-      if (currentUser) {
+      try {
         setIsSaving(true);
-        await saveBatchBudgets(selectedLedgerId, period, []);
-        await onBudgetsChanged();
+        setErrorMessage('');
+        setTotalBudgetStr('');
+        setCategoryBudgetsMap({});
+        if (currentUser) {
+          await saveBatchBudgets(selectedLedgerId, period, []);
+          await onBudgetsChanged();
+        }
+      } catch (err: any) {
+        setErrorMessage(err.message || '清空预算失败，请重试');
+      } finally {
         setIsSaving(false);
       }
     }
@@ -229,7 +237,8 @@ export function BudgetManagementModal({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+            disabled={isSaving}
+            className="p-1.5 rounded-xl hover:bg-gray-100 dark:hover:bg-neutral-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors disabled:opacity-40"
           >
             <X className="w-4 h-4" />
           </button>

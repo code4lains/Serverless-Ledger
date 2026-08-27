@@ -144,11 +144,15 @@ export function TransactionDetailModal({
     setEditCategoryId(categoryMap[lt]);
   };
 
-  // 保存编辑
+  // 保存编辑 (BUG-C06: 金额输入清洗、千分位兼容与高精度分/元转换)
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedAmount = parseFloat(editAmountStr);
-    if (!editAmountStr || isNaN(parsedAmount) || parsedAmount <= 0) return;
+    const cleanStr = String(editAmountStr).trim().replace(/,/g, '').replace(/[^0-9.-]/g, '');
+    const parsedAmount = parseFloat(cleanStr);
+    if (!cleanStr || isNaN(parsedAmount) || !Number.isFinite(parsedAmount) || parsedAmount <= 0) return;
+
+    const amountInCents = toCents(cleanStr);
+    if (amountInCents <= 0) return;
 
     setIsSaving(true);
     try {
@@ -156,7 +160,7 @@ export function TransactionDetailModal({
         ...transaction,
         ledger_id: editLedgerId || transaction.ledger_id,
         type: editType,
-        amount: toCents(editAmountStr),
+        amount: amountInCents,
         category_id: editCategoryId || null,
         from_account: (editType === 'transfer' || editType === 'loan') ? (editFromAccount.trim() || null) : null,
         to_account: (editType === 'transfer' || editType === 'loan') ? (editToAccount.trim() || null) : null,
@@ -325,9 +329,8 @@ export function TransactionDetailModal({
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-gray-400">¥</span>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
+                    type="text"
+                    inputMode="decimal"
                     required
                     placeholder="0.00"
                     value={editAmountStr}
@@ -338,8 +341,12 @@ export function TransactionDetailModal({
                     }}
                     onChange={(e) => {
                       const val = e.target.value;
-                      if (val.includes('-')) return;
-                      setEditAmountStr(val);
+                      // 过滤逗号与非法字符，保证仅保留单个小数点与最多两位小数
+                      const sanitized = val.replace(/,/g, '').replace(/[^0-9.]/g, '');
+                      const parts = sanitized.split('.');
+                      if (parts.length > 2) return;
+                      if (parts[1] && parts[1].length > 2) return;
+                      setEditAmountStr(sanitized);
                     }}
                     className="w-full pl-8 pr-3 py-2 text-lg font-bold rounded-xl bg-gray-50 dark:bg-neutral-900 border border-transparent focus:border-gray-300 dark:focus:border-neutral-600 focus:outline-none"
                   />
@@ -443,7 +450,12 @@ export function TransactionDetailModal({
                 </button>
                 <button
                   type="submit"
-                  disabled={isSaving || !editAmountStr || parseFloat(editAmountStr) <= 0}
+                  disabled={
+                    isSaving ||
+                    !editAmountStr ||
+                    !Number.isFinite(parseFloat(editAmountStr.replace(/,/g, ''))) ||
+                    parseFloat(editAmountStr.replace(/,/g, '')) <= 0
+                  }
                   className="flex-1 py-2 rounded-xl text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm hover:opacity-90 transition-all flex items-center justify-center gap-1"
                 >
                   <Save className="w-3.5 h-3.5" />

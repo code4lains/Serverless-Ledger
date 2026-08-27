@@ -2,20 +2,29 @@ import { Transaction, TransactionDayGroup, TotalsSummary } from './models.js';
 
 /**
  * 安全解析本地日期字符串（避免 YYYY-MM-DD 在负时区被解析为 UTC 导致日期回退一天）
+ * 若输入非法或无法解析，返回 Invalid Date (new Date(NaN)) 以便调用方检测脏数据
  */
 export function parseLocalDate(val?: Date | string | null): Date {
-  if (!val) return new Date();
+  if (!val) return new Date(NaN);
   if (val instanceof Date) return new Date(val.getTime());
   if (typeof val === 'string') {
     const trimmed = val.trim();
+    if (!trimmed) return new Date(NaN);
     const m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
     if (m) {
-      return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10), 12, 0, 0);
+      const year = parseInt(m[1], 10);
+      const month = parseInt(m[2], 10) - 1;
+      const day = parseInt(m[3], 10);
+      const d = new Date(year, month, day, 12, 0, 0);
+      if (d.getFullYear() === year && d.getMonth() === month && d.getDate() === day) {
+        return d;
+      }
+      return new Date(NaN);
     }
     const d = new Date(trimmed);
     if (!isNaN(d.getTime())) return d;
   }
-  return new Date();
+  return new Date(NaN);
 }
 
 /**
@@ -23,7 +32,7 @@ export function parseLocalDate(val?: Date | string | null): Date {
  */
 export function formatDateKey(dateInput: string | Date): string {
   const d = typeof dateInput === 'string' ? parseLocalDate(dateInput) : dateInput;
-  if (isNaN(d.getTime())) return '';
+  if (!d || isNaN(d.getTime())) return '';
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -35,7 +44,7 @@ export function formatDateKey(dateInput: string | Date): string {
  */
 export function formatTime(dateInput: string | Date): string {
   const d = typeof dateInput === 'string' ? parseLocalDate(dateInput) : dateInput;
-  if (isNaN(d.getTime())) return '';
+  if (!d || isNaN(d.getTime())) return '';
   const h = String(d.getHours()).padStart(2, '0');
   const m = String(d.getMinutes()).padStart(2, '0');
   return `${h}:${m}`;
@@ -45,10 +54,11 @@ const WEEKDAYS = ['星期日', '星期一', '星期二', '星期三', '星期四
 
 /**
  * 获取相对日期或友好显示标签 (如 "今天 · 8月21日 星期五")
+ * 使用 parseLocalDate 解析日期，防止西半球/负时区日期回退一天
  */
 export function formatRelativeDate(dateInput: string | Date): string {
-  const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
-  if (isNaN(d.getTime())) return '';
+  const d = typeof dateInput === 'string' ? parseLocalDate(dateInput) : (dateInput instanceof Date ? new Date(dateInput.getTime()) : new Date(NaN));
+  if (!d || isNaN(d.getTime())) return '';
 
   const now = new Date();
   const todayKey = formatDateKey(now);
@@ -128,6 +138,70 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
 }
 
 /**
+ * 借贷分类与流向智能推断函数
+ * 支持标准分类 (cat_loan_borrow, cat_loan_repay, cat_loan_collect, cat_loan_lend)、
+ * 平台借还 (cat_loan_platform)、人情借贷 (cat_loan_social) 及自定义扩展分类与备注关键词映射
+ */
+export function classifyLoanTransaction(tx: Transaction): 'borrow' | 'repay' | 'collect' | 'lend' {
+  const catId = (tx.category_id || '').toLowerCase();
+  const remark = (tx.remark || '').toLowerCase();
+
+  // 1. 优先根据标准 category_id 或已知模式判定
+  if (
+    catId === 'cat_loan_borrow' ||
+    catId.includes('borrow') ||
+    catId.includes('jie_ru') ||
+    catId.includes('jiekuan')
+  ) {
+    return 'borrow';
+  }
+  if (
+    catId === 'cat_loan_repay' ||
+    catId.includes('repay') ||
+    catId.includes('huan_kuan') ||
+    catId.includes('huankuan')
+  ) {
+    return 'repay';
+  }
+  if (
+    catId === 'cat_loan_collect' ||
+    catId.includes('collect') ||
+    catId.includes('shou_hui') ||
+    catId.includes('shouhui') ||
+    catId.includes('shou_kuan')
+  ) {
+    return 'collect';
+  }
+  if (
+    catId === 'cat_loan_lend' ||
+    catId.includes('lend') ||
+    catId.includes('jie_chu') ||
+    catId.includes('jiechu')
+  ) {
+    return 'lend';
+  }
+
+  // 2. 针对平台借还 (cat_loan_platform)、人情往来 (cat_loan_social) 或通用借贷大类 (cat_loan_main) 及自定义分类，通过备注关键词推断
+  if (remark) {
+    if (remark.includes('还款') || remark.includes('偿还') || remark.includes('还借') || remark.includes('repay')) {
+      return 'repay';
+    }
+    if (remark.includes('收回') || remark.includes('收款') || remark.includes('回款') || remark.includes('collect') || remark.includes('还我')) {
+      return 'collect';
+    }
+    if (remark.includes('借入') || remark.includes('借款') || remark.includes('借进') || remark.includes('借入款项') || remark.includes('borrow') || remark.includes('取现')) {
+      return 'borrow';
+    }
+    if (remark.includes('借出') || remark.includes('借给') || remark.includes('借钱给') || remark.includes('lend')) {
+      return 'lend';
+    }
+  }
+
+  // 3. 默认借贷流向：借出款项
+  return 'lend';
+}
+
+/**
  * 计算账单流水的总支出、总收入、转账、借贷与结余
  */
 export function calculateTotals(transactions: Transaction[]): TotalsSummary {
@@ -147,11 +221,12 @@ export function calculateTotals(transactions: Transaction[]): TotalsSummary {
     } else if (tx.type === 'transfer') {
       totalTransfer += tx.amount;
     } else if (tx.type === 'loan') {
-      if (tx.category_id === 'cat_loan_borrow') {
+      const loanKind = classifyLoanTransaction(tx);
+      if (loanKind === 'borrow') {
         totalLoanBorrowed += tx.amount;
-      } else if (tx.category_id === 'cat_loan_repay') {
+      } else if (loanKind === 'repay') {
         totalLoanRepaid += tx.amount;
-      } else if (tx.category_id === 'cat_loan_collect') {
+      } else if (loanKind === 'collect') {
         totalLoanCollected += tx.amount;
       } else {
         totalLoanLent += tx.amount;

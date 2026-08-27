@@ -26,33 +26,151 @@ export function getDaysInMonth(year: number, month: number): number {
 }
 
 /**
- * 计算周期规则从指定基准日期开始的下一个执行日期
- * @param rule 周期规则参数
- * @param fromDate 基准日期（默认为当前日期）
- * @returns YYYY-MM-DD 格式日期字符串
+ * 检查指定日期是否为该周期规则的有效执行日
  */
-export function calculateNextRunDate(
+function isDateValidExecutionDay(
+  rule: {
+    frequency: RecurringFrequency;
+    day_of_month?: number | null;
+    day_of_week?: number | null;
+    month_of_year?: number | null;
+  },
+  date: Date
+): boolean {
+  const freq = rule.frequency;
+  if (freq === 'daily') return true;
+
+  if (freq === 'weekly') {
+    const desiredDay = rule.day_of_week && rule.day_of_week >= 1 && rule.day_of_week <= 7 ? rule.day_of_week : (date.getDay() || 7);
+    const jsDay = date.getDay();
+    const isoDay = jsDay === 0 ? 7 : jsDay;
+    return isoDay === desiredDay;
+  }
+
+  if (freq === 'monthly') {
+    const desiredDayOfMonth = rule.day_of_month && rule.day_of_month >= 1 && rule.day_of_month <= 31
+      ? rule.day_of_month
+      : date.getDate();
+    const maxDays = getDaysInMonth(date.getFullYear(), date.getMonth() + 1);
+    const effectiveDay = Math.min(desiredDayOfMonth, maxDays);
+    return date.getDate() === effectiveDay;
+  }
+
+  if (freq === 'yearly') {
+    const desiredMonth = rule.month_of_year && rule.month_of_year >= 1 && rule.month_of_year <= 12
+      ? rule.month_of_year - 1
+      : date.getMonth();
+    const desiredDayOfMonth = rule.day_of_month && rule.day_of_month >= 1 && rule.day_of_month <= 31
+      ? rule.day_of_month
+      : date.getDate();
+    const maxDays = getDaysInMonth(date.getFullYear(), desiredMonth + 1);
+    const effectiveDay = Math.min(desiredDayOfMonth, maxDays);
+    return date.getMonth() === desiredMonth && date.getDate() === effectiveDay;
+  }
+
+  return true;
+}
+
+/**
+ * 从起始日开始寻找首个符合条件的执行日（不加 interval，寻找 >= startDate 的第一个执行日）
+ */
+function findFirstValidExecutionDayOnOrAfter(
+  rule: {
+    frequency: RecurringFrequency;
+    day_of_month?: number | null;
+    day_of_week?: number | null;
+    month_of_year?: number | null;
+  },
+  startDate: Date
+): string {
+  const target = new Date(startDate.getTime());
+  const freq = rule.frequency;
+
+  if (freq === 'daily') {
+    return formatDateOnly(target);
+  }
+
+  if (freq === 'weekly') {
+    const desiredDay = rule.day_of_week && rule.day_of_week >= 1 && rule.day_of_week <= 7 ? rule.day_of_week : target.getDay() || 7;
+    const currentJsDay = target.getDay();
+    const currentIsoDay = currentJsDay === 0 ? 7 : currentJsDay;
+
+    let diff = desiredDay - currentIsoDay;
+    if (diff < 0) {
+      diff += 7;
+    }
+    target.setDate(target.getDate() + diff);
+    return formatDateOnly(target);
+  }
+
+  if (freq === 'monthly') {
+    const desiredDayOfMonth = rule.day_of_month && rule.day_of_month >= 1 && rule.day_of_month <= 31
+      ? rule.day_of_month
+      : target.getDate();
+
+    let targetYear = target.getFullYear();
+    let targetMonth = target.getMonth();
+
+    const currentMonthMaxDays = getDaysInMonth(targetYear, targetMonth + 1);
+    const effectiveCurrentDueDay = Math.min(desiredDayOfMonth, currentMonthMaxDays);
+    if (target.getDate() > effectiveCurrentDueDay) {
+      targetMonth += 1;
+    }
+
+    while (targetMonth > 11) {
+      targetYear += Math.floor(targetMonth / 12);
+      targetMonth = targetMonth % 12;
+    }
+
+    const maxDays = getDaysInMonth(targetYear, targetMonth + 1);
+    const finalDay = Math.min(desiredDayOfMonth, maxDays);
+
+    const nextDate = new Date(targetYear, targetMonth, finalDay);
+    return formatDateOnly(nextDate);
+  }
+
+  if (freq === 'yearly') {
+    const desiredMonth = rule.month_of_year && rule.month_of_year >= 1 && rule.month_of_year <= 12
+      ? rule.month_of_year - 1
+      : target.getMonth();
+    const desiredDay = rule.day_of_month && rule.day_of_month >= 1 && rule.day_of_month <= 31
+      ? rule.day_of_month
+      : target.getDate();
+
+    let targetYear = target.getFullYear();
+    const currentMonth = target.getMonth();
+    const currentDay = target.getDate();
+    const currentYearDesiredMonthMaxDays = getDaysInMonth(targetYear, desiredMonth + 1);
+    const effectiveDesiredDay = Math.min(desiredDay, currentYearDesiredMonthMaxDays);
+    if (currentMonth > desiredMonth || (currentMonth === desiredMonth && currentDay > effectiveDesiredDay)) {
+      targetYear += 1;
+    }
+
+    const maxDays = getDaysInMonth(targetYear, desiredMonth + 1);
+    const finalDay = Math.min(desiredDay, maxDays);
+
+    const nextDate = new Date(targetYear, desiredMonth, finalDay);
+    return formatDateOnly(nextDate);
+  }
+
+  return formatDateOnly(target);
+}
+
+/**
+ * 从基准日严格向后推进一个 interval 计算下一个周期执行日
+ */
+function advanceExecutionDate(
   rule: {
     frequency: RecurringFrequency;
     interval?: number;
     day_of_month?: number | null;
     day_of_week?: number | null;
     month_of_year?: number | null;
-    start_date?: string;
   },
-  fromDate?: Date | string
+  baseDate: Date,
+  interval: number
 ): string {
-  const baseDate = parseLocalDate(fromDate);
-  const interval = Math.max(1, rule.interval || 1);
-
-  const start = rule.start_date ? parseLocalDate(rule.start_date) : baseDate;
-
-  // 如果基准时间早于开始时间，首个执行点以 start_date 为参考点
-  let target = new Date(baseDate.getTime());
-  if (start.getTime() > target.getTime()) {
-    target = new Date(start.getTime());
-  }
-
+  const target = new Date(baseDate.getTime());
   const freq = rule.frequency;
 
   if (freq === 'daily') {
@@ -62,7 +180,6 @@ export function calculateNextRunDate(
 
   if (freq === 'weekly') {
     const desiredDay = rule.day_of_week && rule.day_of_week >= 1 && rule.day_of_week <= 7 ? rule.day_of_week : target.getDay() || 7;
-    // target.getDay(): 0 is Sunday, 1 is Monday ... 6 is Saturday
     const currentJsDay = target.getDay();
     const currentIsoDay = currentJsDay === 0 ? 7 : currentJsDay;
 
@@ -82,8 +199,6 @@ export function calculateNextRunDate(
     let targetYear = target.getFullYear();
     let targetMonth = target.getMonth();
 
-    // 仅当当月目标日已过（或就是今天）才向后推 interval 个月
-    // 注意：比较时需以当月有效最大天数（如2月28/29）为基准，避免超出当月天数时导致死循环
     const currentMonthMaxDays = getDaysInMonth(targetYear, targetMonth + 1);
     const effectiveCurrentDueDay = Math.min(desiredDayOfMonth, currentMonthMaxDays);
     if (target.getDate() >= effectiveCurrentDueDay) {
@@ -110,7 +225,6 @@ export function calculateNextRunDate(
       ? rule.day_of_month
       : target.getDate();
 
-    // 仅当今年目标月/日已过才向后推 interval 年
     let targetYear = target.getFullYear();
     const currentMonth = target.getMonth();
     const currentDay = target.getDate();
@@ -132,12 +246,56 @@ export function calculateNextRunDate(
 }
 
 /**
+ * 计算周期规则从指定基准日期开始的下一个执行日期
+ * @param rule 周期规则参数
+ * @param fromDate 基准日期（默认为当前日期）
+ * @returns YYYY-MM-DD 格式日期字符串
+ */
+export function calculateNextRunDate(
+  rule: {
+    frequency: RecurringFrequency;
+    interval?: number;
+    day_of_month?: number | null;
+    day_of_week?: number | null;
+    month_of_year?: number | null;
+    start_date?: string;
+  },
+  fromDate?: Date | string
+): string {
+  const parsedBase = fromDate ? parseLocalDate(fromDate) : new Date();
+  const baseDate = !isNaN(parsedBase.getTime()) ? parsedBase : new Date();
+  const interval = Math.max(1, rule.interval || 1);
+
+  const parsedStart = rule.start_date ? parseLocalDate(rule.start_date) : null;
+  const start = (parsedStart && !isNaN(parsedStart.getTime())) ? parsedStart : null;
+
+  if (start) {
+    const startStr = formatDateOnly(start);
+    const baseStr = formatDateOnly(baseDate);
+
+    // 如果基准日早于或等于起始日
+    if (baseStr <= startStr) {
+      // 若起始日本身即为有效执行日，则下一次执行日直接返回起始日
+      if (isDateValidExecutionDay(rule, start)) {
+        return startStr;
+      }
+      // 起始日不是有效执行日，以起始日为起点寻找首个有效执行日
+      return findFirstValidExecutionDayOnOrAfter(rule, start);
+    }
+  }
+
+  // 基准日已超过起始日（或未指定起始日）：从基准日向后顺延计算下一个执行日
+  return advanceExecutionDate(rule, baseDate, interval);
+}
+
+/**
  * 获取某个周期规则在当前日期前所有应执行而未执行的日期列表 (支持漏记补齐)
  */
 export function getDueDatesForRule(rule: RecurringRule, upToDate?: Date | string): string[] {
   if (rule.status === 'paused') return [];
 
-  const now = parseLocalDate(upToDate);
+  const parsedNow = upToDate ? parseLocalDate(upToDate) : new Date();
+  const now = !isNaN(parsedNow.getTime()) ? parsedNow : new Date();
   const todayStr = formatDateOnly(now);
 
   const dueDates: string[] = [];
@@ -161,7 +319,8 @@ export function getDueDatesForRule(rule: RecurringRule, upToDate?: Date | string
     }
 
     dueDates.push(currentNext);
-    currentNext = calculateNextRunDate(rule, currentNext);
+    // 从刚才已纳入执行列表的日期向后计算下一个周期执行日（不锁在 start_date）
+    currentNext = calculateNextRunDate({ ...rule, start_date: undefined }, currentNext);
     iterations++;
   }
 

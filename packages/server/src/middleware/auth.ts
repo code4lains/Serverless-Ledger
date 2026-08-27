@@ -1,6 +1,6 @@
 import { Context, Next } from 'hono';
 import { Env, AppVariables } from '../types';
-import { verifyJwtToken, DEFAULT_JWT_SECRET } from '../utils/auth';
+import { verifyJwtToken, getJwtSecret } from '../utils/auth';
 import { ApiResponse, JwtPayload } from '@ledger/shared';
 
 type AuthContext = Context<{ Bindings: Env; Variables: AppVariables }>;
@@ -9,6 +9,12 @@ type AuthContext = Context<{ Bindings: Env; Variables: AppVariables }>;
  * 严格认证中间件：请求必须携带有效的 Bearer JWT
  */
 export async function requireAuth(c: AuthContext, next: Next) {
+  // BUG-S10 优化：若 optionalAuth 已经成功解析并校验了用户合法性，直接复用，避免重复查询 D1 数据库
+  if (c.get('user')) {
+    await next();
+    return;
+  }
+
   const authHeader = c.req.header('Authorization');
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -20,12 +26,30 @@ export async function requireAuth(c: AuthContext, next: Next) {
   }
 
   const token = authHeader.substring(7).trim();
-  const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET;
-
+  let secret: string;
   try {
-    const payload = await verifyJwtToken(token, secret);
+    secret = getJwtSecret(c.env);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: '服务端安全配置错误：生产环境未配置 JWT_SECRET',
+    };
+    return c.json(res, 500);
+  }
 
-    // BUG-03 修复：校验数据库中用户是否仍存在，防止已删除用户的 JWT 仍可使用
+  let payload: JwtPayload;
+  try {
+    payload = await verifyJwtToken(token, secret);
+  } catch {
+    const res: ApiResponse = {
+      success: false,
+      error: '登录已过期或无效，请重新登录',
+    };
+    return c.json(res, 401);
+  }
+
+  // 校验数据库中用户是否仍存在，防止已删除用户的 JWT 仍可使用
+  try {
     if (c.env?.DB) {
       const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
         .bind(payload.userId)
@@ -42,12 +66,13 @@ export async function requireAuth(c: AuthContext, next: Next) {
 
     c.set('user', payload);
     await next();
-  } catch (err: any) {
+  } catch (dbErr: any) {
+    console.error('Database query error in requireAuth:', dbErr);
     const res: ApiResponse = {
       success: false,
-      error: '登录已过期或无效，请重新登录',
+      error: '数据库查询异常，请稍后重试',
     };
-    return c.json(res, 401);
+    return c.json(res, 500);
   }
 }
 
@@ -59,15 +84,29 @@ export async function optionalAuth(c: AuthContext, next: Next) {
 
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.substring(7).trim();
-    const secret = c.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+    let secret: string;
+    try {
+      secret = getJwtSecret(c.env);
+    } catch (err: any) {
+      const res: ApiResponse = {
+        success: false,
+        error: '服务端安全配置错误：生产环境未配置 JWT_SECRET',
+      };
+      return c.json(res, 500);
+    }
+
     try {
       const payload = await verifyJwtToken(token, secret);
       if (c.env?.DB) {
-        const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
-          .bind(payload.userId)
-          .first<{ user_id: string }>();
-        if (user) {
-          c.set('user', payload);
+        try {
+          const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
+            .bind(payload.userId)
+            .first<{ user_id: string }>();
+          if (user) {
+            c.set('user', payload);
+          }
+        } catch (dbErr) {
+          console.error('Database error in optionalAuth:', dbErr);
         }
       } else {
         c.set('user', payload);
