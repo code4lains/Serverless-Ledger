@@ -154,10 +154,6 @@ export function BudgetManagementModal({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSaving) return;
-    if (!currentUser) {
-      onRequireAuth();
-      return;
-    }
 
     setErrorMessage('');
     setIsSaving(true);
@@ -206,10 +202,8 @@ export function BudgetManagementModal({
         setErrorMessage('');
         setTotalBudgetStr('');
         setCategoryBudgetsMap({});
-        if (currentUser) {
-          await saveBatchBudgets(selectedLedgerId, period, []);
-          await onBudgetsChanged();
-        }
+        await saveBatchBudgets(selectedLedgerId, period, []);
+        await onBudgetsChanged();
       } catch (err: any) {
         setErrorMessage(err.message || '清空预算失败，请重试');
       } finally {

@@ -88,10 +88,6 @@ export function CategoriesView({
 
   // 打开新增分类弹窗
   const handleOpenAdd = (parentId: string | null = null) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     setEditingCategory(null);
     setFormName('');
     setFormType(activeTab);
@@ -104,10 +100,6 @@ export function CategoriesView({
 
   // 打开编辑分类弹窗
   const handleOpenEdit = (cat: Category) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     setEditingCategory(cat);
     setFormName(cat.name);
     setFormType(cat.type);
@@ -165,11 +157,6 @@ export function CategoriesView({
   // 确认删除分类
   const handleConfirmDelete = async () => {
     if (!deletingCategory) return;
-    if (!currentUser) {
-      setDeletingCategory(null);
-      onRequireAuth?.();
-      return;
-    }
     setIsDeleting(true);
     try {
       const ok = await deleteCategory(deletingCategory.category_id);
@@ -192,10 +179,6 @@ export function CategoriesView({
     currentIndex: number,
     direction: 'up' | 'down'
   ) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     if (targetIndex < 0 || targetIndex >= list.length) return;
 

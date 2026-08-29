@@ -93,10 +93,6 @@ export function CategoryManagementModal({
 
   // 打开新增分类弹窗
   const handleOpenAdd = (parentId: string | null = null) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     setEditingCategory(null);
     setFormName('');
     setFormType(activeTab);
@@ -109,10 +105,6 @@ export function CategoryManagementModal({
 
   // 打开编辑分类弹窗
   const handleOpenEdit = (cat: Category) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     setEditingCategory(cat);
     setFormName(cat.name);
     setFormType(cat.type);
@@ -165,11 +157,6 @@ export function CategoryManagementModal({
   // 确认删除分类
   const handleConfirmDelete = async () => {
     if (!deletingCategory) return;
-    if (!currentUser) {
-      setDeletingCategory(null);
-      onRequireAuth?.();
-      return;
-    }
     setIsDeleting(true);
     try {
       await deleteCategory(deletingCategory.category_id);
@@ -184,10 +171,6 @@ export function CategoryManagementModal({
 
   // 调整大分类排序 (上移/下移)
   const handleMoveParent = async (index: number, direction: 'up' | 'down') => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= categoryTree.length) return;
 
@@ -217,10 +200,6 @@ export function CategoryManagementModal({
     childIndex: number,
     direction: 'up' | 'down'
   ) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     const targetIndex = direction === 'up' ? childIndex - 1 : childIndex + 1;
     if (targetIndex < 0 || targetIndex >= parentNode.children.length) return;
 

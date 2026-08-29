@@ -128,10 +128,6 @@ export function LedgerManagementModal({
   // 提交新建账本
   const handleCreateLedger = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     if (!newName.trim()) {
       setErrorMsg('请输入账本名称');
       return;
@@ -159,10 +155,6 @@ export function LedgerManagementModal({
 
   // 开始编辑账本
   const handleStartEdit = (ledger: Ledger) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     setEditingLedgerId(ledger.ledger_id);
     setEditName(ledger.name);
     setEditCurrency(ledger.currency || 'CNY');
@@ -173,10 +165,6 @@ export function LedgerManagementModal({
   // 提交编辑修改
   const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     if (!editingLedgerId || !editName.trim()) return;
 
     setIsSubmitting(true);
@@ -198,10 +186,6 @@ export function LedgerManagementModal({
 
   // 设为默认账本
   const handleSetDefault = async (ledgerId: string) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     setIsSubmitting(true);
     setErrorMsg(null);
     try {
@@ -216,11 +200,6 @@ export function LedgerManagementModal({
 
   // 确认删除账本
   const handleConfirmDelete = async (ledgerId: string) => {
-    if (!currentUser) {
-      setDeletingLedgerId(null);
-      onRequireAuth?.();
-      return;
-    }
     if (ledgers.length <= 1) {
       setErrorMsg('至少需保留一个账本，无法删除唯一账本');
       return;

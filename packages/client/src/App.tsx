@@ -190,13 +190,18 @@ export function App() {
   // 从本地 Dexie 加载流水与待同步状态
   const loadLocalData = async (user?: AuthUser | null) => {
     const effectiveUser = user !== undefined ? user : currentUser;
-    if (!effectiveUser) {
-      setTransactions([]);
-      const stats = await getLocalStorageStats();
-      setPendingCount(stats.totalPending);
-      return;
+    let list: Transaction[] = [];
+    if (effectiveUser) {
+      list = await localDb.transactions
+        .where('user_id')
+        .equals(effectiveUser.user_id)
+        .sortBy('transaction_date');
+    } else {
+      // 访客 / 离线模式：加载本地未归属其他用户的流水或 default_user 流水
+      list = await localDb.transactions
+        .filter((t) => !t.user_id || t.user_id === 'default_user')
+        .sortBy('transaction_date');
     }
-    const list = await localDb.transactions.where('user_id').equals(effectiveUser.user_id).sortBy('transaction_date');
     list.reverse();
     setTransactions(list);
     const stats = await getLocalStorageStats();
@@ -352,12 +357,9 @@ export function App() {
       setCurrentUser(null);
       if (prevUser) {
         await clearUserData(prevUser.user_id);
-      } else {
-        await clearLocalDatabase();
       }
       await loadGuestData();
-      setIsAuthModalOpen(true);
-      showToast('登录凭证已过期或失效，请重新登录', 'error');
+      showToast('登录凭证已失效，已切换至离线/访客模式', 'info');
     };
 
     window.addEventListener('auth:unauthorized', handleUnauthorized);
@@ -440,13 +442,9 @@ export function App() {
     }
   };
 
-  // 提交记账 (3秒快速极简记账)
+  // 提交记账 (3秒快速极简记账，未登录模式无缝记账至本地 Dexie)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) {
-      setIsAuthModalOpen(true);
-      return;
-    }
 
     const parsedAmount = parseFloat(amountStr);
     if (!amountStr || isNaN(parsedAmount) || parsedAmount <= 0) return;
@@ -455,7 +453,7 @@ export function App() {
     if (amountInCents <= 0) return;
 
     const txId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    const userId = currentUser.user_id;
+    const userId = currentUser ? currentUser.user_id : 'default_user';
 
     // 确定目标账本
     let targetLedgerId = selectedLedgerForRecord;
@@ -499,6 +497,7 @@ export function App() {
   // 手动触发同步
   const handleSync = async () => {
     if (!currentUser) {
+      showToast('当前处于离线/访客模式，登录账号后可自动云端多端同步', 'info');
       setIsAuthModalOpen(true);
       return;
     }

@@ -70,8 +70,9 @@ export function clearSession() {
  * 全局统一 401/403 会话失效与未授权处理器 (BUG-C05)
  */
 export function handleUnauthorizedResponse() {
+  const hadToken = !!getStoredToken();
   clearSession();
-  if (typeof window !== 'undefined') {
+  if (hadToken && typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent('auth:unauthorized'));
   }
 }
@@ -80,8 +81,9 @@ export function handleUnauthorizedResponse() {
  * 带有统一 401/403 拦截与状态码分发的全局 API 请求封装 (BUG-C05)
  */
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const hadToken = !!getStoredToken();
   const res = await fetch(input, init);
-  if (res.status === 401 || res.status === 403) {
+  if ((res.status === 401 || res.status === 403) && hadToken) {
     handleUnauthorizedResponse();
   }
   return res;
@@ -352,30 +354,33 @@ export async function createCategory(req: CreateCategoryRequest): Promise<Catego
   // 1. 立即持久化至本地 IndexedDB
   await localDb.categories.put(newCat);
 
-  // 2. 加入离线同步队列
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'category',
-    entity_id: categoryId,
-    action: 'create',
-    payload: newCat,
-  });
-
-  // 3. 异步尝试向服务端推送
-  apiFetch(`${API_BASE}/categories`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(newCat),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：自定义分类已安全暂存本地并加入待同步队列。');
+  const token = getStoredToken();
+  if (user && token) {
+    // 2. 加入离线同步队列
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'category',
+      entity_id: categoryId,
+      action: 'create',
+      payload: newCat,
     });
+
+    // 3. 异步尝试向服务端推送
+    apiFetch(`${API_BASE}/categories`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(newCat),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：自定义分类已安全暂存本地并加入待同步队列。');
+      });
+  }
 
   return newCat;
 }
@@ -392,6 +397,7 @@ export async function updateCategory(
 
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
+  const token = getStoredToken();
   const now = new Date().toISOString();
   const updatedCat: Category = {
     ...existing,
@@ -406,30 +412,32 @@ export async function updateCategory(
   // 1. 本地更新
   await localDb.categories.put(updatedCat);
 
-  // 2. 加入离线同步队列
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'category',
-    entity_id: categoryId,
-    action: 'update',
-    payload: updates,
-  });
-
-  // 3. 异步尝试推送
-  apiFetch(`${API_BASE}/categories/${categoryId}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(updates),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：分类修改已暂存本地待同步。');
+  if (user && token) {
+    // 2. 加入离线同步队列
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'category',
+      entity_id: categoryId,
+      action: 'update',
+      payload: updates,
     });
+
+    // 3. 异步尝试推送
+    apiFetch(`${API_BASE}/categories/${categoryId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：分类修改已暂存本地待同步。');
+      });
+  }
 
   return updatedCat;
 }
@@ -443,6 +451,7 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
 
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
+  const token = getStoredToken();
 
   let childrenToDelete: Category[] = [];
   let mainQueueItem: any = null;
@@ -453,12 +462,14 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
       childrenToDelete = await localDb.categories.where('parent_id').equals(categoryId).toArray();
       for (const child of childrenToDelete) {
         await localDb.categories.delete(child.category_id);
-        await enqueueSyncAction({
-          user_id: userId,
-          entity_type: 'category',
-          entity_id: child.category_id,
-          action: 'delete',
-        });
+        if (user && token) {
+          await enqueueSyncAction({
+            user_id: userId,
+            entity_type: 'category',
+            entity_id: child.category_id,
+            action: 'delete',
+          });
+        }
       }
     }
 
@@ -466,36 +477,40 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
     await localDb.categories.delete(categoryId);
 
     // 记录防复活删除墓碑
-    mainQueueItem = await enqueueSyncAction({
-      user_id: userId,
-      entity_type: 'category',
-      entity_id: categoryId,
-      action: 'delete',
-    });
+    if (user && token) {
+      mainQueueItem = await enqueueSyncAction({
+        user_id: userId,
+        entity_type: 'category',
+        entity_id: categoryId,
+        action: 'delete',
+      });
+    }
   });
 
-  // 2. 异步尝试向服务端推送删除子分类与大分类
-  for (const child of childrenToDelete) {
-    apiFetch(`${API_BASE}/categories/${child.category_id}`, {
+  if (user && token) {
+    // 2. 异步尝试向服务端推送删除子分类与大分类
+    for (const child of childrenToDelete) {
+      apiFetch(`${API_BASE}/categories/${child.category_id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+    }
+
+    apiFetch(`${API_BASE}/categories/${categoryId}`, {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
-    }).catch(() => {});
-  }
-
-  apiFetch(`${API_BASE}/categories/${categoryId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok && mainQueueItem) {
-        await removeSyncQueueItem(mainQueueItem.id);
-      }
     })
-    .catch(() => {
-      console.log('离线模式：分类删除已记录墓碑，联网后将自动同步至云端。');
-    });
+      .then(async (res) => {
+        if (res.ok && mainQueueItem) {
+          await removeSyncQueueItem(mainQueueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：分类删除已记录墓碑，联网后将自动同步至云端。');
+      });
+  }
 
   return true;
 }
@@ -506,6 +521,7 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
 export async function reorderCategories(items: ReorderCategoryItem[]): Promise<boolean> {
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
+  const token = getStoredToken();
 
   // 1. 本地更新
   for (const item of items) {
@@ -515,68 +531,73 @@ export async function reorderCategories(items: ReorderCategoryItem[]): Promise<b
     });
   }
 
-  // 2. 加入离线同步队列
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'category',
-    entity_id: 'batch_reorder',
-    action: 'reorder',
-    payload: { items },
-  });
-
-  // 3. 异步尝试推送
-  apiFetch(`${API_BASE}/categories/reorder`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({ items }),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：分类排序已暂存本地。');
+  if (user && token) {
+    // 2. 加入离线同步队列
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'category',
+      entity_id: 'batch_reorder',
+      action: 'reorder',
+      payload: { items },
     });
+
+    // 3. 异步尝试推送
+    apiFetch(`${API_BASE}/categories/reorder`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ items }),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：分类排序已暂存本地。');
+      });
+  }
 
   return true;
 }
 
 /**
- * 获取账本列表 (优先拉取服务端并同步至本地 Dexie，离线时读取本地)
+ * 获取账本列表 (优先拉取服务端并同步至本地 Dexie，离线或未登录时读取本地)
  */
 export async function getLedgers(withSummary = false): Promise<Ledger[]> {
-  try {
-    const url = `${API_BASE}/ledgers${withSummary ? '?withSummary=true' : ''}`;
-    const res = await apiFetch(url, {
-      headers: getAuthHeaders(),
-      signal: AbortSignal.timeout(2500),
-    });
-    if (res.ok) {
-      const json = (await res.json()) as ApiResponse<Ledger[] | LedgerSummary[]>;
-      if (json.success && json.data && Array.isArray(json.data) && json.data.length > 0) {
-        const rawLedgers: Ledger[] = withSummary
-          ? (json.data as LedgerSummary[]).map((s) => s.ledger)
-          : (json.data as Ledger[]);
+  const token = getStoredToken();
+  if (token) {
+    try {
+      const url = `${API_BASE}/ledgers${withSummary ? '?withSummary=true' : ''}`;
+      const res = await apiFetch(url, {
+        headers: getAuthHeaders(),
+        signal: AbortSignal.timeout(2500),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as ApiResponse<Ledger[] | LedgerSummary[]>;
+        if (json.success && json.data && Array.isArray(json.data) && json.data.length > 0) {
+          const rawLedgers: Ledger[] = withSummary
+            ? (json.data as LedgerSummary[]).map((s) => s.ledger)
+            : (json.data as Ledger[]);
 
-        // 检查待同步队列，保护本地所有待同步操作 (创建、修改、删除)
-        const pendingQueue = await localDb.syncQueue
-          .where('entity_type')
-          .equals('ledger')
-          .toArray();
-        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
+          // 检查待同步队列，保护本地所有待同步操作 (创建、修改、删除)
+          const pendingQueue = await localDb.syncQueue
+            .where('entity_type')
+            .equals('ledger')
+            .toArray();
+          const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
-        for (const l of rawLedgers) {
-          if (!pendingIds.has(l.ledger_id)) {
-            await localDb.ledgers.put(l);
+          for (const l of rawLedgers) {
+            if (!pendingIds.has(l.ledger_id)) {
+              await localDb.ledgers.put(l);
+            }
           }
+          return await localDb.ledgers.orderBy('is_default').reverse().toArray();
         }
-        return await localDb.ledgers.orderBy('is_default').reverse().toArray();
       }
+    } catch {
+      // 离线降级
     }
-  } catch {
-    // 离线降级
   }
   return await localDb.ledgers.orderBy('is_default').reverse().toArray();
 }
@@ -616,30 +637,33 @@ export async function createLedger(req: CreateLedgerRequest): Promise<Ledger> {
   // 1. 本地持久化
   await localDb.ledgers.put(newLedger);
 
-  // 2. 加入离线同步队列
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'ledger',
-    entity_id: ledgerId,
-    action: 'create',
-    payload: newLedger,
-  });
-
-  // 3. 异步尝试推送
-  apiFetch(`${API_BASE}/ledgers`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(newLedger),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：新账本已暂存本地。');
+  const token = getStoredToken();
+  if (user && token) {
+    // 2. 加入离线同步队列
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'ledger',
+      entity_id: ledgerId,
+      action: 'create',
+      payload: newLedger,
     });
+
+    // 3. 异步尝试推送
+    apiFetch(`${API_BASE}/ledgers`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(newLedger),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：新账本已暂存本地。');
+      });
+  }
 
   return newLedger;
 }
@@ -656,6 +680,7 @@ export async function updateLedger(
 
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
+  const token = getStoredToken();
   const now = new Date().toISOString();
   const isDefault = updates.is_default !== undefined ? (updates.is_default ? 1 : 0) : existing.is_default;
 
@@ -678,28 +703,30 @@ export async function updateLedger(
 
   await localDb.ledgers.put(updatedLedger);
 
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'ledger',
-    entity_id: ledgerId,
-    action: 'update',
-    payload: updates,
-  });
-
-  apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(updates),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：账本修改已暂存本地。');
+  if (user && token) {
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'ledger',
+      entity_id: ledgerId,
+      action: 'update',
+      payload: updates,
     });
+
+    apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updates),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：账本修改已暂存本地。');
+      });
+  }
 
   return updatedLedger;
 }
@@ -713,6 +740,7 @@ export async function setDefaultLedger(ledgerId: string): Promise<boolean> {
 
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
+  const token = getStoredToken();
   const now = new Date().toISOString();
 
   const all = await localDb.ledgers.toArray();
@@ -723,26 +751,28 @@ export async function setDefaultLedger(ledgerId: string): Promise<boolean> {
     });
   }
 
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'ledger',
-    entity_id: ledgerId,
-    action: 'set_default',
-  });
-
-  apiFetch(`${API_BASE}/ledgers/${ledgerId}/default`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：默认账本设置已记录。');
+  if (user && token) {
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'ledger',
+      entity_id: ledgerId,
+      action: 'set_default',
     });
+
+    apiFetch(`${API_BASE}/ledgers/${ledgerId}/default`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：默认账本设置已记录。');
+      });
+  }
 
   return true;
 }
@@ -761,6 +791,7 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
 
   const user = getStoredUser();
   const userId = user?.user_id || 'default_user';
+  const token = getStoredToken();
 
   // 若删除默认账本，先提升另一个账本为默认
   if (existing.is_default === 1) {
@@ -774,62 +805,70 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
   const relatedTxs = await localDb.transactions.where('ledger_id').equals(ledgerId).toArray();
   for (const tx of relatedTxs) {
     await localDb.transactions.delete(tx.transaction_id);
-    await enqueueSyncAction({
-      user_id: userId,
-      entity_type: 'transaction',
-      entity_id: tx.transaction_id,
-      action: 'delete',
-    });
+    if (user && token) {
+      await enqueueSyncAction({
+        user_id: userId,
+        entity_type: 'transaction',
+        entity_id: tx.transaction_id,
+        action: 'delete',
+      });
+    }
   }
 
   // 本地级联删除该账本下的所有预算
   const relatedBudgets = await localDb.budgets.where('ledger_id').equals(ledgerId).toArray();
   for (const b of relatedBudgets) {
     await localDb.budgets.delete(b.budget_id);
-    await enqueueSyncAction({
-      user_id: userId,
-      entity_type: 'budget',
-      entity_id: b.budget_id,
-      action: 'delete',
-    });
+    if (user && token) {
+      await enqueueSyncAction({
+        user_id: userId,
+        entity_type: 'budget',
+        entity_id: b.budget_id,
+        action: 'delete',
+      });
+    }
   }
 
   // 本地级联删除该账本下的所有周期记账规则
   const relatedRules = await localDb.recurring_rules.where('ledger_id').equals(ledgerId).toArray();
   for (const r of relatedRules) {
     await localDb.recurring_rules.delete(r.rule_id);
-    await enqueueSyncAction({
-      user_id: userId,
-      entity_type: 'recurring',
-      entity_id: r.rule_id,
-      action: 'delete',
-    });
+    if (user && token) {
+      await enqueueSyncAction({
+        user_id: userId,
+        entity_type: 'recurring',
+        entity_id: r.rule_id,
+        action: 'delete',
+      });
+    }
   }
 
   // 本地删除账本
   await localDb.ledgers.delete(ledgerId);
 
-  // 记录删除墓碑
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'ledger',
-    entity_id: ledgerId,
-    action: 'delete',
-  });
-
-  apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：账本及关联流水已在本地删除。');
+  if (user && token) {
+    // 记录删除墓碑
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'ledger',
+      entity_id: ledgerId,
+      action: 'delete',
     });
+
+    apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：账本及关联流水已在本地删除。');
+      });
+  }
 
   return { success: true };
 }
@@ -838,6 +877,8 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
  * 从服务器拉取最新账本并与本地合并 (带防复活墓碑过滤)
  */
 export async function pullAndMergeServerLedgers(): Promise<number> {
+  const token = getStoredToken();
+  if (!token) return 0;
   try {
     const res = await apiFetch(`${API_BASE}/ledgers`, {
       headers: getAuthHeaders(),
@@ -877,10 +918,12 @@ export async function createTransaction(
     updated_at?: string;
   }
 ): Promise<Transaction> {
+  const user = getStoredUser();
+  const token = getStoredToken();
   const now = new Date().toISOString();
   const fullTx: Transaction = {
     ...tx,
-    sync_status: tx.sync_status || 'pending',
+    sync_status: (user && token) ? (tx.sync_status || 'pending') : 'synced',
     created_at: tx.created_at || now,
     updated_at: tx.updated_at || now,
   };
@@ -889,25 +932,27 @@ export async function createTransaction(
   await localDb.transactions.put(fullTx);
 
   // 2. 异步尝试向 Cloudflare Workers D1 推送
-  apiFetch(`${API_BASE}/transactions`, {
-    method: 'POST',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(fullTx),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        // BUG-12 修复：竞态条件保护，仅当本地记录未被再次修改时才更新为 synced
-        const current = await localDb.transactions.get(fullTx.transaction_id);
-        if (current && current.updated_at === fullTx.updated_at) {
-          fullTx.sync_status = 'synced';
-          await localDb.transactions.update(fullTx.transaction_id, { sync_status: 'synced' });
-        }
-      }
+  if (user && token) {
+    apiFetch(`${API_BASE}/transactions`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(fullTx),
+      signal: AbortSignal.timeout(3000),
     })
-    .catch(() => {
-      console.log('离线模式：账单已安全保存在本地 IndexedDB，待恢复网络后自动同步。');
-    });
+      .then(async (res) => {
+        if (res.ok) {
+          // BUG-12 修复：竞态条件保护，仅当本地记录未被再次修改时才更新为 synced
+          const current = await localDb.transactions.get(fullTx.transaction_id);
+          if (current && current.updated_at === fullTx.updated_at) {
+            fullTx.sync_status = 'synced';
+            await localDb.transactions.update(fullTx.transaction_id, { sync_status: 'synced' });
+          }
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：账单已安全保存在本地 IndexedDB，待恢复网络后自动同步。');
+      });
+  }
 
   return fullTx;
 }
@@ -922,11 +967,13 @@ export async function updateTransaction(
   const existing = await localDb.transactions.get(transactionId);
   if (!existing) return null;
 
+  const user = getStoredUser();
+  const token = getStoredToken();
   const now = new Date().toISOString();
   const updatedTx: Transaction = {
     ...existing,
     ...updates,
-    sync_status: 'pending',
+    sync_status: (user && token) ? 'pending' : 'synced',
     updated_at: now,
   };
 
@@ -934,25 +981,27 @@ export async function updateTransaction(
   await localDb.transactions.put(updatedTx);
 
   // 2. 异步尝试推送
-  apiFetch(`${API_BASE}/transactions/${transactionId}`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify(updatedTx),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        // BUG-12 修复：竞态条件保护，仅当本地记录未被再次修改时才更新为 synced
-        const current = await localDb.transactions.get(transactionId);
-        if (current && current.updated_at === updatedTx.updated_at) {
-          updatedTx.sync_status = 'synced';
-          await localDb.transactions.update(transactionId, { sync_status: 'synced' });
-        }
-      }
+  if (user && token) {
+    apiFetch(`${API_BASE}/transactions/${transactionId}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(updatedTx),
+      signal: AbortSignal.timeout(3000),
     })
-    .catch(() => {
-      console.log('离线模式：修改已暂存本地，待恢复网络后同步。');
-    });
+      .then(async (res) => {
+        if (res.ok) {
+          // BUG-12 修复：竞态条件保护，仅当本地记录未被再次修改时才更新为 synced
+          const current = await localDb.transactions.get(transactionId);
+          if (current && current.updated_at === updatedTx.updated_at) {
+            updatedTx.sync_status = 'synced';
+            await localDb.transactions.update(transactionId, { sync_status: 'synced' });
+          }
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：修改已暂存本地，待恢复网络后同步。');
+      });
+  }
 
   return updatedTx;
 }
@@ -962,33 +1011,36 @@ export async function updateTransaction(
  */
 export async function deleteTransaction(transactionId: string): Promise<boolean> {
   const user = getStoredUser();
+  const token = getStoredToken();
   const userId = user?.user_id || 'default_user';
 
   // 1. 0ms 本地删除
   await localDb.transactions.delete(transactionId);
 
   // 2. 记录删除墓碑 (防止网络恢复时从服务端拉回复活)
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'transaction',
-    entity_id: transactionId,
-    action: 'delete',
-  });
-
-  // 3. 异步尝试向服务端发送删除请求
-  apiFetch(`${API_BASE}/transactions/${transactionId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok || res.status === 404) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：本地账单已删除并记录墓碑。');
+  if (user && token) {
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'transaction',
+      entity_id: transactionId,
+      action: 'delete',
     });
+
+    // 3. 异步尝试向服务端发送删除请求
+    apiFetch(`${API_BASE}/transactions/${transactionId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok || res.status === 404) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：本地账单已删除并记录墓碑。');
+      });
+  }
 
   return true;
 }
@@ -997,6 +1049,8 @@ export async function deleteTransaction(transactionId: string): Promise<boolean>
  * 从服务器拉取最新账单并与本地双向合并 (遵循 Last-Write-Wins 策略与防复活墓碑检查 BUG-C01)
  */
 export async function pullAndMergeServerTransactions(): Promise<number> {
+  const token = getStoredToken();
+  if (!token) return 0;
   try {
     const res = await apiFetch(`${API_BASE}/transactions?limit=500`, {
       headers: getAuthHeaders(),
@@ -1045,38 +1099,41 @@ export async function pullAndMergeServerTransactions(): Promise<number> {
 }
 
 /**
- * 获取预算配置列表 (优先拉取服务端并同步至本地 Dexie，离线时读取本地)
+ * 获取预算配置列表 (优先拉取服务端并同步至本地 Dexie，离线或未登录时读取本地)
  */
 export async function getBudgets(ledgerId?: string, period: BudgetPeriod = 'monthly'): Promise<Budget[]> {
-  try {
-    let url = `${API_BASE}/budgets?period=${period}`;
-    if (ledgerId && ledgerId !== 'all') {
-      url += `&ledgerId=${ledgerId}`;
-    }
-    const res = await apiFetch(url, {
-      headers: getAuthHeaders(),
-      signal: AbortSignal.timeout(2500),
-    });
-    if (res.ok) {
-      const json = (await res.json()) as ApiResponse<Budget[]>;
-      if (json.success && Array.isArray(json.data)) {
-        const serverBudgets = json.data;
-        // BUG-06 修复：保护本地所有待推送的预算变更 (包括单个修改/删除与批量配置)
-        const pendingQueue = await localDb.syncQueue
-          .where('entity_type')
-          .equals('budget')
-          .toArray();
-        const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
+  const token = getStoredToken();
+  if (token) {
+    try {
+      let url = `${API_BASE}/budgets?period=${period}`;
+      if (ledgerId && ledgerId !== 'all') {
+        url += `&ledgerId=${ledgerId}`;
+      }
+      const res = await apiFetch(url, {
+        headers: getAuthHeaders(),
+        signal: AbortSignal.timeout(2500),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as ApiResponse<Budget[]>;
+        if (json.success && Array.isArray(json.data)) {
+          const serverBudgets = json.data;
+          // BUG-06 修复：保护本地所有待推送的预算变更 (包括单个修改/删除与批量配置)
+          const pendingQueue = await localDb.syncQueue
+            .where('entity_type')
+            .equals('budget')
+            .toArray();
+          const pendingIds = new Set(pendingQueue.map((d) => d.entity_id));
 
-        for (const b of serverBudgets) {
-          if (!pendingIds.has(b.budget_id) && !pendingIds.has(`${b.ledger_id}_${b.period}`)) {
-            await localDb.budgets.put(b);
+          for (const b of serverBudgets) {
+            if (!pendingIds.has(b.budget_id) && !pendingIds.has(`${b.ledger_id}_${b.period}`)) {
+              await localDb.budgets.put(b);
+            }
           }
         }
       }
+    } catch {
+      // 离线降级
     }
-  } catch {
-    // 离线降级
   }
 
   // 从本地 Dexie 读取
@@ -1097,6 +1154,7 @@ export async function saveBatchBudgets(
   budgets: SetBudgetItem[]
 ): Promise<Budget[]> {
   const user = getStoredUser();
+  const token = getStoredToken();
   const userId = user?.user_id || 'default_user';
   const now = new Date().toISOString();
 
@@ -1129,38 +1187,40 @@ export async function saveBatchBudgets(
     localList.push(newBudget);
   }
 
-  // 3. 加入离线同步队列
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'budget',
-    entity_id: `${ledgerId}_${period}`,
-    action: 'batch_set',
-    payload: {
-      ledger_id: ledgerId,
-      period,
-      budgets,
-    } as BatchSetBudgetRequest,
-  });
-
-  // 4. 异步尝试向服务端同步
-  apiFetch(`${API_BASE}/budgets/batch`, {
-    method: 'PUT',
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      ledger_id: ledgerId,
-      period,
-      budgets,
-    } as BatchSetBudgetRequest),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：预算配置已保存在本地 IndexedDB。');
+  if (user && token) {
+    // 3. 加入离线同步队列
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'budget',
+      entity_id: `${ledgerId}_${period}`,
+      action: 'batch_set',
+      payload: {
+        ledger_id: ledgerId,
+        period,
+        budgets,
+      } as BatchSetBudgetRequest,
     });
+
+    // 4. 异步尝试向服务端同步
+    apiFetch(`${API_BASE}/budgets/batch`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        ledger_id: ledgerId,
+        period,
+        budgets,
+      } as BatchSetBudgetRequest),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：预算配置已保存在本地 IndexedDB。');
+      });
+  }
 
   return localList;
 }
@@ -1170,30 +1230,33 @@ export async function saveBatchBudgets(
  */
 export async function deleteBudget(budgetId: string): Promise<boolean> {
   const user = getStoredUser();
+  const token = getStoredToken();
   const userId = user?.user_id || 'default_user';
 
   await localDb.budgets.delete(budgetId);
 
-  const queueItem = await enqueueSyncAction({
-    user_id: userId,
-    entity_type: 'budget',
-    entity_id: budgetId,
-    action: 'delete',
-  });
-
-  apiFetch(`${API_BASE}/budgets/${budgetId}`, {
-    method: 'DELETE',
-    headers: getAuthHeaders(),
-    signal: AbortSignal.timeout(3000),
-  })
-    .then(async (res) => {
-      if (res.ok) {
-        await removeSyncQueueItem(queueItem.id);
-      }
-    })
-    .catch(() => {
-      console.log('离线模式：本地预算已删除。');
+  if (user && token) {
+    const queueItem = await enqueueSyncAction({
+      user_id: userId,
+      entity_type: 'budget',
+      entity_id: budgetId,
+      action: 'delete',
     });
+
+    apiFetch(`${API_BASE}/budgets/${budgetId}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders(),
+      signal: AbortSignal.timeout(3000),
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          await removeSyncQueueItem(queueItem.id);
+        }
+      })
+      .catch(() => {
+        console.log('离线模式：本地预算已删除。');
+      });
+  }
 
   return true;
 }
@@ -1202,6 +1265,8 @@ export async function deleteBudget(budgetId: string): Promise<boolean> {
  * 从服务器拉取最新预算数据并与本地合并 (带防复活墓碑检查)
  */
 export async function pullAndMergeServerBudgets(): Promise<number> {
+  const token = getStoredToken();
+  if (!token) return 0;
   try {
     const res = await apiFetch(`${API_BASE}/budgets`, {
       headers: getAuthHeaders(),
@@ -1397,8 +1462,9 @@ export async function createRecurringRule(
   // 1. 本地持久化
   await localDb.recurring_rules.put(newRule);
 
+  const token = getStoredToken();
   // 2. 加入离线同步队列
-  if (user) {
+  if (user && token) {
     const queueItem = await enqueueSyncAction({
       user_id: userId,
       entity_type: 'recurring',
@@ -1452,7 +1518,8 @@ export async function updateRecurringRule(
   await localDb.recurring_rules.put(updated);
 
   const user = getStoredUser();
-  if (user) {
+  const token = getStoredToken();
+  if (user && token) {
     const queueItem = await enqueueSyncAction({
       user_id: user.user_id,
       entity_type: 'recurring',
@@ -1485,7 +1552,8 @@ export async function deleteRecurringRule(ruleId: string): Promise<void> {
   await localDb.recurring_rules.delete(ruleId);
 
   const user = getStoredUser();
-  if (user) {
+  const token = getStoredToken();
+  if (user && token) {
     const queueItem = await enqueueSyncAction({
       user_id: user.user_id,
       entity_type: 'recurring',
@@ -1511,6 +1579,8 @@ export async function deleteRecurringRule(ruleId: string): Promise<void> {
  * 云端拉取周期规则并与本地合并
  */
 export async function pullAndMergeServerRecurringRules(userId: string): Promise<RecurringRule[]> {
+  const token = getStoredToken();
+  if (!token) return await getRecurringRules();
   try {
     const res = await apiFetch(`${API_BASE}/recurring`, {
       headers: getAuthHeaders(),
@@ -1551,6 +1621,13 @@ export async function pullAndMergeServerRecurringRules(userId: string): Promise<
 export async function executeDueRecurringRules(
   asOfDate?: string
 ): Promise<ApiResponse<ExecuteDueRecurringResult>> {
+  const token = getStoredToken();
+  if (!token) {
+    return {
+      success: false,
+      error: '离线或未登录模式下在本地执行周期规则',
+    };
+  }
   try {
     const res = await apiFetch(`${API_BASE}/recurring/execute-due`, {
       method: 'POST',
