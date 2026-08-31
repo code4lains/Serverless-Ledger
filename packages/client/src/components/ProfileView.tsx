@@ -32,12 +32,23 @@ import {
   KeyRound,
   Trash2,
   Repeat,
+  Server,
+  Globe,
+  Settings,
+  RotateCcw,
 } from 'lucide-react';
 import { AuthUser, Ledger, Transaction, InviteEligibilityInfo } from '@ledger/shared';
 import { networkMonitor, NetworkInfo } from '../api/network';
 import { syncManager, SyncStats } from '../api/syncManager';
 import { getLocalStorageStats } from '../db';
-import { getInviteCodes, claimInviteCode } from '../api/client';
+import {
+  getInviteCodes,
+  claimInviteCode,
+  getCustomApiUrl,
+  setCustomApiUrl,
+  testApiConnection,
+  getDisplayApiHost,
+} from '../api/client';
 
 interface ProfileViewProps {
   currentUser: AuthUser | null;
@@ -97,6 +108,12 @@ export function ProfileView({
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState('');
 
+  // 后端 API 服务器设置状态
+  const [customServerUrl, setCustomServerUrl] = useState<string>(() => getCustomApiUrl());
+  const [testingApi, setTestingApi] = useState(false);
+  const [apiTestResult, setApiTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [apiSuccessMsg, setApiSuccessMsg] = useState('');
+
   useEffect(() => {
     const unsubNet = networkMonitor.subscribe((info) => setNetworkInfo(info));
     const unsubSync = syncManager.subscribe((stats) => setSyncStats(stats));
@@ -152,6 +169,48 @@ export function ProfileView({
     setTimeout(() => {
       setCopiedCode((curr) => (curr === code ? null : curr));
     }, 2000);
+  };
+
+  const handleTestApi = async () => {
+    setTestingApi(true);
+    setApiTestResult(null);
+    try {
+      const res = await testApiConnection(customServerUrl.trim() || undefined);
+      if (res.success) {
+        setApiTestResult({
+          success: true,
+          message: `连接正常！响应延迟: ${res.latencyMs}ms`,
+        });
+      } else {
+        setApiTestResult({
+          success: false,
+          message: res.error || '无法连接该服务器',
+        });
+      }
+    } catch (err: any) {
+      setApiTestResult({
+        success: false,
+        message: err.message || '网络超时或地址不可达',
+      });
+    } finally {
+      setTestingApi(false);
+    }
+  };
+
+  const handleSaveApi = () => {
+    setCustomApiUrl(customServerUrl.trim());
+    setApiSuccessMsg('API 服务地址已保存生效');
+    setTimeout(() => setApiSuccessMsg(''), 3000);
+    networkMonitor.checkHealth();
+  };
+
+  const handleResetApi = () => {
+    setCustomApiUrl('');
+    setCustomServerUrl('');
+    setApiTestResult(null);
+    setApiSuccessMsg('已恢复默认服务器配置');
+    setTimeout(() => setApiSuccessMsg(''), 3000);
+    networkMonitor.checkHealth();
   };
 
   const formattedDate = currentUser?.created_at
@@ -469,6 +528,98 @@ export function ProfileView({
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span>{isSyncing ? '正在双向静默同步...' : '立即同步数据至云端'}</span>
           </button>
+        </div>
+
+        {/* 3.8 后端 API 服务器地址配置卡片 */}
+        <div className="p-5 rounded-3xl bg-white dark:bg-neutral-800 shadow-2xs border border-gray-100 dark:border-neutral-700/80 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs">
+                <Server className="w-3.5 h-3.5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs text-gray-800 dark:text-gray-200">API 服务器配置</h4>
+                <p className="text-[10px] text-gray-400">Cloudflare Workers 后端服务域名</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono text-gray-400 max-w-[130px] truncate" title={getDisplayApiHost()}>
+              {getDisplayApiHost()}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-1 text-xs">
+            <div className="relative">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
+                <Globe className="w-3.5 h-3.5" />
+              </span>
+              <input
+                type="url"
+                placeholder="https://your-api.workers.dev"
+                value={customServerUrl}
+                onChange={(e) => {
+                  setCustomServerUrl(e.target.value);
+                  setApiTestResult(null);
+                }}
+                className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 focus:border-indigo-500 focus:outline-none font-mono"
+              />
+            </div>
+
+            {apiTestResult && (
+              <div
+                className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                  apiTestResult.success
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
+                    : 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/40'
+                }`}
+              >
+                {apiTestResult.success ? <CheckCircle2 className="w-4 h-4 shrink-0" /> : <AlertTriangle className="w-4 h-4 shrink-0" />}
+                <span className="leading-tight">{apiTestResult.message}</span>
+              </div>
+            )}
+
+            {apiSuccessMsg && (
+              <div className="p-2.5 rounded-xl text-xs bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-2">
+                <Check className="w-4 h-4 shrink-0" />
+                <span>{apiSuccessMsg}</span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                disabled={testingApi}
+                onClick={handleTestApi}
+                className="flex-1 py-2 px-3 rounded-xl bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-neutral-600 font-semibold text-xs text-gray-700 dark:text-gray-200 flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {testingApi ? (
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Wifi className="w-3.5 h-3.5 text-indigo-500" />
+                )}
+                <span>测试连接</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveApi}
+                className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs shadow-indigo-500/20"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>保存生效</span>
+              </button>
+
+              {getCustomApiUrl() && (
+                <button
+                  type="button"
+                  onClick={handleResetApi}
+                  title="恢复默认后端地址"
+                  className="py-2 px-2.5 rounded-xl bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-neutral-600 text-gray-600 dark:text-gray-300 text-xs transition-colors cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* 4. 系统首选项与暗黑模式 */}

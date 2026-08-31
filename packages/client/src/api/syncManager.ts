@@ -32,9 +32,10 @@ import {
   pullAndMergeServerRecurringRules,
   getCategories,
   apiFetch,
+  apiUrl,
+  safeParseApiResponse,
 } from './client';
 
-const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
 const LAST_SYNC_KEY = 'serverless_ledger_last_synced';
 
 export interface SyncStats {
@@ -197,7 +198,7 @@ class SyncManager {
         for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
           const chunk = pendingTxs.slice(chunkIdx * CHUNK_SIZE, (chunkIdx + 1) * CHUNK_SIZE);
           try {
-            const res = await apiFetch(`${API_BASE}/transactions/sync`, {
+            const res = await apiFetch(apiUrl('/transactions/sync'), {
               method: 'POST',
               headers: this.getAuthHeaders(),
               body: JSON.stringify({ transactions: chunk }),
@@ -205,7 +206,7 @@ class SyncManager {
             });
 
             if (res.ok) {
-              const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
+              const json = await safeParseApiResponse<SyncBatchResponse>(res);
               if (json.success && json.data) {
                 const syncedIds = new Set(json.data.synced_ids);
                 await localDb.transaction('rw', localDb.transactions, async () => {
@@ -271,7 +272,7 @@ class SyncManager {
       switch (item.entity_type) {
         case 'transaction': {
           if (item.action === 'delete') {
-            const res = await apiFetch(`${API_BASE}/transactions/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/transactions/${item.entity_id}`), {
               method: 'DELETE',
               headers,
               signal,
@@ -283,7 +284,7 @@ class SyncManager {
 
         case 'category': {
           if (item.action === 'create') {
-            const res = await apiFetch(`${API_BASE}/categories`, {
+            const res = await apiFetch(apiUrl('/categories'), {
               method: 'POST',
               headers,
               body: JSON.stringify(item.payload),
@@ -291,7 +292,7 @@ class SyncManager {
             });
             return res.ok || res.status === 409;
           } else if (item.action === 'update') {
-            const res = await apiFetch(`${API_BASE}/categories/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/categories/${item.entity_id}`), {
               method: 'PUT',
               headers,
               body: JSON.stringify(item.payload),
@@ -299,14 +300,14 @@ class SyncManager {
             });
             return res.ok;
           } else if (item.action === 'delete') {
-            const res = await apiFetch(`${API_BASE}/categories/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/categories/${item.entity_id}`), {
               method: 'DELETE',
               headers,
               signal,
             });
             return res.ok || res.status === 404;
           } else if (item.action === 'reorder') {
-            const res = await apiFetch(`${API_BASE}/categories/reorder`, {
+            const res = await apiFetch(apiUrl('/categories/reorder'), {
               method: 'PUT',
               headers,
               body: JSON.stringify(item.payload),
@@ -319,7 +320,7 @@ class SyncManager {
 
         case 'ledger': {
           if (item.action === 'create') {
-            const res = await apiFetch(`${API_BASE}/ledgers`, {
+            const res = await apiFetch(apiUrl('/ledgers'), {
               method: 'POST',
               headers,
               body: JSON.stringify(item.payload),
@@ -327,7 +328,7 @@ class SyncManager {
             });
             return res.ok || res.status === 409;
           } else if (item.action === 'update') {
-            const res = await apiFetch(`${API_BASE}/ledgers/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/ledgers/${item.entity_id}`), {
               method: 'PUT',
               headers,
               body: JSON.stringify(item.payload),
@@ -335,14 +336,14 @@ class SyncManager {
             });
             return res.ok;
           } else if (item.action === 'set_default') {
-            const res = await apiFetch(`${API_BASE}/ledgers/${item.entity_id}/default`, {
+            const res = await apiFetch(apiUrl(`/ledgers/${item.entity_id}/default`), {
               method: 'PUT',
               headers,
               signal,
             });
             return res.ok;
           } else if (item.action === 'delete') {
-            const res = await apiFetch(`${API_BASE}/ledgers/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/ledgers/${item.entity_id}`), {
               method: 'DELETE',
               headers,
               signal,
@@ -354,7 +355,7 @@ class SyncManager {
 
         case 'budget': {
           if (item.action === 'create') {
-            const res = await apiFetch(`${API_BASE}/budgets`, {
+            const res = await apiFetch(apiUrl('/budgets'), {
               method: 'POST',
               headers,
               body: JSON.stringify(item.payload),
@@ -362,7 +363,7 @@ class SyncManager {
             });
             return res.ok;
           } else if (item.action === 'batch_set') {
-            const res = await apiFetch(`${API_BASE}/budgets/batch`, {
+            const res = await apiFetch(apiUrl('/budgets/batch'), {
               method: 'PUT',
               headers,
               body: JSON.stringify(item.payload),
@@ -370,7 +371,7 @@ class SyncManager {
             });
             return res.ok;
           } else if (item.action === 'delete') {
-            const res = await apiFetch(`${API_BASE}/budgets/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/budgets/${item.entity_id}`), {
               method: 'DELETE',
               headers,
               signal,
@@ -382,7 +383,7 @@ class SyncManager {
 
         case 'recurring': {
           if (item.action === 'create') {
-            const res = await apiFetch(`${API_BASE}/recurring`, {
+            const res = await apiFetch(apiUrl('/recurring'), {
               method: 'POST',
               headers,
               body: JSON.stringify(item.payload),
@@ -390,7 +391,7 @@ class SyncManager {
             });
             return res.ok || res.status === 409;
           } else if (item.action === 'update') {
-            const res = await apiFetch(`${API_BASE}/recurring/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/recurring/${item.entity_id}`), {
               method: 'PUT',
               headers,
               body: JSON.stringify(item.payload),
@@ -398,7 +399,7 @@ class SyncManager {
             });
             return res.ok;
           } else if (item.action === 'delete') {
-            const res = await apiFetch(`${API_BASE}/recurring/${item.entity_id}`, {
+            const res = await apiFetch(apiUrl(`/recurring/${item.entity_id}`), {
               method: 'DELETE',
               headers,
               signal,

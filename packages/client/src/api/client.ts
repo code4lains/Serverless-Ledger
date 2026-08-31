@@ -35,9 +35,213 @@ import {
 import { localDb, enqueueSyncAction, removeSyncQueueItem } from '../db';
 import { networkMonitor } from './network';
 
-const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
 const TOKEN_KEY = 'serverless_ledger_jwt';
 const USER_KEY = 'serverless_ledger_user';
+const API_URL_STORAGE_KEY = 'serverless_ledger_api_url';
+
+/**
+ * 获取用户手动配置的自定义 API 地址 (若无则返回空字符串)
+ */
+export function getCustomApiUrl(): string {
+  if (typeof localStorage === 'undefined') return '';
+  return (localStorage.getItem(API_URL_STORAGE_KEY) || '').trim();
+}
+
+/**
+ * 设置或清除用户自定义 API 地址
+ */
+export function setCustomApiUrl(url: string) {
+  if (typeof localStorage === 'undefined') return;
+  const trimmed = url.trim().replace(/\/+$/, '');
+  if (!trimmed) {
+    localStorage.removeItem(API_URL_STORAGE_KEY);
+  } else {
+    localStorage.setItem(API_URL_STORAGE_KEY, trimmed);
+  }
+  // 触发自定义事件通知网络监控与同步引擎刷新
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('api:endpoint_changed', { detail: { url: trimmed } }));
+  }
+}
+
+/**
+ * 获取当前全局生效的 API Base URL (末尾不带斜杠，如 "https://domain.com/api" 或 "/api")
+ */
+export function getApiBase(): string {
+  const custom = getCustomApiUrl();
+  if (custom) {
+    const cleanCustom = custom.replace(/\/+$/, '');
+    return cleanCustom.endsWith('/api') ? cleanCustom : `${cleanCustom}/api`;
+  }
+  const envUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : '';
+  if (envUrl) {
+    return envUrl.endsWith('/api') ? envUrl : `${envUrl}/api`;
+  }
+  return '/api';
+}
+
+/**
+ * 构造标准 API 端点完整 URL
+ */
+export function apiUrl(path: string): string {
+  const base = getApiBase();
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${cleanPath}`;
+}
+
+/**
+ * 获取当前使用的 API 主机展示名称
+ */
+export function getDisplayApiHost(): string {
+  const base = getApiBase();
+  if (base.startsWith('http://') || base.startsWith('https://')) {
+    try {
+      const u = new URL(base);
+      return `${u.protocol}//${u.host}`;
+    } catch {
+      return base;
+    }
+  }
+  return '同源相对路径 (/api)';
+}
+
+/**
+ * 安全解析服务端响应，杜绝 HTML 404 / 502 / SPA fallback 导致 JSON.parse 崩溃
+ */
+export async function safeParseApiResponse<T = any>(res: Response): Promise<ApiResponse<T>> {
+  const contentType = (res.headers.get('content-type') || '').toLowerCase();
+  let text = '';
+  try {
+    text = await res.text();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: `无法读取服务端响应: ${err?.message || '网络连接中断'}`,
+    };
+  }
+
+  const trimmed = text.trim();
+
+  // 空响应体处理
+  if (!trimmed) {
+    if (!res.ok) {
+      return {
+        success: false,
+        error: `服务器响应异常 (HTTP ${res.status} ${res.statusText || ''})`.trim(),
+      };
+    }
+    return { success: true } as ApiResponse<T>;
+  }
+
+  // 关键防御：如果返回内容以 '<' 开头，或者 Content-Type 包含 text/html / xml
+  if (trimmed.startsWith('<') || contentType.includes('text/html') || contentType.includes('text/xml')) {
+    if (res.status === 404) {
+      return {
+        success: false,
+        error: `API 接口未找到 (HTTP 404)。请确认后端服务已部署且 API 服务器地址配置正确。`,
+      };
+    } else if (res.status === 502 || res.status === 503 || res.status === 504) {
+      return {
+        success: false,
+        error: `后端网关或边缘服务异常 (HTTP ${res.status})，请稍后重试或检查 Cloudflare Workers / D1 状态。`,
+      };
+    } else if (res.status === 401 || res.status === 403) {
+      return {
+        success: false,
+        error: `未授权访问或登录凭证已失效 (HTTP ${res.status})。`,
+      };
+    } else if (res.ok) {
+      // HTTP 200 返回了 HTML，典型为 SPA 单页路由 fallback (index.html) 或未配置独立后端地址
+      return {
+        success: false,
+        error: `API 服务端地址未正确配置 (服务端返回了 HTML 页面而非 API 数据)。如果您使用的是手机 App 或独立部署，请点击下方设置后端服务器地址。`,
+      };
+    } else {
+      return {
+        success: false,
+        error: `服务端返回了非 JSON 格式的网页内容 (HTTP ${res.status})，请检查后端 API 服务地址。`,
+      };
+    }
+  }
+
+  try {
+    const json = JSON.parse(text) as ApiResponse<T>;
+    if (!res.ok && json && typeof json === 'object' && !json.error) {
+      json.error = `请求失败 (HTTP ${res.status})`;
+      json.success = false;
+    }
+    return json;
+  } catch (parseErr: any) {
+    return {
+      success: false,
+      error: `服务端数据解析异常: ${text.slice(0, 120)}`,
+    };
+  }
+}
+
+/**
+ * 测试指定或当前 API 服务端地址的连通性与往返延迟
+ */
+export async function testApiConnection(customUrl?: string): Promise<{
+  success: boolean;
+  latencyMs?: number;
+  message: string;
+  error?: string;
+  data?: any;
+}> {
+  let targetBase: string;
+  if (customUrl !== undefined) {
+    const clean = customUrl.trim().replace(/\/+$/, '');
+    if (!clean) {
+      targetBase = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/+$/, '') : '') + '/api';
+      if (!targetBase.startsWith('http')) targetBase = '/api';
+    } else {
+      targetBase = clean.endsWith('/api') ? clean : `${clean}/api`;
+    }
+  } else {
+    targetBase = getApiBase();
+  }
+
+  const startTime = performance.now();
+  try {
+    const res = await fetch(`${targetBase}/health`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+      cache: 'no-store',
+    });
+
+    const latency = Math.round(performance.now() - startTime);
+    const parsed = await safeParseApiResponse<any>(res);
+
+    if (res.ok && parsed.success) {
+      return {
+        success: true,
+        latencyMs: latency,
+        message: `连接成功 (延迟 ${latency}ms)`,
+        data: parsed.data,
+      };
+    } else {
+      const errMsg = parsed.error || `服务端响应异常 (HTTP ${res.status})`;
+      return {
+        success: false,
+        latencyMs: latency,
+        message: errMsg,
+        error: errMsg,
+      };
+    }
+  } catch (err: any) {
+    const latency = Math.round(performance.now() - startTime);
+    const isTimeout = err?.name === 'TimeoutError' || err?.message?.includes('timeout');
+    const errMsg = isTimeout ? '连接超时 (5000ms)，请检查网络或后端地址' : (err?.message || '无法连接到服务器');
+    return {
+      success: false,
+      latencyMs: latency,
+      message: errMsg,
+      error: errMsg,
+    };
+  }
+}
 
 /**
  * 本地持久化 Token 与 用户信息管理
@@ -106,13 +310,13 @@ export function getAuthHeaders(customHeaders: Record<string, string> = {}): Head
  */
 export async function registerUser(req: RegisterRequest): Promise<ApiResponse<AuthResponse>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/register`, {
+    const res = await apiFetch(apiUrl('/auth/register'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
       signal: AbortSignal.timeout(6000),
     });
-    const json = (await res.json()) as ApiResponse<AuthResponse>;
+    const json = await safeParseApiResponse<AuthResponse>(res);
     if (res.ok && json.success && json.data) {
       saveSession(json.data);
     }
@@ -130,13 +334,13 @@ export async function registerUser(req: RegisterRequest): Promise<ApiResponse<Au
  */
 export async function loginUser(req: LoginRequest): Promise<ApiResponse<AuthResponse>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/login`, {
+    const res = await apiFetch(apiUrl('/auth/login'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
       signal: AbortSignal.timeout(6000),
     });
-    const json = (await res.json()) as ApiResponse<AuthResponse>;
+    const json = await safeParseApiResponse<AuthResponse>(res);
     if (res.ok && json.success && json.data) {
       saveSession(json.data);
     }
@@ -159,11 +363,11 @@ export async function fetchCurrentUser(): Promise<ApiResponse<AuthUser>> {
   }
 
   try {
-    const res = await apiFetch(`${API_BASE}/auth/me`, {
+    const res = await apiFetch(apiUrl('/auth/me'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(4000),
     });
-    const json = (await res.json()) as ApiResponse<AuthUser>;
+    const json = await safeParseApiResponse<AuthUser>(res);
     if (!res.ok || !json.success) {
       clearSession();
     } else if (json.data) {
@@ -180,11 +384,17 @@ export async function fetchCurrentUser(): Promise<ApiResponse<AuthUser>> {
  */
 export async function getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/config`, {
+    const res = await apiFetch(apiUrl('/auth/config'), {
       signal: AbortSignal.timeout(3000),
     });
-    const json = (await res.json()) as ApiResponse<AuthConfig>;
-    return json;
+    const json = await safeParseApiResponse<AuthConfig>(res);
+    if (json.success && json.data) {
+      return json;
+    }
+    return {
+      success: true,
+      data: { reg_mode: 1 }, // 默认降级为 1 (邀请模式)
+    };
   } catch (err: any) {
     return {
       success: true,
@@ -198,12 +408,11 @@ export async function getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
  */
 export async function getInviteCodes(): Promise<ApiResponse<InviteEligibilityInfo>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/invite-codes`, {
+    const res = await apiFetch(apiUrl('/auth/invite-codes'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(4000),
     });
-    const json = (await res.json()) as ApiResponse<InviteEligibilityInfo>;
-    return json;
+    return await safeParseApiResponse<InviteEligibilityInfo>(res);
   } catch (err: any) {
     return {
       success: false,
@@ -217,13 +426,12 @@ export async function getInviteCodes(): Promise<ApiResponse<InviteEligibilityInf
  */
 export async function claimInviteCode(): Promise<ApiResponse<InviteCode>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/invite-codes`, {
+    const res = await apiFetch(apiUrl('/auth/invite-codes'), {
       method: 'POST',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(4000),
     });
-    const json = (await res.json()) as ApiResponse<InviteCode>;
-    return json;
+    return await safeParseApiResponse<InviteCode>(res);
   } catch (err: any) {
     return {
       success: false,
@@ -237,14 +445,13 @@ export async function claimInviteCode(): Promise<ApiResponse<InviteCode>> {
  */
 export async function resetPassword(req: ResetPasswordRequest): Promise<ApiResponse<void>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/reset-password`, {
+    const res = await apiFetch(apiUrl('/auth/reset-password'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
       signal: AbortSignal.timeout(6000),
     });
-    const json = (await res.json()) as ApiResponse<void>;
-    return json;
+    return await safeParseApiResponse<void>(res);
   } catch (err: any) {
     return {
       success: false,
@@ -258,12 +465,12 @@ export async function resetPassword(req: ResetPasswordRequest): Promise<ApiRespo
  */
 export async function deleteAccount(): Promise<ApiResponse<void>> {
   try {
-    const res = await apiFetch(`${API_BASE}/auth/account`, {
+    const res = await apiFetch(apiUrl('/auth/account'), {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(8000),
     });
-    const json = (await res.json()) as ApiResponse<void>;
+    const json = await safeParseApiResponse<void>(res);
     if (res.ok && json.success) {
       clearSession();
     }
@@ -288,12 +495,12 @@ export async function checkServerHealth() {
  */
 export async function getCategories(): Promise<Category[]> {
   try {
-    const res = await apiFetch(`${API_BASE}/categories`, {
+    const res = await apiFetch(apiUrl('/categories'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
     if (res.ok) {
-      const json = (await res.json()) as ApiResponse<Category[]>;
+      const json = await safeParseApiResponse<Category[]>(res);
       if (json.success && json.data && json.data.length > 0) {
         // 检查本地待同步队列，保护所有未同步的本地操作 (创建、修改、删除)
         const pendingQueue = await localDb.syncQueue
@@ -366,7 +573,7 @@ export async function createCategory(req: CreateCategoryRequest): Promise<Catego
     });
 
     // 3. 异步尝试向服务端推送
-    apiFetch(`${API_BASE}/categories`, {
+    apiFetch(apiUrl('/categories'), {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(newCat),
@@ -423,7 +630,7 @@ export async function updateCategory(
     });
 
     // 3. 异步尝试推送
-    apiFetch(`${API_BASE}/categories/${categoryId}`, {
+    apiFetch(apiUrl(`/categories/${categoryId}`), {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -490,14 +697,14 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
   if (user && token) {
     // 2. 异步尝试向服务端推送删除子分类与大分类
     for (const child of childrenToDelete) {
-      apiFetch(`${API_BASE}/categories/${child.category_id}`, {
+      apiFetch(apiUrl(`/categories/${child.category_id}`), {
         method: 'DELETE',
         headers: getAuthHeaders(),
         signal: AbortSignal.timeout(3000),
       }).catch(() => {});
     }
 
-    apiFetch(`${API_BASE}/categories/${categoryId}`, {
+    apiFetch(apiUrl(`/categories/${categoryId}`), {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -542,7 +749,7 @@ export async function reorderCategories(items: ReorderCategoryItem[]): Promise<b
     });
 
     // 3. 异步尝试推送
-    apiFetch(`${API_BASE}/categories/reorder`, {
+    apiFetch(apiUrl('/categories/reorder'), {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({ items }),
@@ -568,13 +775,13 @@ export async function getLedgers(withSummary = false): Promise<Ledger[]> {
   const token = getStoredToken();
   if (token) {
     try {
-      const url = `${API_BASE}/ledgers${withSummary ? '?withSummary=true' : ''}`;
+      const url = apiUrl(`/ledgers${withSummary ? '?withSummary=true' : ''}`);
       const res = await apiFetch(url, {
         headers: getAuthHeaders(),
         signal: AbortSignal.timeout(2500),
       });
       if (res.ok) {
-        const json = (await res.json()) as ApiResponse<Ledger[] | LedgerSummary[]>;
+        const json = await safeParseApiResponse<Ledger[] | LedgerSummary[]>(res);
         if (json.success && json.data && Array.isArray(json.data) && json.data.length > 0) {
           const rawLedgers: Ledger[] = withSummary
             ? (json.data as LedgerSummary[]).map((s) => s.ledger)
@@ -649,7 +856,7 @@ export async function createLedger(req: CreateLedgerRequest): Promise<Ledger> {
     });
 
     // 3. 异步尝试推送
-    apiFetch(`${API_BASE}/ledgers`, {
+    apiFetch(apiUrl('/ledgers'), {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(newLedger),
@@ -712,7 +919,7 @@ export async function updateLedger(
       payload: updates,
     });
 
-    apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
+    apiFetch(apiUrl(`/ledgers/${ledgerId}`), {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -759,7 +966,7 @@ export async function setDefaultLedger(ledgerId: string): Promise<boolean> {
       action: 'set_default',
     });
 
-    apiFetch(`${API_BASE}/ledgers/${ledgerId}/default`, {
+    apiFetch(apiUrl(`/ledgers/${ledgerId}/default`), {
       method: 'PUT',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -855,7 +1062,7 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
       action: 'delete',
     });
 
-    apiFetch(`${API_BASE}/ledgers/${ledgerId}`, {
+    apiFetch(apiUrl(`/ledgers/${ledgerId}`), {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -880,12 +1087,12 @@ export async function pullAndMergeServerLedgers(): Promise<number> {
   const token = getStoredToken();
   if (!token) return 0;
   try {
-    const res = await apiFetch(`${API_BASE}/ledgers`, {
+    const res = await apiFetch(apiUrl('/ledgers'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
     if (res.ok) {
-      const json = (await res.json()) as ApiResponse<Ledger[]>;
+      const json = await safeParseApiResponse<Ledger[]>(res);
       if (json.success && Array.isArray(json.data)) {
         const serverLedgers = json.data;
         const pendingQueue = await localDb.syncQueue
@@ -933,7 +1140,7 @@ export async function createTransaction(
 
   // 2. 异步尝试向 Cloudflare Workers D1 推送
   if (user && token) {
-    apiFetch(`${API_BASE}/transactions`, {
+    apiFetch(apiUrl('/transactions'), {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(fullTx),
@@ -982,7 +1189,7 @@ export async function updateTransaction(
 
   // 2. 异步尝试推送
   if (user && token) {
-    apiFetch(`${API_BASE}/transactions/${transactionId}`, {
+    apiFetch(apiUrl(`/transactions/${transactionId}`), {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(updatedTx),
@@ -1027,7 +1234,7 @@ export async function deleteTransaction(transactionId: string): Promise<boolean>
     });
 
     // 3. 异步尝试向服务端发送删除请求
-    apiFetch(`${API_BASE}/transactions/${transactionId}`, {
+    apiFetch(apiUrl(`/transactions/${transactionId}`), {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -1052,13 +1259,13 @@ export async function pullAndMergeServerTransactions(): Promise<number> {
   const token = getStoredToken();
   if (!token) return 0;
   try {
-    const res = await apiFetch(`${API_BASE}/transactions?limit=500`, {
+    const res = await apiFetch(apiUrl('/transactions?limit=500'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3500),
     });
 
     if (res.ok) {
-      const json = (await res.json()) as ApiResponse<Transaction[]>;
+      const json = await safeParseApiResponse<Transaction[]>(res);
       if (json.success && Array.isArray(json.data)) {
         const serverList = json.data;
 
@@ -1105,16 +1312,16 @@ export async function getBudgets(ledgerId?: string, period: BudgetPeriod = 'mont
   const token = getStoredToken();
   if (token) {
     try {
-      let url = `${API_BASE}/budgets?period=${period}`;
+      let path = `/budgets?period=${period}`;
       if (ledgerId && ledgerId !== 'all') {
-        url += `&ledgerId=${ledgerId}`;
+        path += `&ledgerId=${ledgerId}`;
       }
-      const res = await apiFetch(url, {
+      const res = await apiFetch(apiUrl(path), {
         headers: getAuthHeaders(),
         signal: AbortSignal.timeout(2500),
       });
       if (res.ok) {
-        const json = (await res.json()) as ApiResponse<Budget[]>;
+        const json = await safeParseApiResponse<Budget[]>(res);
         if (json.success && Array.isArray(json.data)) {
           const serverBudgets = json.data;
           // BUG-06 修复：保护本地所有待推送的预算变更 (包括单个修改/删除与批量配置)
@@ -1202,7 +1409,7 @@ export async function saveBatchBudgets(
     });
 
     // 4. 异步尝试向服务端同步
-    apiFetch(`${API_BASE}/budgets/batch`, {
+    apiFetch(apiUrl('/budgets/batch'), {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify({
@@ -1243,7 +1450,7 @@ export async function deleteBudget(budgetId: string): Promise<boolean> {
       action: 'delete',
     });
 
-    apiFetch(`${API_BASE}/budgets/${budgetId}`, {
+    apiFetch(apiUrl(`/budgets/${budgetId}`), {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -1268,12 +1475,12 @@ export async function pullAndMergeServerBudgets(): Promise<number> {
   const token = getStoredToken();
   if (!token) return 0;
   try {
-    const res = await apiFetch(`${API_BASE}/budgets`, {
+    const res = await apiFetch(apiUrl('/budgets'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(2500),
     });
     if (res.ok) {
-      const json = (await res.json()) as ApiResponse<Budget[]>;
+      const json = await safeParseApiResponse<Budget[]>(res);
       if (json.success && Array.isArray(json.data)) {
         const serverBudgets = json.data;
         // BUG-06 修复：保护本地所有待推送的预算变更
@@ -1342,7 +1549,7 @@ export async function batchImportTransactions(
     for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
       const chunk = preparedTxs.slice(chunkIdx * CHUNK_SIZE, (chunkIdx + 1) * CHUNK_SIZE);
       try {
-        const res = await apiFetch(`${API_BASE}/transactions/sync`, {
+        const res = await apiFetch(apiUrl('/transactions/sync'), {
           method: 'POST',
           headers: getAuthHeaders(),
           body: JSON.stringify({ transactions: chunk }),
@@ -1350,7 +1557,7 @@ export async function batchImportTransactions(
         });
 
         if (res.ok) {
-          const json = (await res.json()) as ApiResponse<SyncBatchResponse>;
+          const json = await safeParseApiResponse<SyncBatchResponse>(res);
           if (json.success && json.data) {
             const syncedIds = new Set(json.data.synced_ids);
             await localDb.transaction('rw', localDb.transactions, async () => {
@@ -1474,7 +1681,7 @@ export async function createRecurringRule(
     });
 
     // 3. 尝试即时异步推送
-    apiFetch(`${API_BASE}/recurring`, {
+    apiFetch(apiUrl('/recurring'), {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(newRule),
@@ -1528,7 +1735,7 @@ export async function updateRecurringRule(
       payload: updates,
     });
 
-    apiFetch(`${API_BASE}/recurring/${ruleId}`, {
+    apiFetch(apiUrl(`/recurring/${ruleId}`), {
       method: 'PUT',
       headers: getAuthHeaders(),
       body: JSON.stringify(updates),
@@ -1561,7 +1768,7 @@ export async function deleteRecurringRule(ruleId: string): Promise<void> {
       action: 'delete',
     });
 
-    apiFetch(`${API_BASE}/recurring/${ruleId}`, {
+    apiFetch(apiUrl(`/recurring/${ruleId}`), {
       method: 'DELETE',
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(3000),
@@ -1582,14 +1789,14 @@ export async function pullAndMergeServerRecurringRules(userId: string): Promise<
   const token = getStoredToken();
   if (!token) return await getRecurringRules();
   try {
-    const res = await apiFetch(`${API_BASE}/recurring`, {
+    const res = await apiFetch(apiUrl('/recurring'), {
       headers: getAuthHeaders(),
       signal: AbortSignal.timeout(5000),
     });
 
     if (!res.ok) return await getRecurringRules();
 
-    const json = (await res.json()) as ApiResponse<RecurringRule[]>;
+    const json = await safeParseApiResponse<RecurringRule[]>(res);
     if (json.success && json.data) {
       const serverRules = json.data;
 
@@ -1629,14 +1836,14 @@ export async function executeDueRecurringRules(
     };
   }
   try {
-    const res = await apiFetch(`${API_BASE}/recurring/execute-due`, {
+    const res = await apiFetch(apiUrl('/recurring/execute-due'), {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify({ as_of_date: asOfDate }),
       signal: AbortSignal.timeout(6000),
     });
 
-    return (await res.json()) as ApiResponse<ExecuteDueRecurringResult>;
+    return await safeParseApiResponse<ExecuteDueRecurringResult>(res);
   } catch (err: any) {
     return {
       success: false,

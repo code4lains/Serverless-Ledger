@@ -1,7 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Mail, Lock, LogIn, UserPlus, AlertCircle, Loader2, ShieldCheck, Ticket, Ban, KeyRound, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import {
+  X,
+  Mail,
+  Lock,
+  LogIn,
+  UserPlus,
+  AlertCircle,
+  Loader2,
+  ShieldCheck,
+  Ticket,
+  Ban,
+  KeyRound,
+  ArrowLeft,
+  CheckCircle2,
+  Server,
+  Settings,
+  Globe,
+  Wifi,
+  ChevronDown,
+  ChevronUp,
+  RotateCcw,
+  Check,
+} from 'lucide-react';
 import { AuthUser } from '@ledger/shared';
-import { loginUser, registerUser, getAuthConfig, resetPassword } from '../api/client';
+import {
+  loginUser,
+  registerUser,
+  getAuthConfig,
+  resetPassword,
+  getCustomApiUrl,
+  setCustomApiUrl,
+  testApiConnection,
+  getApiBase,
+  getDisplayApiHost,
+} from '../api/client';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -22,6 +54,13 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string>('');
+
+  // 后端 API 服务器地址配置与连通性测试状态
+  const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
+  const [serverUrlInput, setServerUrlInput] = useState<string>(() => getCustomApiUrl());
+  const [testingServer, setTestingServer] = useState<boolean>(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [configSuccessMsg, setConfigSuccessMsg] = useState<string>('');
 
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
@@ -232,6 +271,56 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
     }
   };
 
+  const handleTestConnection = async () => {
+    setTestingServer(true);
+    setTestResult(null);
+    try {
+      const res = await testApiConnection(serverUrlInput.trim() || undefined);
+      if (res.success) {
+        setTestResult({
+          success: true,
+          message: `连接成功！响应延迟: ${res.latencyMs}ms`,
+        });
+      } else {
+        setTestResult({
+          success: false,
+          message: res.error || '无法连接至该后端地址',
+        });
+      }
+    } catch (err: any) {
+      setTestResult({
+        success: false,
+        message: err.message || '网络连接超时或地址不可达',
+      });
+    } finally {
+      setTestingServer(false);
+    }
+  };
+
+  const handleSaveServerUrl = () => {
+    setCustomApiUrl(serverUrlInput.trim());
+    setConfigSuccessMsg('后端服务器地址已保存生效');
+    setTimeout(() => setConfigSuccessMsg(''), 3000);
+    getAuthConfig().then((res) => {
+      if (res.success && res.data) {
+        setRegMode(res.data.reg_mode);
+      }
+    });
+  };
+
+  const handleResetServerUrl = () => {
+    setCustomApiUrl('');
+    setServerUrlInput('');
+    setTestResult(null);
+    setConfigSuccessMsg('已恢复为默认服务器地址');
+    setTimeout(() => setConfigSuccessMsg(''), 3000);
+    getAuthConfig().then((res) => {
+      if (res.success && res.data) {
+        setRegMode(res.data.reg_mode);
+      }
+    });
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150"
@@ -240,11 +329,11 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
       }}
     >
       <div
-        className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700/80 overflow-hidden transform transition-all animate-modal-in"
+        className="w-full max-w-sm bg-white dark:bg-neutral-800 rounded-3xl shadow-2xl border border-gray-100 dark:border-neutral-700/80 overflow-hidden transform transition-all animate-modal-in max-h-[92vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部体验提示条 */}
-        <div className="bg-indigo-50/70 dark:bg-indigo-950/40 px-4 py-2.5 border-b border-indigo-100 dark:border-indigo-900/40 flex items-center justify-between text-[11px] text-indigo-700 dark:text-indigo-300">
+        <div className="bg-indigo-50/70 dark:bg-indigo-950/40 px-4 py-2.5 border-b border-indigo-100 dark:border-indigo-900/40 flex items-center justify-between text-[11px] text-indigo-700 dark:text-indigo-300 shrink-0">
           <span className="flex items-center gap-1 font-medium">
             <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
             <span>登录/注册即可保存记录并同步至云端</span>
@@ -261,7 +350,7 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
         </div>
 
         {/* 标题栏与关闭按钮 */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <div className="flex items-center justify-between px-5 pt-4 pb-2 shrink-0">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs shadow-2xs">
               {tab === 'login' ? (
@@ -287,23 +376,11 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
           )}
         </div>
 
-        {/* Tab 切换 (在找回密码时显示返回登录) */}
-        <div className="px-5 pb-2">
-          {tab === 'forgot' ? (
-            <button
-              type="button"
-              onClick={() => {
-                setTab('login');
-                setErrorMsg('');
-                setSuccessMsg('');
-              }}
-              className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-medium hover:underline py-1"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>返回登录界面</span>
-            </button>
-          ) : (
-            <div className="flex bg-gray-100 dark:bg-neutral-900 rounded-xl p-1">
+        {/* 可滚动内容区域 */}
+        <div className="overflow-y-auto flex-1">
+          {/* Tab 切换 (在找回密码时显示返回登录) */}
+          <div className="px-5 pb-2">
+            {tab === 'forgot' ? (
               <button
                 type="button"
                 onClick={() => {
@@ -311,56 +388,180 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
                   setErrorMsg('');
                   setSuccessMsg('');
                 }}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  tab === 'login'
-                    ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-                }`}
+                className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-medium hover:underline py-1"
               >
-                登录
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span>返回登录界面</span>
               </button>
+            ) : (
+              <div className="flex bg-gray-100 dark:bg-neutral-900 rounded-xl p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('login');
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                    tab === 'login'
+                      ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  登录
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('register');
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                    tab === 'register'
+                      ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
+                  }`}
+                >
+                  注册 {regMode === 1 && '(邀请码)'}
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 注册关闭提示条 */}
+          {tab === 'register' && regMode === 0 && (
+            <div className="mx-5 my-1.5 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
+              <Ban className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+              <span>系统当前暂未开放新用户注册，仅支持已注册用户登录。</span>
+            </div>
+          )}
+
+          {/* 成功提示 */}
+          {successMsg && (
+            <div className="mx-5 my-1.5 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{successMsg}</span>
+            </div>
+          )}
+
+          {/* 错误提示与快捷排查按钮 */}
+          {errorMsg && (
+            <div className="mx-5 my-1.5 p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/50 text-xs text-red-600 dark:text-red-400 flex flex-col gap-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{errorMsg}</span>
+              </div>
               <button
                 type="button"
-                onClick={() => {
-                  setTab('register');
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-all ${
-                  tab === 'register'
-                    ? 'bg-white dark:bg-neutral-800 text-gray-900 dark:text-white shadow-sm'
-                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700'
-                }`}
+                onClick={() => setShowServerConfig(true)}
+                className="self-start text-[11px] font-medium text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/50 hover:bg-red-200/80 dark:hover:bg-red-800/60 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1"
               >
-                注册 {regMode === 1 && '(邀请码)'}
+                <Settings className="w-3 h-3" />
+                <span>配置后端 API 服务器地址</span>
               </button>
             </div>
           )}
-        </div>
 
-        {/* 注册关闭提示条 */}
-        {tab === 'register' && regMode === 0 && (
-          <div className="mx-5 my-1.5 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300">
-            <Ban className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <span>系统当前暂未开放新用户注册，仅支持已注册用户登录。</span>
-          </div>
-        )}
+          {/* 后端服务器设置面板 (可折叠) */}
+          <div className="mx-5 mb-2 rounded-2xl bg-gray-50 dark:bg-neutral-900/80 border border-gray-200/80 dark:border-neutral-700/60 overflow-hidden transition-all">
+            <button
+              type="button"
+              onClick={() => setShowServerConfig(!showServerConfig)}
+              className="w-full px-3.5 py-2.5 flex items-center justify-between text-left text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100/80 dark:hover:bg-neutral-800/80 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <Server className="w-3.5 h-3.5 text-indigo-500" />
+                <span>后端 API 服务地址配置</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-gray-400 text-[11px]">
+                <span className="max-w-[120px] truncate">{getDisplayApiHost()}</span>
+                {showServerConfig ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </div>
+            </button>
 
-        {/* 成功提示 */}
-        {successMsg && (
-          <div className="mx-5 my-1.5 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400">
-            <CheckCircle2 className="w-4 h-4 shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-        )}
+            {showServerConfig && (
+              <div className="px-3.5 pt-1 pb-3.5 border-t border-gray-200/60 dark:border-neutral-700/60 flex flex-col gap-2.5 text-xs">
+                <div className="text-[11px] text-gray-500 dark:text-gray-400 leading-normal">
+                  📱 移动端 App 或本地环境请在此输入 Cloudflare Workers 后端地址：
+                </div>
 
-        {/* 错误提示 */}
-        {errorMsg && (
-          <div className="mx-5 my-1.5 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/50 flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span>{errorMsg}</span>
+                <div className="flex flex-col gap-1.5">
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400">
+                      <Globe className="w-3.5 h-3.5" />
+                    </span>
+                    <input
+                      type="url"
+                      placeholder="https://your-api.workers.dev"
+                      value={serverUrlInput}
+                      onChange={(e) => {
+                        setServerUrlInput(e.target.value);
+                        setTestResult(null);
+                      }}
+                      className="w-full pl-8 pr-2.5 py-1.5 text-xs rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 focus:border-indigo-500 focus:outline-none font-mono"
+                    />
+                  </div>
+
+                  {testResult && (
+                    <div
+                      className={`p-2 rounded-xl text-[11px] flex items-center gap-1.5 ${
+                        testResult.success
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
+                          : 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/40'
+                      }`}
+                    >
+                      {testResult.success ? <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
+                      <span>{testResult.message}</span>
+                    </div>
+                  )}
+
+                  {configSuccessMsg && (
+                    <div className="p-2 rounded-xl text-[11px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40 flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                      <span>{configSuccessMsg}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-1.5 pt-0.5">
+                    <button
+                      type="button"
+                      disabled={testingServer}
+                      onClick={handleTestConnection}
+                      className="flex-1 py-1.5 px-2.5 rounded-lg bg-gray-200/80 dark:bg-neutral-700 hover:bg-gray-300/80 dark:hover:bg-neutral-600 font-medium text-[11px] text-gray-700 dark:text-gray-200 flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                    >
+                      {testingServer ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Wifi className="w-3 h-3 text-indigo-500" />
+                      )}
+                      <span>测试连接</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveServerUrl}
+                      className="flex-1 py-1.5 px-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-[11px] flex items-center justify-center gap-1 transition-colors"
+                    >
+                      <Check className="w-3 h-3" />
+                      <span>保存应用</span>
+                    </button>
+
+                    {getCustomApiUrl() && (
+                      <button
+                        type="button"
+                        onClick={handleResetServerUrl}
+                        title="恢复默认地址"
+                        className="py-1.5 px-2 rounded-lg bg-gray-200/80 dark:bg-neutral-700 hover:bg-gray-300/80 dark:hover:bg-neutral-600 text-gray-600 dark:text-gray-300 text-[11px] transition-colors"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
 
         {/* 表单 */}
         <form onSubmit={handleSubmit} className="px-5 pt-2 pb-5 flex flex-col gap-3">
@@ -531,6 +732,7 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
             <span>数据完全私有掌控 · Cloudflare Serverless D1</span>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

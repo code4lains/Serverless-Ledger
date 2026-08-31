@@ -14,7 +14,7 @@ export interface NetworkInfo {
   error?: string;
 }
 
-const API_BASE = (import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace(/\/$/, '') : '') + '/api';
+import { getApiBase, safeParseApiResponse } from './client';
 
 class NetworkMonitor {
   private currentState: NetworkInfo = {
@@ -34,8 +34,14 @@ class NetworkMonitor {
       window.addEventListener('online', this.handleBrowserOnline);
       window.addEventListener('offline', this.handleBrowserOffline);
       document.addEventListener('visibilitychange', this.handleVisibilityChange);
+      window.addEventListener('api:endpoint_changed', this.handleEndpointChanged);
     }
   }
+
+  private handleEndpointChanged = () => {
+    // API 端点配置改变时，立即重置并重新探测连通性
+    this.checkHealth();
+  };
 
   private handleBrowserOnline = () => {
     // 浏览器触发 online 事件时进行一次连通性与延迟探测
@@ -81,15 +87,18 @@ class NetworkMonitor {
 
     const startTime = performance.now();
     try {
-      // 快速探测超时 (2500ms)
-      const res = await fetch(`${API_BASE}/health`, {
-        signal: AbortSignal.timeout(2500),
+      const apiBase = getApiBase();
+      // 快速探测超时 (3000ms)
+      const res = await fetch(`${apiBase}/health`, {
+        signal: AbortSignal.timeout(3000),
+        headers: { Accept: 'application/json' },
         cache: 'no-store',
       });
 
       const latency = Math.round(performance.now() - startTime);
+      const parsed = await safeParseApiResponse<any>(res);
 
-      if (res.ok) {
+      if (res.ok && parsed.success) {
         // 延迟大于 1200ms 判定为弱网环境，小于 1200ms 判定为良好在线
         const state: NetworkState = latency > 1200 ? 'weak' : 'online';
         this.updateState({
@@ -99,12 +108,12 @@ class NetworkMonitor {
           error: undefined,
         });
       } else {
-        // HTTP 状态非 200，判定为弱网或服务端异常
+        // HTTP 状态非 200 或返回 HTML / 错误信息
         this.updateState({
           state: 'weak',
           isOnline: true,
           latencyMs: latency,
-          error: `服务端响应异常: ${res.status}`,
+          error: parsed.error || `服务端响应异常: ${res.status}`,
         });
       }
     } catch (err: any) {
