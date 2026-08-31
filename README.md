@@ -256,7 +256,7 @@ npm run tauri:build
 项目内置了工业级 GitHub Actions 工作流（详见 [docs/CICD_PIPELINE.md](docs/CICD_PIPELINE.md)）：
 
 - **`ci.yml`**：提交代码时自动进行全量类型检查、代码规范、单元测试与编译预检。
-- **`deploy-pages.yml`**：推送到 `main` 分支时自动构建并部署至 Cloudflare Pages。
+- **Cloudflare Pages 原生 Git 集成**：推送到 `main` 分支时由 Cloudflare 自动检测并完成构建上线。
 - **`build-android.yml` / `build-ios.yml` / `build-desktop.yml`**：推 Tag 时自动触发移动端与多系统桌面端编译。
 - **`release.yml`**：打 Tag（如 `v1.0.0`）时，并发构建全端全平台安装包、生成 `SHA256SUMS.txt` 并自动发布至 GitHub Releases 附件列表。
 

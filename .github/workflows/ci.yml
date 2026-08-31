@@ -25,10 +25,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22 LTS
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
@@ -42,8 +42,9 @@ jobs:
 
       - name: TypeScript TypeCheck
         run: |
-          npx tsc -b packages/shared/tsconfig.json --noEmit
-          npx tsc -b packages/client/tsconfig.json --noEmit
+          npx tsc -b packages/shared/tsconfig.json
+          npx tsc -b packages/client/tsconfig.json
+          npx tsc -p packages/server/tsconfig.json --noEmit
 
   build-artifacts:
     name: Verify Web PWA & Server Builds
@@ -53,10 +54,10 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js 20
+      - name: Setup Node.js 22 LTS
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Dependencies
