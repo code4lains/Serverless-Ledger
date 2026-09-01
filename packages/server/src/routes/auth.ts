@@ -9,14 +9,13 @@ import {
   AuthUser,
   RegisterRequest,
   LoginRequest,
-  User,
-  Ledger,
   AuthConfig,
   InviteCode,
   InviteEligibilityInfo,
   calculateInviteEligibility,
   ResetPasswordRequest,
 } from '@ledger/shared';
+import { getRepositories } from '../repositories';
 
 const authRouter = new Hono<{ Bindings: Env; Variables: AppVariables }>();
 
@@ -83,6 +82,7 @@ authRouter.get('/config', async (c) => {
 authRouter.post('/register', async (c) => {
   try {
     const regMode = getRegMode(c.env);
+    const repos = getRepositories(c.env.DB);
 
     // 当 REG_MODE 为 0 时，系统禁止注册
     if (regMode === 0) {
@@ -109,11 +109,7 @@ authRouter.post('/register', async (c) => {
         return c.json(res, 400);
       }
 
-      validInviteCodeRecord = await c.env.DB.prepare(
-        'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE code = ?'
-      )
-        .bind(inviteCodeRaw)
-        .first<InviteCode>();
+      validInviteCodeRecord = await repos.inviteCodes.findByCode(inviteCodeRaw);
 
       if (!validInviteCodeRecord || validInviteCodeRecord.status !== 'unused') {
         const res: ApiResponse = {
@@ -124,11 +120,7 @@ authRouter.post('/register', async (c) => {
       }
     } else if (regMode === 2 && inviteCodeRaw) {
       // REG_MODE 为 2 时邀请码为可选，若用户输入了有效未使用的邀请码则予以关联
-      validInviteCodeRecord = await c.env.DB.prepare(
-        'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE code = ?'
-      )
-        .bind(inviteCodeRaw)
-        .first<InviteCode>();
+      validInviteCodeRecord = await repos.inviteCodes.findByCode(inviteCodeRaw);
       if (validInviteCodeRecord && validInviteCodeRecord.status !== 'unused') {
         validInviteCodeRecord = null;
       }
@@ -186,9 +178,7 @@ authRouter.post('/register', async (c) => {
     }
 
     // 查重：验证邮箱是否已被占用
-    const existing = await c.env.DB.prepare('SELECT user_id FROM users WHERE email = ?')
-      .bind(email)
-      .first<{ user_id: string }>();
+    const existing = await repos.users.findByEmail(email);
 
     if (existing) {
       const res: ApiResponse = {
@@ -205,22 +195,22 @@ authRouter.post('/register', async (c) => {
     const recoveryCode = generateRecoveryCode();
 
     // 1. 写入用户表 (包含 8 位密码恢复码)
-    await c.env.DB.prepare(
-      'INSERT INTO users (user_id, email, password_hash, invited_by, recovery_code, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    )
-      .bind(userId, email, passwordHash, invitedBy, recoveryCode, now, now)
-      .run();
+    await repos.users.create({
+      user_id: userId,
+      email,
+      password_hash: passwordHash,
+      invited_by: invitedBy,
+      recovery_code: recoveryCode,
+      created_at: now,
+      updated_at: now,
+    });
 
     // 2. 若使用了有效邀请码，标记邀请码为已使用 (BUG-S04 原子条件更新防 TOCTOU)
     if (validInviteCodeRecord) {
-      const updateResult = await c.env.DB.prepare(
-        'UPDATE invite_codes SET status = ?, used_by = ?, used_at = ? WHERE code = ? AND status = ?'
-      )
-        .bind('used', userId, now, validInviteCodeRecord.code, 'unused')
-        .run();
+      const updated = await repos.inviteCodes.markUsed(validInviteCodeRecord.code, userId);
 
-      if (regMode === 1 && (!updateResult.meta.changes || updateResult.meta.changes === 0)) {
-        await c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId).run();
+      if (regMode === 1 && !updated) {
+        await repos.users.delete(userId);
         const res: ApiResponse = {
           success: false,
           error: '邀请码已被其他用户同时使用，请更换邀请码',
@@ -231,11 +221,12 @@ authRouter.post('/register', async (c) => {
 
     // 3. 自动为新用户创建默认日常账本
     const defaultLedgerId = `led_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    await c.env.DB.prepare(
-      'INSERT INTO ledgers (ledger_id, user_id, name, currency, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
-    )
-      .bind(defaultLedgerId, userId, '默认账本', 'CNY', now, now)
-      .run();
+    await repos.ledgers.create(userId, {
+      ledger_id: defaultLedgerId,
+      name: '默认账本',
+      currency: 'CNY',
+      is_default: 1,
+    });
 
     // 4. 签发 JWT
     const secret = getJwtSecret(c.env);
@@ -277,6 +268,7 @@ authRouter.post('/register', async (c) => {
  */
 authRouter.post('/login', async (c) => {
   try {
+    const repos = getRepositories(c.env.DB);
     const body = await c.req.json<LoginRequest>();
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body.password === 'string' ? body.password : '';
@@ -317,11 +309,7 @@ authRouter.post('/login', async (c) => {
     }
 
     // 查询用户
-    const user = await c.env.DB.prepare(
-      'SELECT user_id, email, password_hash, invited_by, recovery_code, created_at, updated_at FROM users WHERE email = ?'
-    )
-      .bind(email)
-      .first<User>();
+    const user = await repos.users.findByEmail(email);
 
     if (!user || !user.password_hash) {
       const res: ApiResponse = {
@@ -347,18 +335,11 @@ authRouter.post('/login', async (c) => {
     if (!currentRecoveryCode) {
       newRecoveryCode = generateRecoveryCode();
       currentRecoveryCode = newRecoveryCode;
-      const now = new Date().toISOString();
-      await c.env.DB.prepare('UPDATE users SET recovery_code = ?, updated_at = ? WHERE user_id = ?')
-        .bind(newRecoveryCode, now, user.user_id)
-        .run();
+      await repos.users.updateRecoveryCode(user.user_id, newRecoveryCode);
     }
 
     // 获取用户默认账本
-    const defaultLedger = await c.env.DB.prepare(
-      'SELECT ledger_id FROM ledgers WHERE user_id = ? AND is_default = 1 LIMIT 1'
-    )
-      .bind(user.user_id)
-      .first<Ledger>();
+    const defaultLedger = await repos.ledgers.getDefault(user.user_id);
 
     // 签发 JWT
     const secret = getJwtSecret(c.env);
@@ -404,13 +385,10 @@ authRouter.post('/login', async (c) => {
  */
 authRouter.get('/me', requireAuth, async (c) => {
   try {
+    const repos = getRepositories(c.env.DB);
     const jwtUser = c.get('user')!;
 
-    const user = await c.env.DB.prepare(
-      'SELECT user_id, email, invited_by, recovery_code, created_at, updated_at FROM users WHERE user_id = ?'
-    )
-      .bind(jwtUser.userId)
-      .first<User>();
+    const user = await repos.users.findById(jwtUser.userId);
 
     if (!user) {
       const res: ApiResponse = {
@@ -420,11 +398,7 @@ authRouter.get('/me', requireAuth, async (c) => {
       return c.json(res, 404);
     }
 
-    const defaultLedger = await c.env.DB.prepare(
-      'SELECT ledger_id FROM ledgers WHERE user_id = ? AND is_default = 1 LIMIT 1'
-    )
-      .bind(user.user_id)
-      .first<Ledger>();
+    const defaultLedger = await repos.ledgers.getDefault(user.user_id);
 
     const authUser: AuthUser = {
       user_id: user.user_id,
@@ -456,6 +430,7 @@ authRouter.get('/me', requireAuth, async (c) => {
  */
 authRouter.post('/reset-password', async (c) => {
   try {
+    const repos = getRepositories(c.env.DB);
     const body = await c.req.json<ResetPasswordRequest>();
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const recoveryCodeInput = typeof body.recovery_code === 'string' ? body.recovery_code.trim().toUpperCase() : '';
@@ -520,11 +495,7 @@ authRouter.post('/reset-password', async (c) => {
       return c.json(res, 400);
     }
 
-    const user = await c.env.DB.prepare(
-      'SELECT user_id, email, recovery_code FROM users WHERE email = ?'
-    )
-      .bind(email)
-      .first<User>();
+    const user = await repos.users.findByEmail(email);
 
     if (!user) {
       const res: ApiResponse = {
@@ -547,12 +518,7 @@ authRouter.post('/reset-password', async (c) => {
     // 密码加密并更新，轮换生成新的 8 位恢复码 (BUG-S03)
     const passwordHash = await hashPassword(newPassword);
     const newRecoveryCode = generateRecoveryCode();
-    const now = new Date().toISOString();
-    await c.env.DB.prepare(
-      'UPDATE users SET password_hash = ?, recovery_code = ?, updated_at = ? WHERE user_id = ?'
-    )
-      .bind(passwordHash, newRecoveryCode, now, user.user_id)
-      .run();
+    await repos.users.resetPassword(user.user_id, passwordHash, newRecoveryCode);
 
     const res: ApiResponse<{ new_recovery_code: string }> = {
       success: true,
@@ -578,22 +544,12 @@ authRouter.post('/reset-password', async (c) => {
  */
 authRouter.delete('/account', requireAuth, async (c) => {
   try {
+    const repos = getRepositories(c.env.DB);
     const jwtUser = c.get('user')!;
     const userId = jwtUser.userId;
 
     // BUG-S12: 使用 D1 atomic batch 确保注销账户级联删除的事务原子性
-    const batchStatements: D1PreparedStatement[] = [
-      c.env.DB.prepare('DELETE FROM transactions WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM budgets WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM ledgers WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM categories WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM invite_codes WHERE creator_id = ?').bind(userId),
-      c.env.DB.prepare('UPDATE invite_codes SET used_by = NULL WHERE used_by = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM recurring_rules WHERE user_id = ?').bind(userId),
-      c.env.DB.prepare('DELETE FROM users WHERE user_id = ?').bind(userId),
-    ];
-
-    await c.env.DB.batch(batchStatements);
+    await repos.users.deleteCascade(userId);
 
     const res: ApiResponse = {
       success: true,
@@ -616,13 +572,10 @@ authRouter.delete('/account', requireAuth, async (c) => {
  */
 authRouter.get('/invite-codes', requireAuth, async (c) => {
   try {
+    const repos = getRepositories(c.env.DB);
     const jwtUser = c.get('user')!;
 
-    const user = await c.env.DB.prepare(
-      'SELECT user_id, email, created_at, updated_at FROM users WHERE user_id = ?'
-    )
-      .bind(jwtUser.userId)
-      .first<User>();
+    const user = await repos.users.findById(jwtUser.userId);
 
     if (!user) {
       const res: ApiResponse = {
@@ -633,23 +586,12 @@ authRouter.get('/invite-codes', requireAuth, async (c) => {
     }
 
     // 1. 查询用户是否已写入过记账数据及首次记账时间
-    const txRow = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count, MIN(created_at) as first_created_at, MIN(transaction_date) as first_tx_date FROM transactions WHERE user_id = ?'
-    )
-      .bind(user.user_id)
-      .first<{ count: number; first_created_at: string | null; first_tx_date: string | null }>();
-
-    const hasRecordedTransaction = (txRow?.count || 0) > 0;
-    const firstTxDate = txRow?.first_created_at || txRow?.first_tx_date || null;
+    const txInfo = await repos.transactions.getFirstTransactionInfo(user.user_id);
+    const hasRecordedTransaction = txInfo.count > 0;
+    const firstTxDate = txInfo.first_created_at || txInfo.first_tx_date || null;
 
     // 2. 查询用户已生成的邀请码
-    const inviteCodesResult = await c.env.DB.prepare(
-      'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE creator_id = ? ORDER BY created_at DESC'
-    )
-      .bind(user.user_id)
-      .all<InviteCode>();
-
-    const inviteCodes = inviteCodesResult.results || [];
+    const inviteCodes = await repos.inviteCodes.findByCreator(user.user_id);
 
     // 3. 计算获取资格 (基于首次记账时间)
     const eligibility = calculateInviteEligibility(
@@ -686,13 +628,10 @@ authRouter.get('/invite-codes', requireAuth, async (c) => {
  */
 authRouter.post('/invite-codes', requireAuth, async (c) => {
   try {
+    const repos = getRepositories(c.env.DB);
     const jwtUser = c.get('user')!;
 
-    const user = await c.env.DB.prepare(
-      'SELECT user_id, email, created_at, updated_at FROM users WHERE user_id = ?'
-    )
-      .bind(jwtUser.userId)
-      .first<User>();
+    const user = await repos.users.findById(jwtUser.userId);
 
     if (!user) {
       const res: ApiResponse = {
@@ -703,23 +642,12 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
     }
 
     // 1. 检查是否写入过记账数据及首次记账时间
-    const txRow = await c.env.DB.prepare(
-      'SELECT COUNT(*) as count, MIN(created_at) as first_created_at, MIN(transaction_date) as first_tx_date FROM transactions WHERE user_id = ?'
-    )
-      .bind(user.user_id)
-      .first<{ count: number; first_created_at: string | null; first_tx_date: string | null }>();
-
-    const hasRecordedTransaction = (txRow?.count || 0) > 0;
-    const firstTxDate = txRow?.first_created_at || txRow?.first_tx_date || null;
+    const txInfo = await repos.transactions.getFirstTransactionInfo(user.user_id);
+    const hasRecordedTransaction = txInfo.count > 0;
+    const firstTxDate = txInfo.first_created_at || txInfo.first_tx_date || null;
 
     // 2. 检查已生成的邀请码数量
-    const inviteCodesResult = await c.env.DB.prepare(
-      'SELECT code, creator_id, used_by, status, created_at, used_at FROM invite_codes WHERE creator_id = ? ORDER BY created_at DESC'
-    )
-      .bind(user.user_id)
-      .all<InviteCode>();
-
-    const inviteCodes = inviteCodesResult.results || [];
+    const inviteCodes = await repos.inviteCodes.findByCreator(user.user_id);
 
     // 3. 计算资格 (基于首次记账时间)
     const eligibility = calculateInviteEligibility(
@@ -750,9 +678,7 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
     let newCode = generateRandomInviteCode();
     let isUnique = false;
     for (let attempts = 0; attempts < 5; attempts++) {
-      const existing = await c.env.DB.prepare('SELECT code FROM invite_codes WHERE code = ?')
-        .bind(newCode)
-        .first<{ code: string }>();
+      const existing = await repos.inviteCodes.findByCode(newCode);
       if (!existing) {
         isUnique = true;
         break;
@@ -764,37 +690,20 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
       newCode = `INV-${Date.now().toString(36).toUpperCase().slice(-6)}`;
     }
 
-    const now = new Date().toISOString();
-
     // BUG-S05: 原子条件插入，防止并发请求突破配额上限 (<= 3)
-    const insertResult = await c.env.DB.prepare(
-      `INSERT INTO invite_codes (code, creator_id, status, created_at)
-       SELECT ?, ?, 'unused', ?
-       WHERE (SELECT COUNT(*) FROM invite_codes WHERE creator_id = ?) < ?`
-    )
-      .bind(
-        newCode,
-        user.user_id,
-        now,
-        user.user_id,
-        Math.min(eligibility.total_eligible, 3)
-      )
-      .run();
+    const createdInviteCode = await repos.inviteCodes.createWithQuota(
+      user.user_id,
+      newCode,
+      Math.min(eligibility.total_eligible, 3)
+    );
 
-    if (!insertResult.meta.changes || insertResult.meta.changes === 0) {
+    if (!createdInviteCode) {
       const res: ApiResponse = {
         success: false,
         error: '已达到当前可领取的邀请码上限，请勿重复提交',
       };
       return c.json(res, 400);
     }
-
-    const createdInviteCode: InviteCode = {
-      code: newCode,
-      creator_id: user.user_id,
-      status: 'unused',
-      created_at: now,
-    };
 
     const res: ApiResponse<InviteCode> = {
       success: true,
@@ -813,4 +722,3 @@ authRouter.post('/invite-codes', requireAuth, async (c) => {
 });
 
 export default authRouter;
-

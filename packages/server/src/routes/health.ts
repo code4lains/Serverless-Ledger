@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { Env } from '../types';
 import { ApiResponse } from '@ledger/shared';
+import { getRepositories } from '../repositories';
 
 const healthRouter = new Hono<{ Bindings: Env }>();
 
@@ -10,9 +11,10 @@ healthRouter.get('/', async (c) => {
 
   try {
     if (c.env.DB) {
-      const result = await c.env.DB.prepare('SELECT count(*) as count FROM categories').first<{ count: number }>();
+      const repos = getRepositories(c.env.DB);
+      const categories = await repos.categories.findByUserId();
       dbStatus = 'connected';
-      categoryCount = result?.count ?? 0;
+      categoryCount = categories.length;
     }
   } catch (err: any) {
     dbStatus = `error: ${err?.message || 'unknown error'}`;

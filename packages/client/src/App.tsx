@@ -37,6 +37,10 @@ import {
   PieChart,
   ShieldCheck,
   AlertTriangle,
+  Lock,
+  Unlock,
+  ShieldAlert,
+  Shield,
 } from 'lucide-react';
 import {
   Transaction,
@@ -74,15 +78,18 @@ import {
   createTransaction,
   updateTransaction,
   deleteTransaction,
-  pullAndMergeServerTransactions,
-  pullAndMergeServerLedgers,
-  pullAndMergeServerBudgets,
   getStoredUser,
   fetchCurrentUser,
   clearSession,
 } from './api/client';
 import { networkMonitor, NetworkInfo } from './api/network';
 import { syncManager, SyncStats } from './api/syncManager';
+import {
+  isVaultInitialized,
+  isVaultUnlocked,
+  lockVault,
+} from './auth/localAuth';
+import { isCloudSyncEnabled } from './sync/syncAdapter';
 import { NetworkStatusBar } from './components/NetworkStatusBar';
 import { AuthModal } from './components/AuthModal';
 import { CategoryIcon } from './components/CategoryIcon';
@@ -100,8 +107,8 @@ import { DataManagementModal } from './components/DataManagementModal';
 import { RecoveryCodeModal } from './components/RecoveryCodeModal';
 import { DeleteAccountModal } from './components/DeleteAccountModal';
 import { RecurringManagementModal } from './components/RecurringManagementModal';
+import { OnboardingModal } from './components/OnboardingModal';
 import { recurringEngine } from './api/recurringEngine';
-import { pullAndMergeServerRecurringRules } from './api/client';
 
 export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profile';
 
@@ -114,7 +121,11 @@ export function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
+  const [vaultStatus, setVaultStatus] = useState<'uninitialized' | 'unlocked' | 'locked'>('uninitialized');
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
+  const [authModalTab, setAuthModalTab] = useState<'vault' | 'cloud'>('vault');
+  const [authVaultAction, setAuthVaultAction] = useState<'unlock' | 'setup' | 'reset' | 'change'>('unlock');
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState<boolean>(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState<boolean>(false);
@@ -259,8 +270,10 @@ export function App() {
     await loadLocalData(null);
     await triggerRecurringAutoProcess(null);
 
-    const health = await checkServerHealth();
-    setServerStatus({ ok: health.isOnline, data: health });
+    // 非阻塞异步探测服务端健康状态
+    checkServerHealth().then((health) => {
+      setServerStatus({ ok: health.isOnline, data: health });
+    }).catch(() => {});
   };
 
   // 检查并自动执行本地到期周期记账规则
@@ -276,7 +289,26 @@ export function App() {
     }
   };
 
-  // 载入并同步当前用户数据
+  // 刷新并检测本地安全保险库状态
+  const checkVaultStatus = async () => {
+    try {
+      const initialized = await isVaultInitialized();
+      if (initialized) {
+        const unlocked = isVaultUnlocked();
+        setVaultStatus(unlocked ? 'unlocked' : 'locked');
+      } else {
+        setVaultStatus('uninitialized');
+        const hasSeenOnboarding = localStorage.getItem('ledger_has_seen_onboarding');
+        if (!hasSeenOnboarding) {
+          setIsOnboardingOpen(true);
+        }
+      }
+    } catch (e) {
+      console.warn('检测本地保险库状态异常:', e);
+    }
+  };
+
+  // 载入并同步当前用户数据 (0ms 离线启动，网络在后台非阻塞静默同步)
   const loadUserData = async (user: AuthUser) => {
     await seedLocalCategories();
     await seedLocalLedgers(user.user_id);
@@ -295,24 +327,25 @@ export function App() {
 
     await refreshBudgets();
     await loadLocalData(user);
+    await triggerRecurringAutoProcess(user);
 
-    const health = await checkServerHealth();
-    setServerStatus({ ok: health.isOnline, data: health });
-
-    if (health.isOnline) {
-      await syncManager.syncAll(true);
-      await pullAndMergeServerRecurringRules(user.user_id).catch(() => {});
-      await refreshLedgers();
-      await refreshBudgets();
-      await refreshCategories();
-      await loadLocalData(user);
-      await triggerRecurringAutoProcess(user);
-    } else {
-      await triggerRecurringAutoProcess(user);
+    // 如果开启了云端同步且网络可用，在后台静默发起双向同步，绝不阻塞用户界面渲染
+    if (isCloudSyncEnabled()) {
+      checkServerHealth().then((health) => {
+        setServerStatus({ ok: health.isOnline, data: health });
+        if (health.isOnline) {
+          syncManager.syncAll(true).then(async () => {
+            await refreshLedgers();
+            await refreshBudgets();
+            await refreshCategories();
+            await loadLocalData(user);
+          }).catch(() => {});
+        }
+      }).catch(() => {});
     }
   };
 
-  // 初始化应用 (免登录自由浏览体验)
+  // 初始化应用 (纯本地 Dexie 0ms 秒开)
   useEffect(() => {
     // 启动网络感知器与后台自动同步
     networkMonitor.start(30000);
@@ -330,7 +363,10 @@ export function App() {
     });
 
     const init = async () => {
-      // 验证当前 Token
+      // 1. 立即检测本地保险库状态
+      await checkVaultStatus();
+
+      // 2. 立即从本地 IndexedDB 加载基础数据 (0ms 秒开)
       const stored = getStoredUser();
       if (!stored) {
         setCurrentUser(null);
@@ -338,14 +374,20 @@ export function App() {
         return;
       }
 
-      const userRes = await fetchCurrentUser();
-      if (userRes.success && userRes.data) {
-        setCurrentUser(userRes.data);
-        await loadUserData(userRes.data);
-      } else {
-        clearSession();
-        setCurrentUser(null);
-        await loadGuestData();
+      setCurrentUser(stored);
+      await loadUserData(stored);
+
+      // 3. 后台验证 Token 有效性 (非阻塞)
+      if (isCloudSyncEnabled()) {
+        fetchCurrentUser().then((userRes) => {
+          if (userRes.success && userRes.data) {
+            setCurrentUser(userRes.data);
+          } else {
+            clearSession();
+            setCurrentUser(null);
+            loadGuestData();
+          }
+        }).catch(() => {});
       }
     };
 
@@ -371,6 +413,35 @@ export function App() {
       window.removeEventListener('auth:unauthorized', handleUnauthorized);
     };
   }, []);
+
+  // 保险库操作处理函数
+  const handleLockVault = () => {
+    lockVault();
+    setVaultStatus('locked');
+    showToast('🔒 本地安全保险库已锁定，内存密钥已安全擦除', 'info');
+  };
+
+  const handleOpenVaultModal = (action?: 'unlock' | 'setup' | 'reset' | 'change') => {
+    setAuthModalTab('vault');
+    setAuthVaultAction(action || (vaultStatus === 'locked' ? 'unlock' : 'setup'));
+    setIsAuthModalOpen(true);
+  };
+
+  const handleVaultUnlocked = async () => {
+    setVaultStatus('unlocked');
+    await refreshLedgers();
+    await refreshBudgets();
+    await refreshCategories();
+    await loadLocalData();
+    showToast('🛡️ 本地安全保险库已解锁', 'success');
+  };
+
+  const handleVaultSetupSuccess = (recoveryCode: string) => {
+    setVaultStatus('unlocked');
+    setActiveRecoveryCode(recoveryCode);
+    setIsRecoveryCodeModalOpen(true);
+    showToast('🎉 保险库初始化成功！请妥善保存 16 位应急恢复凭证', 'success');
+  };
 
   // 计算当前处于激活状态的账本对象
   const activeLedger = useMemo(() => {
@@ -761,6 +832,40 @@ export function App() {
                 <span>登录/注册</span>
               </button>
             )}
+            {/* 本地安全保险库状态与锁定/解锁快捷按钮 */}
+            {vaultStatus === 'unlocked' && (
+              <button
+                type="button"
+                onClick={handleLockVault}
+                title="本地保险库已解锁，点击立即锁定并清除内存密钥"
+                className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-emerald-600 dark:text-emerald-400 hover:text-amber-600 active:scale-95 transition-all cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4" />
+              </button>
+            )}
+
+            {vaultStatus === 'locked' && (
+              <button
+                type="button"
+                onClick={() => handleOpenVaultModal('unlock')}
+                title="本地保险库处于锁定状态，点击输入主密码解锁"
+                className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 shadow-2xs border border-amber-200 dark:border-amber-900/50 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:scale-95 transition-all cursor-pointer animate-pulse"
+              >
+                <Lock className="w-4 h-4" />
+              </button>
+            )}
+
+            {vaultStatus === 'uninitialized' && (
+              <button
+                type="button"
+                onClick={() => handleOpenVaultModal('setup')}
+                title="尚未设置本地保险库主密码，点击启用端到端加密"
+                className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-gray-400 hover:text-indigo-600 active:scale-95 transition-all cursor-pointer"
+              >
+                <Shield className="w-4 h-4" />
+              </button>
+            )}
+
             <button
               onClick={handleSync}
               disabled={isSyncing}
@@ -771,7 +876,7 @@ export function App() {
                   ? `存在 ${pendingCount} 笔未同步记录，点击立即同步`
                   : '数据已完全同步至云端'
               }
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-95 transition-all text-gray-600 dark:text-gray-300 relative cursor-pointer"
             >
               <RefreshCw
                 className={`w-4 h-4 transition-colors ${
@@ -789,7 +894,7 @@ export function App() {
             <button
               onClick={handleToggleTheme}
               title={darkMode ? '切换为浅色模式' : '切换为深色模式'}
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-90 transition-all text-gray-600 dark:text-gray-300"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-90 transition-all text-gray-600 dark:text-gray-300 cursor-pointer"
             >
               {darkMode ? (
                 <Sun className="w-4 h-4 text-amber-400 animate-in spin-in-180 duration-200" />
@@ -800,8 +905,33 @@ export function App() {
           </div>
         </header>
 
+        {/* 本地保险库锁定提示条 */}
+        {vaultStatus === 'locked' && (
+          <div className="p-3 sm:p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-950/40 border border-amber-500/30 text-amber-900 dark:text-amber-200 flex items-center justify-between text-xs animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="font-medium">本地安全保险库已锁定，敏感私密数据受 AES-GCM-256 加密保护。</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleOpenVaultModal('unlock')}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs transition-all cursor-pointer"
+              >
+                输入密码解锁
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 弱网/离线感知与同步状态条 */}
-        <NetworkStatusBar pendingCount={pendingCount} onSync={handleSync} />
+        <NetworkStatusBar
+          pendingCount={pendingCount}
+          onSync={handleSync}
+          onOpenSyncSettings={() => {
+            setNavTab('profile');
+          }}
+        />
 
         {/* 1. 【明细】板块 (结余汇总与流水时间轴列表 - 响应式双栏布局) */}
         {navTab === 'detail' && (
@@ -1648,6 +1778,7 @@ export function App() {
             pendingCount={pendingCount}
             isSyncing={isSyncing}
             darkMode={darkMode}
+            vaultStatus={vaultStatus}
             onToggleDarkMode={() => setDarkMode(!darkMode)}
             onSync={handleSync}
             onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
@@ -1657,13 +1788,24 @@ export function App() {
               setIsDataModalOpen(true);
             }}
             onLogout={handleRequestLogout}
-            onOpenAuthModal={() => setIsAuthModalOpen(true)}
+            onOpenAuthModal={() => {
+              setAuthModalTab('cloud');
+              setIsAuthModalOpen(true);
+            }}
+            onOpenVaultModal={handleOpenVaultModal}
+            onLockVault={handleLockVault}
             onOpenDeleteAccountModal={() => setIsDeleteAccountModalOpen(true)}
             onOpenRecoveryCodeModal={(code) => {
               setActiveRecoveryCode(code);
               setIsRecoveryCodeModalOpen(true);
             }}
             onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
+            onRefreshData={async () => {
+              await refreshLedgers();
+              await refreshBudgets();
+              await refreshCategories();
+              await loadLocalData();
+            }}
           />
         )}
 
@@ -1681,14 +1823,18 @@ export function App() {
           onTriggerAutoProcess={async () => {
             await loadLocalData(currentUser);
           }}
-          onRequireAuth={() => setIsAuthModalOpen(true)}
+          onRequireAuth={() => {
+            setAuthModalTab('cloud');
+            setIsAuthModalOpen(true);
+          }}
         />
 
-        {/* 密码恢复凭证弹窗 */}
+        {/* 密码/凭证恢复弹窗 (支持 16 位保险库凭证与 8 位云端恢复码) */}
         <RecoveryCodeModal
           isOpen={isRecoveryCodeModalOpen}
           recoveryCode={activeRecoveryCode}
           userEmail={currentUser?.email}
+          isVaultCode={activeRecoveryCode.replace(/-/g, '').length >= 16}
           onClose={() => setIsRecoveryCodeModalOpen(false)}
         />
 
@@ -1703,7 +1849,7 @@ export function App() {
           onDeleteSuccess={handleDeleteAccountSuccess}
         />
 
-        {/* 数据与资产管理 弹窗 (白皮书 7.3: CSV 导入与导出) */}
+        {/* 数据与资产管理 弹窗 (CSV/Excel 导入导出与端到端加密备份包) */}
         <DataManagementModal
           isOpen={isDataModalOpen}
           initialTab={dataModalMode}
@@ -1718,19 +1864,46 @@ export function App() {
             await refreshBudgets();
             await refreshCategories();
             await loadLocalData();
-            if (currentUser) {
+            if (currentUser && isCloudSyncEnabled()) {
               syncManager.syncAll(true).catch(() => {});
             }
           }}
-          onRequireAuth={() => setIsAuthModalOpen(true)}
+          onRequireAuth={() => {
+            setAuthModalTab('cloud');
+            setIsAuthModalOpen(true);
+          }}
         />
 
-        {/* 登录/注册 弹窗 */}
+        {/* 新用户首次冷启动欢迎与本地保险库引导弹窗 */}
+        <OnboardingModal
+          isOpen={isOnboardingOpen}
+          onClose={() => {
+            localStorage.setItem('ledger_has_seen_onboarding', 'true');
+            setIsOnboardingOpen(false);
+          }}
+          onComplete={async () => {
+            localStorage.setItem('ledger_has_seen_onboarding', 'true');
+            setIsOnboardingOpen(false);
+            await checkVaultStatus();
+            await loadLocalData(currentUser);
+            showToast('🛡️ 本地安全保险库初始化完成', 'success');
+          }}
+          onOpenCloudSync={() => {
+            setAuthModalTab('cloud');
+            setIsAuthModalOpen(true);
+          }}
+        />
+
+        {/* 认证与保险库综合弹窗 (双模：本地保险库主密码 / 云端同步账号) */}
         <AuthModal
           isOpen={isAuthModalOpen}
           closable={true}
+          initialTab={authModalTab}
+          initialVaultAction={authVaultAction}
           onClose={() => setIsAuthModalOpen(false)}
           onSuccess={handleAuthSuccess}
+          onVaultUnlocked={handleVaultUnlocked}
+          onVaultSetupSuccess={handleVaultSetupSuccess}
         />
 
         {/* 多账本管理与创建 弹窗 */}

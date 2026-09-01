@@ -8,10 +8,11 @@
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply serverless_ledger_db --local",
     "db:migrate:remote": "wrangler d1 migrations apply serverless_ledger_db --remote",
-    "test": "node scripts/test-pipeline.mjs && node scripts/test-offline-sync.mjs && node scripts/test-bug-fixes.mjs",
+    "test": "node scripts/test-pipeline.mjs && node scripts/test-offline-sync.mjs && node scripts/test-bug-fixes.mjs && node scripts/test-repositories.mjs",
     "test:pipeline": "node scripts/test-pipeline.mjs",
     "test:offline": "node scripts/test-offline-sync.mjs",
-    "test:regression": "node scripts/test-bug-fixes.mjs"
+    "test:regression": "node scripts/test-bug-fixes.mjs",
+    "test:repositories": "node scripts/test-repositories.mjs"
   },
   "dependencies": {
     "@ledger/shared": "*",

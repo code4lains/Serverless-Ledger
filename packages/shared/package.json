@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc",
     "watch": "tsc --watch",
-    "test": "tsc && node scripts/test-categories.mjs && node scripts/test-budget.mjs && node scripts/test-csv-import-export.mjs && node scripts/test-xiaoxing-import.mjs && node scripts/test-invite-eligibility.mjs && node scripts/test-recurring.mjs"
+    "test": "tsc && node scripts/test-categories.mjs && node scripts/test-budget.mjs && node scripts/test-csv-import-export.mjs && node scripts/test-xiaoxing-import.mjs && node scripts/test-invite-eligibility.mjs && node scripts/test-recurring.mjs && node scripts/test-storage-interfaces.mjs"
   },
   "dependencies": {
     "xlsx": "^0.18.5"

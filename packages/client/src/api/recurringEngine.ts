@@ -15,7 +15,7 @@ import {
   formatDateOnly,
 } from '@ledger/shared';
 import { localDb, enqueueSyncAction } from '../db';
-import { getStoredUser } from './client';
+import { getStoredUser } from './cloudAuth';
 import { syncManager } from './syncManager';
 
 export interface ProcessDueResult {

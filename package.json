@@ -24,7 +24,9 @@
     "cap:add:ios": "npm -w @ledger/client run cap:add:ios",
     "tauri:dev": "npm -w @ledger/client run tauri:dev",
     "tauri:build": "npm -w @ledger/client run tauri:build",
-    "test": "npm -w @ledger/shared test && node scripts/verify-build-pipeline.mjs",
+    "test": "npm -w @ledger/shared test && node scripts/verify-crypto.mjs && node scripts/test-client-sync-adapter.mjs && node scripts/test-local-store.mjs && node scripts/verify-build-pipeline.mjs",
+    "test:crypto": "node scripts/verify-crypto.mjs",
+    "test:local": "node scripts/test-local-store.mjs",
     "test:pipeline": "node scripts/verify-build-pipeline.mjs",
     "test:server": "npm -w @ledger/server run test"
   },

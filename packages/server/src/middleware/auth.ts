@@ -2,6 +2,7 @@ import { Context, Next } from 'hono';
 import { Env, AppVariables } from '../types';
 import { verifyJwtToken, getJwtSecret } from '../utils/auth';
 import { ApiResponse, JwtPayload } from '@ledger/shared';
+import { D1UserRepository } from '../repositories/D1UserRepository';
 
 type AuthContext = Context<{ Bindings: Env; Variables: AppVariables }>;
 
@@ -51,9 +52,8 @@ export async function requireAuth(c: AuthContext, next: Next) {
   // 校验数据库中用户是否仍存在，防止已删除用户的 JWT 仍可使用
   try {
     if (c.env?.DB) {
-      const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
-        .bind(payload.userId)
-        .first<{ user_id: string }>();
+      const userRepo = new D1UserRepository(c.env.DB);
+      const user = await userRepo.findById(payload.userId);
 
       if (!user) {
         const res: ApiResponse = {
@@ -99,9 +99,8 @@ export async function optionalAuth(c: AuthContext, next: Next) {
       const payload = await verifyJwtToken(token, secret);
       if (c.env?.DB) {
         try {
-          const user = await c.env.DB.prepare('SELECT user_id FROM users WHERE user_id = ?')
-            .bind(payload.userId)
-            .first<{ user_id: string }>();
+          const userRepo = new D1UserRepository(c.env.DB);
+          const user = await userRepo.findById(payload.userId);
           if (user) {
             c.set('user', payload);
           }
