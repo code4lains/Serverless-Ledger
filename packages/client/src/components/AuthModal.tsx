@@ -182,12 +182,15 @@ export function AuthModal({
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
 
-  // 检测本地保险库初始化状态
+  // 检测本地保险库初始化与解锁状态
   const refreshVaultStatus = useCallback(async () => {
     const initialized = await isVaultInitialized();
+    const unlocked = isVaultUnlocked();
     setVaultInitialized(initialized);
     if (!initialized) {
       setVaultAction('setup');
+    } else if (unlocked && initialVaultAction === 'unlock') {
+      setVaultAction('unlock');
     } else if (initialVaultAction) {
       setVaultAction(initialVaultAction);
     }
@@ -195,7 +198,13 @@ export function AuthModal({
 
   useEffect(() => {
     if (isOpen) {
-      setMainMode(initialTab);
+      const unlocked = isVaultUnlocked();
+      // 如果保险库已处于解锁状态，且没有明确指定特殊的保险库操作，优先激活云端账号登录 Tab
+      if (initialTab === 'cloud' || (unlocked && initialVaultAction === 'unlock')) {
+        setMainMode('cloud');
+      } else {
+        setMainMode(initialTab);
+      }
       refreshVaultStatus();
       setErrorMsg('');
       setSuccessMsg('');
@@ -204,7 +213,7 @@ export function AuthModal({
       setVaultOldPassword('');
       setVaultRecoveryCode('');
     }
-  }, [isOpen, initialTab, refreshVaultStatus]);
+  }, [isOpen, initialTab, initialVaultAction, refreshVaultStatus]);
 
   // 动态获取 Site Key
   const effectiveSiteKey = (authConfig?.turnstile_site_key || import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
@@ -747,8 +756,62 @@ export function AuthModal({
                 </div>
               )}
 
-              {/* 本地保险库表单 */}
-              <form onSubmit={handleVaultSubmit} className="px-5 pb-5 flex flex-col gap-3">
+              {/* 已解锁状态面板 (若已经解锁且没有在重置/修改密码时显示) */}
+              {isVaultUnlocked() && vaultAction === 'unlock' ? (
+                <div className="px-5 pb-5 flex flex-col gap-3">
+                  <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200/80 dark:border-emerald-800/50 flex flex-col gap-2 text-xs">
+                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-300 font-bold text-sm">
+                      <ShieldCheck className="w-5 h-5 text-emerald-500 shrink-0" />
+                      <span>本地保险库当前已处于解锁状态</span>
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-300 text-[11px] leading-relaxed">
+                      解密主密钥安全保留在内存闭包会话中，无需重复解锁。您可以直接使用记账功能或前往云端同步账号。
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMainMode('cloud');
+                        setErrorMsg('');
+                        setSuccessMsg('');
+                      }}
+                      className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5" />
+                      <span>前往云端账号登录 / 注册</span>
+                    </button>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVaultAction('change');
+                          setErrorMsg('');
+                          setSuccessMsg('');
+                        }}
+                        className="flex-1 py-2 rounded-xl bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-neutral-600 text-gray-700 dark:text-gray-200 font-medium text-xs transition-colors cursor-pointer"
+                      >
+                        修改主密码
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setVaultAction('reset');
+                          setErrorMsg('');
+                          setSuccessMsg('');
+                        }}
+                        className="flex-1 py-2 rounded-xl bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 dark:hover:bg-neutral-600 text-gray-700 dark:text-gray-200 font-medium text-xs transition-colors cursor-pointer"
+                      >
+                        恢复凭证重置
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* 本地保险库表单 */
+                <form onSubmit={handleVaultSubmit} className="px-5 pb-5 flex flex-col gap-3">
                 {/* 恢复码重置模式下的 16 位恢复凭证输入 */}
                 {vaultAction === 'reset' && (
                   <div>
@@ -898,6 +961,7 @@ export function AuthModal({
                   <span>PBKDF2 100,000 轮迭代 · 纯内存会话密钥</span>
                 </div>
               </form>
+            )}
             </div>
           )}
 

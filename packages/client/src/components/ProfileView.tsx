@@ -601,13 +601,13 @@ export function ProfileView({
                 <button
                   type="button"
                   onClick={handleToggleAutoSync}
-                  className={`w-10 h-5.5 rounded-full transition-colors relative flex items-center p-0.5 cursor-pointer ${
+                  className={`w-11 h-6 rounded-full transition-colors duration-200 relative flex items-center p-0.5 cursor-pointer ${
                     autoSyncEnabled ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-neutral-700'
                   }`}
                 >
                   <div
-                    className={`w-4.5 h-4.5 rounded-full bg-white shadow-md transform transition-transform ${
-                      autoSyncEnabled ? 'translate-x-4.5' : 'translate-x-0'
+                    className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-200 ${
+                      autoSyncEnabled ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
                 </button>
@@ -988,13 +988,13 @@ export function ProfileView({
               type="button"
               onClick={onToggleDarkMode}
               aria-label="切换深色模式"
-              className={`w-12 h-6.5 rounded-full transition-all duration-300 relative flex items-center p-1 focus:outline-none cursor-pointer ${
+              className={`w-11 h-6 rounded-full transition-colors duration-300 relative flex items-center p-0.5 focus:outline-none cursor-pointer ${
                 darkMode ? 'bg-indigo-600 shadow-glow-indigo' : 'bg-gray-300 dark:bg-neutral-700'
               }`}
             >
               <div
-                className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
-                  darkMode ? 'translate-x-5.5' : 'translate-x-0'
+                className={`w-5 h-5 rounded-full bg-white shadow-md transform transition-transform duration-300 ease-out ${
+                  darkMode ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
             </button>

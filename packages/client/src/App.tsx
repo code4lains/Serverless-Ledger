@@ -568,7 +568,8 @@ export function App() {
   // 手动触发同步
   const handleSync = async () => {
     if (!currentUser) {
-      showToast('当前处于离线/访客模式，登录账号后可自动云端多端同步', 'info');
+      showToast('当前处于离线/访客模式，登录云端账号后可自动多端同步', 'info');
+      setAuthModalTab('cloud');
       setIsAuthModalOpen(true);
       return;
     }
@@ -825,7 +826,11 @@ export function App() {
               </div>
             ) : (
               <button
-                onClick={() => setIsAuthModalOpen(true)}
+                type="button"
+                onClick={() => {
+                  setAuthModalTab('cloud');
+                  setIsAuthModalOpen(true);
+                }}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-xs hover:shadow-indigo-500/20 active:scale-95 transition-all cursor-pointer"
               >
                 <LogIn className="w-3.5 h-3.5" />
@@ -892,15 +897,18 @@ export function App() {
               )}
             </button>
             <button
+              type="button"
               onClick={handleToggleTheme}
               title={darkMode ? '切换为浅色模式' : '切换为深色模式'}
-              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-90 transition-all text-gray-600 dark:text-gray-300 cursor-pointer"
+              className="p-2 rounded-xl bg-white dark:bg-neutral-800/90 shadow-2xs border border-gray-100 dark:border-neutral-700/80 hover:bg-gray-50 dark:hover:bg-neutral-700 active:scale-90 transition-all text-gray-600 dark:text-gray-300 cursor-pointer group"
             >
-              {darkMode ? (
-                <Sun className="w-4 h-4 text-amber-400 animate-in spin-in-180 duration-200" />
-              ) : (
-                <Moon className="w-4 h-4 text-indigo-600 animate-in spin-in-180 duration-200" />
-              )}
+              <div className="transform transition-transform duration-300 group-hover:rotate-12">
+                {darkMode ? (
+                  <Sun className="w-4 h-4 text-amber-400 transition-all duration-300 scale-100 rotate-0" />
+                ) : (
+                  <Moon className="w-4 h-4 text-indigo-600 transition-all duration-300 scale-100 rotate-0" />
+                )}
+              </div>
             </button>
           </div>
         </header>
