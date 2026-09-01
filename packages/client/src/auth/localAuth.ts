@@ -137,8 +137,11 @@ export async function setupMasterPassword(
   // 6. 自动迁移未加密或默认访客数据至该保险库
   await migrateLocalDataToVault(vaultId);
 
-  // 7. 将解密密钥保留在纯内存会话中
+  // 7. 将解密密钥保留在纯内存会话中并清除手动锁定标记
   setCachedKey(vaultId, masterKey);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+  }
 
   return {
     vaultMeta,
@@ -173,8 +176,11 @@ export async function unlockVault(
       return false;
     }
 
-    // 3. 验证通过，载入内存会话
+    // 3. 验证通过，载入内存会话并清除手动锁定标记
     setCachedKey(vaultId, derivedKey);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+    }
     return true;
   } catch {
     // 密码学解密失败 (AES-GCM Auth Tag 鉴权失败，表明密码错误或数据被篡改)
@@ -229,6 +235,9 @@ export async function changeMasterPassword(
 
   // 5. 更新内存会话密钥
   setCachedKey(vaultId, newKey);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+  }
   return true;
 }
 
@@ -308,6 +317,9 @@ export async function resetPasswordWithRecoveryCode(
 
   // 6. 更新内存会话密钥
   setCachedKey(vaultId, newMasterKey);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+  }
 
   return {
     success: true,
@@ -325,14 +337,22 @@ export async function isVaultInitialized(vaultId: string = 'default_vault'): Pro
 }
 
 /**
- * 6. 检查本地保险库当前是否已解锁 (内存中拥有有效密钥)
+ * 6. 检查本地保险库是否被用户手动锁定
  */
-export function isVaultUnlocked(vaultId: string = 'default_vault'): boolean {
-  return isKeyCached(vaultId);
+export function isVaultManuallyLocked(vaultId: string = 'default_vault'): boolean {
+  if (typeof localStorage === 'undefined') return false;
+  return localStorage.getItem(`ledger_vault_locked_${vaultId}`) === 'true';
 }
 
 /**
- * 7. 获取当前活跃的保险库会话状态
+ * 7. 检查本地保险库当前是否已解锁 (未被手动锁定即默认解锁)
+ */
+export function isVaultUnlocked(vaultId: string = 'default_vault'): boolean {
+  return !isVaultManuallyLocked(vaultId);
+}
+
+/**
+ * 8. 获取当前活跃的保险库会话状态
  */
 export function getActiveSession(vaultId: string = 'default_vault'): VaultSessionInfo | null {
   const session = getCachedSession(vaultId);
@@ -340,22 +360,28 @@ export function getActiveSession(vaultId: string = 'default_vault'): VaultSessio
   return {
     vaultId: session.vaultId,
     unlockedAt: session.unlockedAt,
-    isUnlocked: true,
+    isUnlocked: isVaultUnlocked(vaultId),
   };
 }
 
 /**
- * 8. 锁定指定保险库 (立即从内存中抹除 CryptoKey)
+ * 9. 锁定指定保险库 (持久化手动锁定标记并抹除纯内存 CryptoKey)
  */
 export function lockVault(vaultId: string = 'default_vault'): void {
   clearCachedKey(vaultId);
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem(`ledger_vault_locked_${vaultId}`, 'true');
+  }
 }
 
 /**
- * 9. 全局锁定所有已解锁的保险库
+ * 10. 全局锁定所有已解锁的保险库
  */
 export function lockAllVaults(): void {
   clearAllCachedKeys();
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('ledger_vault_locked_default_vault', 'true');
+  }
 }
 
 /**

@@ -474,7 +474,7 @@ export function DataManagementModal({
         to_account: item.to_account || null,
         transaction_date: item.transaction_date,
         remark: item.remark || null,
-        sync_status: currentUser ? 'pending' : 'synced',
+        sync_status: 'pending',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));

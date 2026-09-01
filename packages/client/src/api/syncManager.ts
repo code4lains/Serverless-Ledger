@@ -20,6 +20,7 @@ import {
   incrementSyncQueueAttempts,
   getLocalStorageStats,
   exportAllLocalData,
+  migrateGuestDataToUser,
 } from '../db';
 import { networkMonitor } from './network';
 import { getStoredUser } from './cloudAuth';
@@ -194,6 +195,9 @@ class SyncManager {
     let syncError: string | undefined;
 
     try {
+      // 0. 前置自动迁移任何未归属的本地离线访客数据至当前登录用户
+      await migrateGuestDataToUser(user.user_id);
+
       // 1. 获取待同步变更队列与待同步流水
       const queueItems = await getPendingSyncQueue(user.user_id);
       const pendingTxs = await localDb.transactions
@@ -375,6 +379,7 @@ class SyncManager {
 
     try {
       if (direction === 'push_local_to_cloud') {
+        await migrateGuestDataToUser(user.user_id);
         const localData = await exportAllLocalData(user.user_id);
         const mutations: Array<{ entity_type: string; entity_id: string; action: string; payload?: any }> = [];
 

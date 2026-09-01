@@ -513,6 +513,108 @@ export async function migrateLocalDataToVault(vaultId: string = 'default_vault')
 }
 
 /**
+ * 将离线/访客模式下的本地记账与导入数据自动归属迁移至登录账号 (并标记待同步)
+ */
+export async function migrateGuestDataToUser(userId: string): Promise<{
+  migratedTransactions: number;
+  migratedLedgers: number;
+  migratedCategories: number;
+  migratedBudgets: number;
+  migratedRecurring: number;
+}> {
+  if (!userId || userId === 'default_user' || userId === 'default_vault') {
+    return { migratedTransactions: 0, migratedLedgers: 0, migratedCategories: 0, migratedBudgets: 0, migratedRecurring: 0 };
+  }
+
+  let txCount = 0;
+  let ledCount = 0;
+  let catCount = 0;
+  let bdCount = 0;
+  let rrCount = 0;
+
+  await localDb.transaction(
+    'rw',
+    [
+      localDb.transactions,
+      localDb.ledgers,
+      localDb.categories,
+      localDb.budgets,
+      localDb.recurring_rules,
+      localDb.syncQueue,
+    ],
+    async () => {
+      // 1. 迁移未归属或默认访客的流水至该用户，并标记为 pending 以便触发云端同步
+      const txs = await localDb.transactions
+        .filter((t) => !t.user_id || t.user_id === 'default_user' || t.user_id === 'default_vault')
+        .toArray();
+      for (const t of txs) {
+        t.user_id = userId;
+        t.sync_status = 'pending';
+        await localDb.transactions.put(t);
+        txCount++;
+      }
+
+      // 2. 迁移账本
+      const leds = await localDb.ledgers
+        .filter((l) => !l.user_id || l.user_id === 'default_user' || l.user_id === 'default_vault')
+        .toArray();
+      for (const l of leds) {
+        l.user_id = userId;
+        await localDb.ledgers.put(l);
+        ledCount++;
+      }
+
+      // 3. 迁移自定义分类
+      const cats = await localDb.categories
+        .filter((c) => c.user_id === 'default_user' || c.user_id === 'default_vault')
+        .toArray();
+      for (const c of cats) {
+        c.user_id = userId;
+        await localDb.categories.put(c);
+        catCount++;
+      }
+
+      // 4. 迁移预算
+      const bds = await localDb.budgets
+        .filter((b) => !b.user_id || b.user_id === 'default_user' || b.user_id === 'default_vault')
+        .toArray();
+      for (const b of bds) {
+        b.user_id = userId;
+        await localDb.budgets.put(b);
+        bdCount++;
+      }
+
+      // 5. 迁移周期规则
+      const rrs = await localDb.recurring_rules
+        .filter((r) => !r.user_id || r.user_id === 'default_user' || r.user_id === 'default_vault')
+        .toArray();
+      for (const r of rrs) {
+        r.user_id = userId;
+        await localDb.recurring_rules.put(r);
+        rrCount++;
+      }
+
+      // 6. 迁移同步队列中的待重放项
+      const queue = await localDb.syncQueue
+        .filter((q) => !q.user_id || q.user_id === 'default_user' || q.user_id === 'default_vault')
+        .toArray();
+      for (const q of queue) {
+        q.user_id = userId;
+        await localDb.syncQueue.put(q);
+      }
+    }
+  );
+
+  return {
+    migratedTransactions: txCount,
+    migratedLedgers: ledCount,
+    migratedCategories: catCount,
+    migratedBudgets: bdCount,
+    migratedRecurring: rrCount,
+  };
+}
+
+/**
  * 清除指定用户的本地私有数据，并在需要时重置基础访客数据 (BUG-C04)
  */
 export async function clearUserData(userId?: string): Promise<void> {

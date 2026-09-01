@@ -69,6 +69,7 @@ import {
   getLocalStorageStats,
   clearUserData,
   clearLocalDatabase,
+  migrateGuestDataToUser,
 } from './db';
 import {
   checkServerHealth,
@@ -310,6 +311,9 @@ export function App() {
 
   // 载入并同步当前用户数据 (0ms 离线启动，网络在后台非阻塞静默同步)
   const loadUserData = async (user: AuthUser) => {
+    // 自动将本地离线/访客模式下的流水与账单迁移至该登录账号
+    await migrateGuestDataToUser(user.user_id);
+
     await seedLocalCategories();
     await seedLocalLedgers(user.user_id);
 
