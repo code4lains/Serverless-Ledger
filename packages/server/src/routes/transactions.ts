@@ -131,5 +131,34 @@ transactionsRouter.delete('/:id', async (c) => {
   }
 });
 
+/**
+ * 批量删除流水 (原子化批量清理)
+ * POST /api/transactions/batch-delete
+ */
+transactionsRouter.post('/batch-delete', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const body = await c.req.json<{ transaction_ids: string[] }>();
+    const ids = Array.isArray(body.transaction_ids) ? body.transaction_ids : [];
+
+    const repos = getRepositories(c.env.DB);
+    const count = await repos.transactions.batchDelete(ids, userId);
+
+    const res: ApiResponse<{ count: number }> = {
+      success: true,
+      data: { count },
+      message: `成功批量删除 ${count} 笔流水`,
+    };
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '批量删除流水失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
 export default transactionsRouter;
 

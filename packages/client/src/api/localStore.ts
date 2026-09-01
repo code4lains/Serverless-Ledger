@@ -375,55 +375,48 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
     }
   }
 
-  const relatedTxs = await localDb.transactions.where('ledger_id').equals(ledgerId).toArray();
-  for (const tx of relatedTxs) {
-    await localDb.transactions.delete(tx.transaction_id);
+  // 本地级联清理该账本下的所有关联流水、预算、周期规则与账本自身
+  await localDb.transaction('rw', [
+    localDb.transactions,
+    localDb.budgets,
+    localDb.recurring_rules,
+    localDb.ledgers,
+    localDb.syncQueue,
+  ], async () => {
+    // 1. 本地批量删除流水
+    await localDb.transactions.where('ledger_id').equals(ledgerId).delete();
+
+    // 2. 本地批量删除预算
+    await localDb.budgets.where('ledger_id').equals(ledgerId).delete();
+
+    // 3. 本地批量删除周期规则
+    await localDb.recurring_rules.where('ledger_id').equals(ledgerId).delete();
+
+    // 4. 清理该账本已在待同步队列中的未完成项 (避免无效重复推送)
+    const queueItems = await localDb.syncQueue.where('user_id').equals(userId).toArray();
+    for (const q of queueItems) {
+      if (
+        (q.entity_type === 'transaction' && q.payload?.ledger_id === ledgerId) ||
+        (q.entity_type === 'budget' && q.payload?.ledger_id === ledgerId) ||
+        (q.entity_type === 'recurring' && q.payload?.ledger_id === ledgerId)
+      ) {
+        await localDb.syncQueue.delete(q.id);
+      }
+    }
+
+    // 5. 本地删除账本自身
+    await localDb.ledgers.delete(ledgerId);
+
+    // 6. 服务端删除账本接口已实现全表级联删除，仅需入列 1 个账本删除事件即可！
     if (shouldEnqueue) {
       await enqueueSyncAction({
         user_id: userId,
-        entity_type: 'transaction',
-        entity_id: tx.transaction_id,
+        entity_type: 'ledger',
+        entity_id: ledgerId,
         action: 'delete',
       });
     }
-  }
-
-  const relatedBudgets = await localDb.budgets.where('ledger_id').equals(ledgerId).toArray();
-  for (const b of relatedBudgets) {
-    await localDb.budgets.delete(b.budget_id);
-    if (shouldEnqueue) {
-      await enqueueSyncAction({
-        user_id: userId,
-        entity_type: 'budget',
-        entity_id: b.budget_id,
-        action: 'delete',
-      });
-    }
-  }
-
-  const relatedRules = await localDb.recurring_rules.where('ledger_id').equals(ledgerId).toArray();
-  for (const r of relatedRules) {
-    await localDb.recurring_rules.delete(r.rule_id);
-    if (shouldEnqueue) {
-      await enqueueSyncAction({
-        user_id: userId,
-        entity_type: 'recurring',
-        entity_id: r.rule_id,
-        action: 'delete',
-      });
-    }
-  }
-
-  await localDb.ledgers.delete(ledgerId);
-
-  if (shouldEnqueue) {
-    await enqueueSyncAction({
-      user_id: userId,
-      entity_type: 'ledger',
-      entity_id: ledgerId,
-      action: 'delete',
-    });
-  }
+  });
 
   return { success: true };
 }

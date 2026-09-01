@@ -172,18 +172,38 @@ export class CloudflareSyncAdapter implements ISyncAdapter {
     const headers = getAuthHeaders();
     const syncedTransactionIds: string[] = [];
 
-    // 1. 重放实体变更队列 (mutations)
-    if (changes.mutations && changes.mutations.length > 0) {
-      for (const item of changes.mutations) {
+    // 1. 聚合批量流水删除 (将分散的 transaction:delete 批量打包发往 /api/transactions/batch-delete)
+    const txDeleteMutations = changes.mutations?.filter(
+      (m) => m.entity_type === 'transaction' && m.action === 'delete'
+    ) || [];
+    const otherMutations = changes.mutations?.filter(
+      (m) => !(m.entity_type === 'transaction' && m.action === 'delete')
+    ) || [];
+
+    if (txDeleteMutations.length > 0) {
+      const txIdsToDelete = txDeleteMutations.map((m) => m.entity_id);
+      const BATCH_DELETE_CHUNK = 100;
+      for (let i = 0; i < txIdsToDelete.length; i += BATCH_DELETE_CHUNK) {
+        const chunk = txIdsToDelete.slice(i, i + BATCH_DELETE_CHUNK);
+        try {
+          await apiFetch(apiUrl('/transactions/batch-delete'), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ transaction_ids: chunk }),
+            signal: AbortSignal.timeout(10000),
+          });
+        } catch (err) {
+          console.warn('[CloudflareSyncAdapter] Batch transaction delete failed:', err);
+        }
+      }
+    }
+
+    // 2. 重放其他实体变更队列 (categories, ledgers, budgets, recurring)
+    if (otherMutations.length > 0) {
+      for (const item of otherMutations) {
         const signal = AbortSignal.timeout(6000);
         try {
           switch (item.entity_type) {
-            case 'transaction':
-              if (item.action === 'delete') {
-                await apiFetch(apiUrl(`/transactions/${item.entity_id}`), { method: 'DELETE', headers, signal });
-              }
-              break;
-
             case 'category':
               if (item.action === 'create') {
                 await apiFetch(apiUrl('/categories'), { method: 'POST', headers, body: JSON.stringify(item.payload), signal });
