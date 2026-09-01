@@ -573,7 +573,7 @@ export function AuthModal({
       if (res.success) {
         setTestResult({
           success: true,
-          message: `连接成功！响应延迟: ${res.latencyMs}ms`,
+          message: `连接正常！(路由: ${res.targetBase}) 延迟: ${res.latencyMs}ms`,
         });
       } else {
         setTestResult({

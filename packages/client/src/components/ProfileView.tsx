@@ -239,7 +239,7 @@ export function ProfileView({
       if (res.success) {
         setApiTestResult({
           success: true,
-          message: `连接正常！响应延迟: ${res.latencyMs}ms`,
+          message: `连接正常！(路由: ${res.targetBase}) 延迟: ${res.latencyMs}ms`,
         });
       } else {
         setApiTestResult({

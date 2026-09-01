@@ -165,6 +165,7 @@ export async function testApiConnection(customUrl?: string): Promise<{
   message: string;
   error?: string;
   data?: any;
+  targetBase?: string;
 }> {
   let targetBase: string;
   if (customUrl !== undefined) {
@@ -199,6 +200,7 @@ export async function testApiConnection(customUrl?: string): Promise<{
         latencyMs: latency,
         message: `连接成功 (延迟 ${latency}ms)`,
         data: parsed.data,
+        targetBase,
       };
     } else {
       const errMsg = parsed.error || `服务端响应异常 (HTTP ${res.status})`;
@@ -207,6 +209,7 @@ export async function testApiConnection(customUrl?: string): Promise<{
         latencyMs: latency,
         message: errMsg,
         error: errMsg,
+        targetBase,
       };
     }
   } catch (err: any) {
@@ -218,6 +221,7 @@ export async function testApiConnection(customUrl?: string): Promise<{
       latencyMs: latency,
       message: errMsg,
       error: errMsg,
+      targetBase,
     };
   }
 }

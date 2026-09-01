@@ -933,8 +933,28 @@ export function App() {
           }}
         />
 
-        {/* 1. 【明细】板块 (结余汇总与流水时间轴列表 - 响应式双栏布局) */}
-        {navTab === 'detail' && (
+        {/* 如果保险库已锁定且不在“我的”页面，展示隐私遮罩，阻断业务 UI 渲染 */}
+        {vaultStatus === 'locked' && navTab !== 'profile' ? (
+          <div className="flex flex-col items-center justify-center py-24 px-4 mt-8 bg-white/60 dark:bg-neutral-900/60 backdrop-blur-3xl rounded-3xl border border-gray-200/50 dark:border-neutral-800/50 shadow-xl mx-2 sm:mx-0">
+            <div className="w-20 h-20 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-6 shadow-inner">
+              <Lock className="w-10 h-10 text-amber-600 dark:text-amber-400" />
+            </div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">本地保险库已锁定</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-8 text-center max-w-sm leading-relaxed">
+              您的财务数据正处于安全保护模式。为防止隐私泄露，请先验证主密码以继续访问记账明细与统计报表。
+            </p>
+            <button
+              type="button"
+              onClick={() => handleOpenVaultModal('unlock')}
+              className="px-8 py-3.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-lg shadow-indigo-600/30 hover:shadow-indigo-600/50 transition-all active:scale-95 cursor-pointer"
+            >
+              输入主密码解锁
+            </button>
+          </div>
+        ) : (
+          <div className="animate-fadeIn">
+            {/* 1. 【明细】板块 (结余汇总与流水时间轴列表 - 响应式双栏布局) */}
+            {navTab === 'detail' && (
           <div className="lg:grid lg:grid-cols-12 lg:gap-6 items-start flex flex-col gap-4">
             {/* 左侧区域 (lg:col-span-5): 账本选择器 + 结余汇总大卡片 + 月度预算看板 */}
             <div className="lg:col-span-5 w-full flex flex-col gap-4 lg:sticky lg:top-4">
@@ -1757,15 +1777,17 @@ export function App() {
           </div>
         )}
 
-        {/* 4. 【分类】板块 (默认固定展示 支出大类) */}
-        {navTab === 'category' && (
-          <CategoriesView
-            categories={categories}
-            initialType="expense"
-            currentUser={currentUser}
-            onCategoriesChanged={refreshCategories}
-            onRequireAuth={() => setIsAuthModalOpen(true)}
-          />
+            {/* 4. 【分类】板块 (默认固定展示 支出大类) */}
+            {navTab === 'category' && (
+              <CategoriesView
+                categories={categories}
+                initialType="expense"
+                currentUser={currentUser}
+                onCategoriesChanged={refreshCategories}
+                onRequireAuth={() => setIsAuthModalOpen(true)}
+              />
+            )}
+          </div>
         )}
 
         {/* 5. 【我的】板块 */}

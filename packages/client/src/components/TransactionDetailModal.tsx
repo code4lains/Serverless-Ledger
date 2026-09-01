@@ -39,6 +39,7 @@ import { AccountPicker } from './AccountPicker';
 import { Layers } from 'lucide-react';
 
 import { AuthUser } from '@ledger/shared';
+import { isCloudSyncEnabled } from '../api/client';
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null;
@@ -558,7 +559,7 @@ export function TransactionDetailModal({
                     ) : (
                       <Clock className="w-3.5 h-3.5 text-amber-500" />
                     )}
-                    同步状态
+                    {isCloudSyncEnabled() && currentUser ? '同步状态' : '数据状态'}
                   </span>
                   <span
                     className={`font-medium ${
@@ -567,7 +568,11 @@ export function TransactionDetailModal({
                         : 'text-amber-500'
                     }`}
                   >
-                    {transaction.sync_status === 'synced' ? '已同步至 Cloudflare D1' : '本地暂存 (离线优先)'}
+                    {isCloudSyncEnabled() && currentUser
+                      ? transaction.sync_status === 'synced'
+                        ? '已同步至 Cloudflare D1'
+                        : '本地暂存 (离线优先)'
+                      : '仅保存至本地保险库'}
                   </span>
                 </div>
               </div>

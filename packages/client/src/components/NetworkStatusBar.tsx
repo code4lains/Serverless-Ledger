@@ -98,7 +98,7 @@ export function NetworkStatusBar({
           <div>
             <span className="font-bold text-indigo-700 dark:text-indigo-300">🛡️ 本地离线保护</span>
             <span className="text-gray-500 dark:text-gray-400 text-[11px] ml-1.5 hidden sm:inline">
-              · 数据全量保存在本机 IndexedDB (零网络阻断)
+              · 数据全量保存在本机 IndexedDB
             </span>
           </div>
         </div>

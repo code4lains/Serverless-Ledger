@@ -119,10 +119,10 @@ export function OnboardingModal({
 
               <div className="text-center space-y-2">
                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  欢迎使用 账盾 (Serverless Ledger)
+                  欢迎使用 账盾
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  全新 v2 本地优先架构，为您提供绝对私密、0ms 极速响应的财务记账体验。
+                  本地优先架构，为您提供绝对私密、极速响应的财务记账体验。
                 </p>
               </div>
 
@@ -131,7 +131,7 @@ export function OnboardingModal({
                   <HardDrive className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      100% 本地优先 (Local-First)
+                      100% 本地优先
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       所有数据完整存储于本机 IndexedDB，无网络、无服务器依然秒开且功能全备。
@@ -143,7 +143,7 @@ export function OnboardingModal({
                   <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      零知识安全保险库 (Web Crypto)
+                      零知识安全保险库
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                       PBKDF2 100,000 轮 + AES-GCM-256 硬件加速加密，落盘数据无人可窥视。
