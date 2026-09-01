@@ -182,6 +182,13 @@ export async function testApiConnection(customUrl?: string): Promise<{
     targetBase = getApiBase();
   }
 
+  // 将相对路径解析为绝对完整路径，以便在 UI 给出清晰明确的真实路由反馈
+  if (typeof window !== 'undefined' && !targetBase.startsWith('http')) {
+    try {
+      targetBase = new URL(targetBase, window.location.origin).href.replace(/\/+$/, '');
+    } catch {}
+  }
+
   const startTime = performance.now();
   try {
     const res = await fetch(`${targetBase}/health`, {

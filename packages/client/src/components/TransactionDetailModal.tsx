@@ -582,10 +582,6 @@ export function TransactionDetailModal({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!currentUser) {
-                      onRequireAuth?.();
-                      return;
-                    }
                     setIsDeleting(true);
                   }}
                   className="flex-1 py-2 rounded-xl text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 transition-colors flex items-center justify-center gap-1.5"
@@ -596,10 +592,6 @@ export function TransactionDetailModal({
                 <button
                   type="button"
                   onClick={() => {
-                    if (!currentUser) {
-                      onRequireAuth?.();
-                      return;
-                    }
                     setIsEditing(true);
                   }}
                   className="flex-1 py-2 rounded-xl text-xs font-medium text-gray-800 dark:text-gray-100 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 transition-colors flex items-center justify-center gap-1.5"
