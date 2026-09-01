@@ -50,6 +50,7 @@ export interface ILedgerRepository {
   delete(ledgerId: string, userId: string): Promise<boolean>;
   setDefault(ledgerId: string, userId: string): Promise<boolean>;
   getDefault(userId: string): Promise<Ledger | null>;
+  merge(userId: string, req: { source_ledger_id: string; target_ledger_id: string; delete_source?: boolean }): Promise<{ success: boolean; mergedTransactionCount: number; error?: string }>;
 }
 
 // ======================= 分类仓库接口 =======================

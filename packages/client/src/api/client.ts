@@ -54,6 +54,7 @@ export {
   updateLedger,
   setDefaultLedger,
   deleteLedger,
+  mergeLedgers,
   queryTransactions,
   createTransaction,
   updateTransaction,

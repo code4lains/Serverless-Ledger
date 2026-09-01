@@ -12,6 +12,9 @@ import {
   Save,
   Coins,
   ArrowRight,
+  ArrowDown,
+  ArrowRightLeft,
+  GitMerge,
   ShieldCheck,
   Building,
   Home,
@@ -36,6 +39,7 @@ import {
   updateLedger,
   setDefaultLedger,
   deleteLedger,
+  mergeLedgers,
 } from '../api/client';
 import { AuthUser } from '@ledger/shared';
 
@@ -72,7 +76,7 @@ export function LedgerManagementModal({
   onLedgersChanged,
   onRequireAuth,
 }: LedgerManagementModalProps) {
-  const [activeTab, setActiveTab] = useState<'list' | 'create'>('list');
+  const [activeTab, setActiveTab] = useState<'list' | 'create' | 'merge'>('list');
   const [editingLedgerId, setEditingLedgerId] = useState<string | null>(null);
   const [deletingLedgerId, setDeletingLedgerId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -88,6 +92,13 @@ export function LedgerManagementModal({
   const [editCurrency, setEditCurrency] = useState('CNY');
   const [editIsDefault, setEditIsDefault] = useState(false);
 
+  // 合并表单状态
+  const [mergeSourceId, setMergeSourceId] = useState<string>('');
+  const [mergeTargetId, setMergeTargetId] = useState<string>('');
+  const [mergeDeleteSource, setMergeDeleteSource] = useState<boolean>(true);
+  const [mergeSuccessMsg, setMergeSuccessMsg] = useState<string | null>(null);
+  const [isConfirmingMerge, setIsConfirmingMerge] = useState<boolean>(false);
+
   // 初始化重置
   useEffect(() => {
     if (isOpen) {
@@ -98,8 +109,15 @@ export function LedgerManagementModal({
       setNewName('');
       setNewCurrency('CNY');
       setNewIsDefault(false);
+      setMergeSuccessMsg(null);
+      setIsConfirmingMerge(false);
+
+      if (ledgers.length >= 2) {
+        setMergeSourceId(ledgers[0].ledger_id);
+        setMergeTargetId(ledgers[1].ledger_id);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, ledgers]);
 
   // 计算每个账本的统计数据
   const ledgerStatsMap = useMemo(() => {
@@ -230,6 +248,63 @@ export function LedgerManagementModal({
     }
   };
 
+  // 开启合并模式 (指定源账本)
+  const handleStartMerge = (sourceId?: string) => {
+    if (!currentUser) {
+      onRequireAuth?.();
+      return;
+    }
+    const sId = sourceId || (ledgers[0]?.ledger_id || '');
+    const tId = ledgers.find((l) => l.ledger_id !== sId)?.ledger_id || '';
+    setMergeSourceId(sId);
+    setMergeTargetId(tId);
+    setMergeDeleteSource(true);
+    setErrorMsg(null);
+    setMergeSuccessMsg(null);
+    setIsConfirmingMerge(false);
+    setActiveTab('merge');
+  };
+
+  // 执行账本合并
+  const handleExecuteMerge = async () => {
+    if (!mergeSourceId || !mergeTargetId) {
+      setErrorMsg('请选择源账本与目标账本');
+      return;
+    }
+    if (mergeSourceId === mergeTargetId) {
+      setErrorMsg('源账本与目标账本不能相同');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg(null);
+    try {
+      const res = await mergeLedgers(mergeSourceId, mergeTargetId, mergeDeleteSource);
+      if (!res.success) {
+        setErrorMsg(res.error || '合并账本失败');
+        return;
+      }
+
+      await onLedgersChanged();
+
+      // 若当前视图为被合并的源账本，切换至目标账本
+      if (activeLedgerId === mergeSourceId) {
+        onSelectLedger(mergeTargetId);
+      }
+
+      setMergeSuccessMsg(`合并成功！已将 ${res.mergedCount} 笔数据转移至目标账本。`);
+      setTimeout(() => {
+        setMergeSuccessMsg(null);
+        setIsConfirmingMerge(false);
+        setActiveTab('list');
+      }, 1500);
+    } catch (err: any) {
+      setErrorMsg(err?.message || '合并操作异常');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
       <div className="bg-white dark:bg-neutral-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-100 dark:border-neutral-700/80 transition-all flex flex-col max-h-[85vh] animate-modal-in">
@@ -256,9 +331,9 @@ export function LedgerManagementModal({
           </button>
         </div>
 
-        {/* Tab 导航切换 (账本列表 / 新建账本) */}
+        {/* Tab 导航切换 (账本列表 / 合并账本 / 新建账本) */}
         <div className="flex px-5 pt-3 shrink-0">
-          <div className="flex w-full bg-gray-100/90 dark:bg-neutral-900/90 rounded-xl p-1 text-xs">
+          <div className="flex w-full bg-gray-100/90 dark:bg-neutral-900/90 rounded-xl p-1 text-xs gap-1">
             <button
               type="button"
               onClick={() => {
@@ -276,6 +351,20 @@ export function LedgerManagementModal({
               <BookOpen className="w-3.5 h-3.5" />
               <span>所有账本 ({ledgers.length})</span>
             </button>
+            {ledgers.length >= 2 && (
+              <button
+                type="button"
+                onClick={() => handleStartMerge()}
+                className={`flex-1 py-1.5 font-semibold rounded-lg transition-all duration-150 flex items-center justify-center gap-1.5 active:scale-95 ${
+                  activeTab === 'merge'
+                    ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                    : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
+                }`}
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                <span>合并账本</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -545,6 +634,16 @@ export function LedgerManagementModal({
                       </div>
 
                       <div className="flex items-center gap-1">
+                        {ledgers.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartMerge(ledger.ledger_id)}
+                            className="p-1 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors"
+                            title="合并至其他账本"
+                          >
+                            <GitMerge className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleStartEdit(ledger)}
@@ -568,6 +667,166 @@ export function LedgerManagementModal({
                   </div>
                 );
               })}
+            </div>
+          ) : activeTab === 'merge' ? (
+            /* 账本合并模式 */
+            <div className="flex flex-col gap-3.5 animate-fadeIn">
+              {/* 成功提示 */}
+              {mergeSuccessMsg && (
+                <div className="p-3 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+                  <span>{mergeSuccessMsg}</span>
+                </div>
+              )}
+
+              {/* 源账本选择 (A) */}
+              <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 border border-gray-200 dark:border-neutral-700 flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-orange-100 text-orange-600 dark:bg-orange-950/60 dark:text-orange-400 inline-flex items-center justify-center text-[10px] font-bold">
+                      A
+                    </span>
+                    <span>源账本 (数据将被移出)</span>
+                  </span>
+                  <span className="text-[10px] text-gray-400">
+                    {ledgerStatsMap.get(mergeSourceId)?.count || 0} 笔流水
+                  </span>
+                </div>
+                <select
+                  value={mergeSourceId}
+                  onChange={(e) => {
+                    const newSId = e.target.value;
+                    setMergeSourceId(newSId);
+                    if (mergeTargetId === newSId) {
+                      const other = ledgers.find((l) => l.ledger_id !== newSId);
+                      if (other) setMergeTargetId(other.ledger_id);
+                    }
+                  }}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200 focus:outline-none cursor-pointer font-medium"
+                >
+                  {ledgers.map((l) => {
+                    const st = ledgerStatsMap.get(l.ledger_id) || { count: 0, balance: 0 };
+                    return (
+                      <option key={l.ledger_id} value={l.ledger_id}>
+                        {l.name} ({l.currency}) · {st.count} 笔流水 {l.is_default === 1 ? '★ 默认' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* 箭头指示 */}
+              <div className="flex items-center justify-center -my-1.5">
+                <div className="w-7 h-7 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </div>
+              </div>
+
+              {/* 目标账本选择 (B) */}
+              <div className="p-3.5 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200/80 dark:border-indigo-800/60 flex flex-col gap-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-semibold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
+                    <span className="w-4 h-4 rounded-full bg-indigo-600 text-white inline-flex items-center justify-center text-[10px] font-bold">
+                      B
+                    </span>
+                    <span>目标账本 (接收全部数据)</span>
+                  </span>
+                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400">
+                    {ledgerStatsMap.get(mergeTargetId)?.count || 0} 笔流水
+                  </span>
+                </div>
+                <select
+                  value={mergeTargetId}
+                  onChange={(e) => setMergeTargetId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-neutral-800 border border-indigo-200 dark:border-indigo-800 text-gray-800 dark:text-gray-200 focus:outline-none cursor-pointer font-medium"
+                >
+                  {ledgers
+                    .filter((l) => l.ledger_id !== mergeSourceId)
+                    .map((l) => {
+                      const st = ledgerStatsMap.get(l.ledger_id) || { count: 0, balance: 0 };
+                      return (
+                        <option key={l.ledger_id} value={l.ledger_id}>
+                          {l.name} ({l.currency}) · {st.count} 笔流水 {l.is_default === 1 ? '★ 默认' : ''}
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+
+              {/* 预计合并结果摘要 */}
+              {(() => {
+                const sStats = ledgerStatsMap.get(mergeSourceId) || { count: 0, balance: 0 };
+                const tStats = ledgerStatsMap.get(mergeTargetId) || { count: 0, balance: 0 };
+                const targetL = ledgers.find((l) => l.ledger_id === mergeTargetId);
+                const curSym = targetL ? getCurrencySymbol(targetL.currency) : '¥';
+                return (
+                  <div className="p-3 rounded-2xl bg-gray-50 dark:bg-neutral-900/40 border border-gray-200/80 dark:border-neutral-700 text-xs flex items-center justify-between">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-400">合并后目标账本总数据</span>
+                      <span className="font-bold text-gray-800 dark:text-gray-200">
+                        共 {sStats.count + tStats.count} 笔账单明细
+                      </span>
+                    </div>
+                    <div className="text-right flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-400">合并后预计结余</span>
+                      <span
+                        className={`font-bold ${
+                          sStats.balance + tStats.balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-[#D08770]'
+                        }`}
+                      >
+                        {formatMoney(sStats.balance + tStats.balance, curSym)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 是否删除源账本选项 */}
+              <label className="flex items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={mergeDeleteSource}
+                  onChange={(e) => setMergeDeleteSource(e.target.checked)}
+                  className="rounded accent-indigo-600"
+                />
+                <span className="text-gray-700 dark:text-gray-300 font-medium">
+                  数据转移完成后，自动清理并删除源账本【
+                  {ledgers.find((l) => l.ledger_id === mergeSourceId)?.name || 'A'}】
+                </span>
+              </label>
+
+              {/* ⚠️ 高危不可撤销警示框 */}
+              <div className="p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 flex items-start gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold">⚠️ 操作不可撤销警示</div>
+                  <p className="text-[11px] mt-0.5 leading-relaxed text-amber-700/90 dark:text-amber-300/90">
+                    执行合并后，源账本下的全部账单流水记录、预算与周期记账规则将
+                    <strong>永久转移归入目标账本</strong>。
+                    <strong>此操作一经确认不可撤销或自动回退</strong>，请务必核对无误！
+                  </p>
+                </div>
+              </div>
+
+              {/* 底部按钮 */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('list')}
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-neutral-700 hover:bg-gray-200 transition-colors cursor-pointer"
+                >
+                  返回列表
+                </button>
+                <button
+                  type="button"
+                  disabled={isSubmitting || !mergeSourceId || !mergeTargetId || mergeSourceId === mergeTargetId}
+                  onClick={handleExecuteMerge}
+                  className="flex-1 py-2.5 rounded-2xl text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20 active:scale-95 disabled:opacity-40 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <GitMerge className="w-3.5 h-3.5" />
+                  <span>{isSubmitting ? '正在合并转移...' : '确认执行合并 (不可撤销)'}</span>
+                </button>
+              </div>
             </div>
           ) : (
             /* 创建新账本模式 */

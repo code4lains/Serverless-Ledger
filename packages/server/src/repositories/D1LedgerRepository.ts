@@ -219,4 +219,83 @@ export class D1LedgerRepository implements ILedgerRepository {
     const created = await this.create(userId, { name: '默认账本', currency: 'CNY', is_default: 1 });
     return created.ledger_id;
   }
+
+  /**
+   * 账本数据合并 (将源账本的所有流水、预算及周期规则原子转移至目标账本)
+   */
+  async merge(
+    userId: string,
+    req: { source_ledger_id: string; target_ledger_id: string; delete_source?: boolean }
+  ): Promise<{ success: boolean; mergedTransactionCount: number; error?: string }> {
+    const { source_ledger_id, target_ledger_id, delete_source = true } = req;
+
+    if (!source_ledger_id || !target_ledger_id) {
+      return { success: false, mergedTransactionCount: 0, error: '源账本与目标账本均不能为空' };
+    }
+
+    if (source_ledger_id === target_ledger_id) {
+      return { success: false, mergedTransactionCount: 0, error: '源账本与目标账本不能相同' };
+    }
+
+    const sourceLedger = await this.findById(source_ledger_id, userId);
+    if (!sourceLedger) {
+      return { success: false, mergedTransactionCount: 0, error: '源账本不存在或无权访问' };
+    }
+
+    const targetLedger = await this.findById(target_ledger_id, userId);
+    if (!targetLedger) {
+      return { success: false, mergedTransactionCount: 0, error: '目标账本不存在或无权访问' };
+    }
+
+    // 统计转移流水数量
+    const countRow = await this.db
+      .prepare('SELECT COUNT(*) as count FROM transactions WHERE ledger_id = ? AND user_id = ?')
+      .bind(source_ledger_id, userId)
+      .first<{ count: number }>();
+    const txCount = Number(countRow?.count || 0);
+
+    const now = new Date().toISOString();
+
+    const batchStatements: D1PreparedStatement[] = [
+      // 1. 转移所有账单流水
+      this.db
+        .prepare('UPDATE transactions SET ledger_id = ?, updated_at = ? WHERE ledger_id = ? AND user_id = ?')
+        .bind(target_ledger_id, now, source_ledger_id, userId),
+
+      // 2. 转移所有预算
+      this.db
+        .prepare('UPDATE budgets SET ledger_id = ?, updated_at = ? WHERE ledger_id = ? AND user_id = ?')
+        .bind(target_ledger_id, now, source_ledger_id, userId),
+
+      // 3. 转移所有周期记账规则
+      this.db
+        .prepare('UPDATE recurring_rules SET ledger_id = ?, updated_at = ? WHERE ledger_id = ? AND user_id = ?')
+        .bind(target_ledger_id, now, source_ledger_id, userId),
+    ];
+
+    // 若源账本为默认账本，将目标账本设为默认账本
+    if (sourceLedger.is_default === 1 && targetLedger.is_default !== 1) {
+      batchStatements.push(
+        this.db
+          .prepare('UPDATE ledgers SET is_default = 1, updated_at = ? WHERE ledger_id = ? AND user_id = ?')
+          .bind(now, target_ledger_id, userId)
+      );
+    }
+
+    // 若勾选了删除源账本
+    if (delete_source) {
+      batchStatements.push(
+        this.db
+          .prepare('DELETE FROM ledgers WHERE ledger_id = ? AND user_id = ?')
+          .bind(source_ledger_id, userId)
+      );
+    }
+
+    await this.db.batch(batchStatements);
+
+    return {
+      success: true,
+      mergedTransactionCount: txCount,
+    };
+  }
 }

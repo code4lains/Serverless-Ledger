@@ -27,6 +27,7 @@ import {
   Unlock,
   KeyRound,
   Shield,
+  BookOpen,
 } from 'lucide-react';
 import {
   Transaction,
@@ -845,6 +846,25 @@ export function DataManagementModal({
                   {/* Step 1: 上传 / 拖拽文件 */}
                   {!parseResult && !isEncryptedPackage && !decryptedBackupData ? (
                     <div className="flex flex-col gap-3">
+                      {/* 目标账本预选配置 */}
+                      <div className="flex items-center justify-between px-3.5 py-2.5 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 border border-gray-200 dark:border-neutral-700 text-xs">
+                        <div className="flex items-center gap-1.5 text-gray-700 dark:text-gray-200 font-semibold">
+                          <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
+                          <span>导入至目标账本</span>
+                        </div>
+                        <select
+                          value={importTargetLedgerId}
+                          onChange={(e) => setImportTargetLedgerId(e.target.value)}
+                          className="bg-white dark:bg-neutral-800 text-xs font-semibold px-2.5 py-1 rounded-xl border border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200 focus:outline-none cursor-pointer"
+                        >
+                          {ledgers.map((l) => (
+                            <option key={l.ledger_id} value={l.ledger_id}>
+                              {l.name} ({l.currency}) {l.is_default === 1 ? '★ 默认日常' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <div
                         onDragEnter={handleDrag}
                         onDragLeave={handleDrag}

@@ -421,6 +421,118 @@ export async function deleteLedger(ledgerId: string): Promise<{ success: boolean
   return { success: true };
 }
 
+/**
+ * 账本合并 (离线优先：将源账本数据转移至目标账本)
+ */
+export async function mergeLedgers(
+  sourceLedgerId: string,
+  targetLedgerId: string,
+  deleteSource: boolean = true
+): Promise<{ success: boolean; mergedCount: number; error?: string }> {
+  if (!sourceLedgerId || !targetLedgerId) {
+    return { success: false, mergedCount: 0, error: '源账本与目标账本均不能为空' };
+  }
+
+  if (sourceLedgerId === targetLedgerId) {
+    return { success: false, mergedCount: 0, error: '源账本与目标账本不能相同' };
+  }
+
+  const sourceLedger = await localDb.ledgers.get(sourceLedgerId);
+  if (!sourceLedger) {
+    return { success: false, mergedCount: 0, error: '源账本不存在' };
+  }
+
+  const targetLedger = await localDb.ledgers.get(targetLedgerId);
+  if (!targetLedger) {
+    return { success: false, mergedCount: 0, error: '目标账本不存在' };
+  }
+
+  const user = getStoredUser();
+  const userId = user?.user_id || 'default_user';
+  const shouldEnqueue = isCloudSyncEnabled() && !!user;
+  const now = new Date().toISOString();
+
+  let mergedCount = 0;
+
+  await localDb.transaction(
+    'rw',
+    [
+      localDb.transactions,
+      localDb.budgets,
+      localDb.recurring_rules,
+      localDb.ledgers,
+      localDb.syncQueue,
+    ],
+    async () => {
+      // 1. 转移本地流水
+      const sourceTxs = await localDb.transactions.where('ledger_id').equals(sourceLedgerId).toArray();
+      mergedCount = sourceTxs.length;
+      for (const tx of sourceTxs) {
+        tx.ledger_id = targetLedgerId;
+        tx.updated_at = now;
+        tx.sync_status = 'pending';
+        await localDb.transactions.put(tx);
+      }
+
+      // 2. 转移本地预算
+      const sourceBudgets = await localDb.budgets.where('ledger_id').equals(sourceLedgerId).toArray();
+      for (const b of sourceBudgets) {
+        b.ledger_id = targetLedgerId;
+        b.updated_at = now;
+        await localDb.budgets.put(b);
+      }
+
+      // 3. 转移本地周期记账规则
+      const sourceRules = await localDb.recurring_rules.where('ledger_id').equals(sourceLedgerId).toArray();
+      for (const r of sourceRules) {
+        r.ledger_id = targetLedgerId;
+        r.updated_at = now;
+        await localDb.recurring_rules.put(r);
+      }
+
+      // 4. 若源账本为默认账本，目标账本自动设为默认账本
+      if (sourceLedger.is_default === 1 && targetLedger.is_default !== 1) {
+        await localDb.ledgers.update(targetLedgerId, { is_default: 1, updated_at: now });
+      }
+
+      // 5. 若勾选删除源账本
+      if (deleteSource) {
+        await localDb.ledgers.delete(sourceLedgerId);
+        // 清理待同步队列中关于源账本的未完成项
+        const queuedItems = await localDb.syncQueue.where('user_id').equals(userId).toArray();
+        for (const q of queuedItems) {
+          if (
+            (q.entity_type === 'ledger' && q.entity_id === sourceLedgerId) ||
+            (q.entity_type === 'transaction' && q.payload?.ledger_id === sourceLedgerId)
+          ) {
+            await localDb.syncQueue.delete(q.id);
+          }
+        }
+      }
+
+      // 6. 仅入列 1 个 merge 同步事件
+      if (shouldEnqueue) {
+        await enqueueSyncAction({
+          user_id: userId,
+          entity_type: 'ledger',
+          entity_id: sourceLedgerId,
+          action: 'merge',
+          payload: {
+            source_ledger_id: sourceLedgerId,
+            target_ledger_id: targetLedgerId,
+            delete_source: deleteSource,
+          },
+        });
+      }
+    }
+  );
+
+  return {
+    success: true,
+    mergedCount,
+  };
+}
+
 // =========================================================================
 // 3. 交易流水管理 (Transactions Local CRUD & Query)
 // =========================================================================

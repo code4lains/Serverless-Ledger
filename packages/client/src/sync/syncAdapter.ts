@@ -225,6 +225,8 @@ export class CloudflareSyncAdapter implements ISyncAdapter {
                 await apiFetch(apiUrl(`/ledgers/${item.entity_id}/default`), { method: 'PUT', headers, signal });
               } else if (item.action === 'delete') {
                 await apiFetch(apiUrl(`/ledgers/${item.entity_id}`), { method: 'DELETE', headers, signal });
+              } else if (item.action === 'merge') {
+                await apiFetch(apiUrl('/ledgers/merge'), { method: 'POST', headers, body: JSON.stringify(item.payload), signal });
               }
               break;
 

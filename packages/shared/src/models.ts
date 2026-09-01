@@ -79,6 +79,18 @@ export interface UpdateLedgerRequest {
   is_default?: number | boolean;
 }
 
+export interface MergeLedgerRequest {
+  source_ledger_id: string;
+  target_ledger_id: string;
+  delete_source?: boolean;
+}
+
+export interface MergeLedgerResponse {
+  success: boolean;
+  merged_transaction_count: number;
+  source_deleted: boolean;
+}
+
 export interface LedgerSummary {
   ledger: Ledger;
   transaction_count: number;

@@ -10,7 +10,7 @@ import {
 } from '@ledger/shared';
 
 export type SyncEntityType = 'transaction' | 'category' | 'ledger' | 'budget' | 'recurring';
-export type SyncActionType = 'create' | 'update' | 'delete' | 'reorder' | 'set_default' | 'batch_set';
+export type SyncActionType = 'create' | 'update' | 'delete' | 'reorder' | 'set_default' | 'batch_set' | 'merge';
 
 /**
  * 离线变更队列项模型 (用于离线操作记录与时序重放，防止离线删除复活)

@@ -171,5 +171,43 @@ ledgersRouter.delete('/:id', async (c) => {
   }
 });
 
+/**
+ * 合并账本 (将源账本数据转移至目标账本)
+ * POST /api/ledgers/merge
+ */
+ledgersRouter.post('/merge', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const body = await c.req.json<{ source_ledger_id: string; target_ledger_id: string; delete_source?: boolean }>();
+    const repos = getRepositories(c.env.DB);
+
+    const result = await repos.ledgers.merge(userId, body);
+    if (!result.success) {
+      const res: ApiResponse = {
+        success: false,
+        error: result.error || '合并账本失败',
+      };
+      return c.json(res, 400);
+    }
+
+    const res: ApiResponse<{ merged_transaction_count: number; source_deleted: boolean }> = {
+      success: true,
+      data: {
+        merged_transaction_count: result.mergedTransactionCount,
+        source_deleted: body.delete_source !== false,
+      },
+      message: `成功将 ${result.mergedTransactionCount} 笔数据合并至目标账本`,
+    };
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '合并账本失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
 export default ledgersRouter;
 

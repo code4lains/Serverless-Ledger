@@ -279,6 +279,16 @@ class SyncManager {
             }
           }
 
+          // 确保本地所有账本中严格保证只有 1 个默认账本 (is_default === 1)
+          const allLocalLeds = await localDb.ledgers.toArray();
+          const defaultLeds = allLocalLeds.filter((l) => l.is_default === 1);
+          if (defaultLeds.length > 1) {
+            defaultLeds.sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''));
+            for (let i = 1; i < defaultLeds.length; i++) {
+              await localDb.ledgers.update(defaultLeds[i].ledger_id, { is_default: 0 });
+            }
+          }
+
           // 合并预算
           const pendingBudgetQueue = await localDb.syncQueue
             .where('entity_type')
