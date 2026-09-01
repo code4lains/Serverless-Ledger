@@ -5,6 +5,7 @@ import {
   ApiResponse,
   Budget,
   BudgetPeriod,
+  CreateBudgetRequest,
   BatchSetBudgetRequest,
   SetBudgetItem,
 } from '@ledger/shared';
@@ -105,6 +106,66 @@ budgetsRouter.put('/batch', async (c) => {
     const res: ApiResponse = {
       success: false,
       error: err?.message || '批量设置预算失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 创建单项预算
+ * POST /api/budgets
+ */
+budgetsRouter.post('/', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const body = await c.req.json<CreateBudgetRequest>();
+    const repos = getRepositories(c.env.DB);
+
+    const created = await repos.budgets.create(userId, body);
+    const res: ApiResponse<Budget> = {
+      success: true,
+      data: created,
+    };
+    return c.json(res, 201);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '创建预算失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 删除预算
+ * DELETE /api/budgets/:id
+ */
+budgetsRouter.delete('/:id', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const budgetId = c.req.param('id');
+    const repos = getRepositories(c.env.DB);
+
+    const success = await repos.budgets.delete(budgetId, userId);
+    if (!success) {
+      const res: ApiResponse = {
+        success: false,
+        error: '预算不存在或无权删除',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse = {
+      success: true,
+      message: '预算删除成功',
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '删除预算失败',
     };
     return c.json(res, 500);
   }

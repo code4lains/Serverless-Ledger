@@ -5,6 +5,8 @@ import {
   ApiResponse,
   RecurringRule,
   Transaction,
+  CreateRecurringRuleRequest,
+  UpdateRecurringRuleRequest,
   ExecuteDueRecurringResult,
   calculateNextRunDate,
   getDueDatesForRule,
@@ -122,6 +124,101 @@ recurringRouter.post('/execute-due', async (c) => {
   } catch (err: any) {
     console.error('Error executing due recurring rules:', err);
     return c.json({ success: false, error: '执行周期规则失败' }, 500);
+  }
+});
+
+/**
+ * 创建周期记账规则
+ * POST /api/recurring
+ */
+recurringRouter.post('/', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const body = await c.req.json<CreateRecurringRuleRequest>();
+    const repos = getRepositories(c.env.DB);
+
+    const created = await repos.recurringRules.create(userId, body);
+    const res: ApiResponse<RecurringRule> = {
+      success: true,
+      data: created,
+    };
+    return c.json(res, 201);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '创建周期规则失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 更新周期记账规则
+ * PUT /api/recurring/:id
+ */
+recurringRouter.put('/:id', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const ruleId = c.req.param('id');
+    const body = await c.req.json<UpdateRecurringRuleRequest>();
+    const repos = getRepositories(c.env.DB);
+
+    const updated = await repos.recurringRules.update(ruleId, userId, body);
+    if (!updated) {
+      const res: ApiResponse = {
+        success: false,
+        error: '周期规则不存在或无权修改',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse<RecurringRule> = {
+      success: true,
+      data: updated,
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '更新周期规则失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 删除周期记账规则
+ * DELETE /api/recurring/:id
+ */
+recurringRouter.delete('/:id', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const ruleId = c.req.param('id');
+    const repos = getRepositories(c.env.DB);
+
+    const success = await repos.recurringRules.delete(ruleId, userId);
+    if (!success) {
+      const res: ApiResponse = {
+        success: false,
+        error: '周期规则不存在或无权删除',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse = {
+      success: true,
+      message: '周期规则删除成功',
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '删除周期规则失败',
+    };
+    return c.json(res, 500);
   }
 });
 

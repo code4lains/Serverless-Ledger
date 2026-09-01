@@ -97,5 +97,39 @@ transactionsRouter.post('/sync', async (c) => {
   }
 });
 
+/**
+ * 删除指定流水 (仅归属当前用户)
+ * DELETE /api/transactions/:id
+ */
+transactionsRouter.delete('/:id', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const transactionId = c.req.param('id');
+    const repos = getRepositories(c.env.DB);
+
+    const success = await repos.transactions.delete(transactionId, userId);
+    if (!success) {
+      const res: ApiResponse = {
+        success: false,
+        error: '流水记录不存在或无权删除',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse = {
+      success: true,
+      message: '流水删除成功',
+    };
+    return c.json(res, 200);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '删除流水失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
 export default transactionsRouter;
 

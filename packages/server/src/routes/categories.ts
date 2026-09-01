@@ -1,10 +1,14 @@
 import { Hono } from 'hono';
 import { Env, AppVariables } from '../types';
+import { requireAuth } from '../middleware/auth';
 import {
   ApiResponse,
   Category,
   CategoryType,
   CategoryTreeNode,
+  CreateCategoryRequest,
+  UpdateCategoryRequest,
+  ReorderCategoriesRequest,
   getDefaultCategories,
   buildCategoryTree,
 } from '@ledger/shared';
@@ -115,6 +119,127 @@ categoriesRouter.get('/', async (c) => {
       data: list,
     };
     return c.json(res);
+  }
+});
+
+/**
+ * 创建自定义分类
+ * POST /api/categories
+ */
+categoriesRouter.post('/', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const body = await c.req.json<CreateCategoryRequest>();
+    const repos = getRepositories(c.env.DB);
+
+    const created = await repos.categories.create(userId, body);
+    const res: ApiResponse<Category> = {
+      success: true,
+      data: created,
+    };
+    return c.json(res, 201);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '创建分类失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 批量更新分类排序
+ * PUT /api/categories/reorder
+ */
+categoriesRouter.put('/reorder', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const body = await c.req.json<ReorderCategoriesRequest>();
+    const repos = getRepositories(c.env.DB);
+
+    const updated = await repos.categories.reorder(userId, body.items || []);
+    const res: ApiResponse<Category[]> = {
+      success: true,
+      data: updated,
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '分类排序更新失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 更新自定义分类
+ * PUT /api/categories/:id
+ */
+categoriesRouter.put('/:id', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const categoryId = c.req.param('id');
+    const body = await c.req.json<UpdateCategoryRequest>();
+    const repos = getRepositories(c.env.DB);
+
+    const updated = await repos.categories.update(categoryId, userId, body);
+    if (!updated) {
+      const res: ApiResponse = {
+        success: false,
+        error: '分类不存在或无权修改',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse<Category> = {
+      success: true,
+      data: updated,
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '修改分类失败',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 删除自定义分类
+ * DELETE /api/categories/:id
+ */
+categoriesRouter.delete('/:id', requireAuth, async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const categoryId = c.req.param('id');
+    const repos = getRepositories(c.env.DB);
+
+    const success = await repos.categories.delete(categoryId, userId);
+    if (!success) {
+      const res: ApiResponse = {
+        success: false,
+        error: '分类不存在或无权删除',
+      };
+      return c.json(res, 404);
+    }
+
+    const res: ApiResponse = {
+      success: true,
+      message: '分类删除成功',
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '删除分类失败',
+    };
+    return c.json(res, 500);
   }
 });
 
