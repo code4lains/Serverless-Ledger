@@ -302,13 +302,17 @@ export class CloudflareSyncAdapter implements ISyncAdapter {
     let bds: Budget[] = [];
     let rrs: RecurringRule[] = [];
 
-    // 1. 获取账本
+    // 1. 获取账本及服务端统计
     try {
-      const res = await apiFetch(apiUrl('/ledgers'), { headers, signal });
+      const res = await apiFetch(apiUrl('/ledgers?withSummary=true'), { headers, signal });
       if (res.ok) {
-        const parsed = await safeParseApiResponse<Ledger[]>(res);
+        const parsed = await safeParseApiResponse<any[]>(res);
         if (parsed.success && Array.isArray(parsed.data)) {
-          leds = parsed.data;
+          if (parsed.data.length > 0 && parsed.data[0]?.ledger) {
+            leds = parsed.data.map((item: any) => item.ledger);
+          } else {
+            leds = parsed.data;
+          }
         }
       }
     } catch (err) {
@@ -341,9 +345,9 @@ export class CloudflareSyncAdapter implements ISyncAdapter {
       console.warn('[CloudflareSyncAdapter] Pull budgets notice:', err);
     }
 
-    // 4. 获取流水 (拉取最新 500 条)
+    // 4. 获取流水 (轻量缓存最新 100 条，保护带宽与本地存储)
     try {
-      const res = await apiFetch(apiUrl('/transactions?limit=500'), { headers, signal });
+      const res = await apiFetch(apiUrl('/transactions?limit=100'), { headers, signal });
       if (res.ok) {
         const parsed = await safeParseApiResponse<Transaction[]>(res);
         if (parsed.success && Array.isArray(parsed.data)) {

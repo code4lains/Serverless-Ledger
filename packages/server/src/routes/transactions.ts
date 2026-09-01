@@ -24,8 +24,13 @@ transactionsRouter.get('/', async (c) => {
     const endDate = c.req.query('endDate');
     const search = c.req.query('search');
     const rawLimit = c.req.query('limit');
-    const parsedLimit = rawLimit ? parseInt(rawLimit, 10) : 200;
-    const limit = isNaN(parsedLimit) || parsedLimit <= 0 ? 200 : Math.min(parsedLimit, 500);
+    let limit: number | undefined;
+    if (rawLimit !== undefined) {
+      const parsed = parseInt(rawLimit, 10);
+      if (!isNaN(parsed) && parsed >= 0) {
+        limit = parsed === 0 ? undefined : Math.min(parsed, 100000);
+      }
+    }
 
     const repos = getRepositories(c.env.DB);
     const results = await repos.transactions.query(userId, {
@@ -47,6 +52,45 @@ transactionsRouter.get('/', async (c) => {
     const res: ApiResponse = {
       success: false,
       error: err?.message || 'Failed to fetch transactions',
+    };
+    return c.json(res, 500);
+  }
+});
+
+/**
+ * 获取流水统计笔数 (使用高效 SQL COUNT(*))
+ * GET /api/transactions/count
+ */
+transactionsRouter.get('/count', async (c) => {
+  try {
+    const authUser = c.get('user')!;
+    const userId = authUser.userId;
+    const ledgerId = c.req.query('ledgerId');
+    const type = c.req.query('type') as TransactionType | 'all' | undefined;
+    const categoryId = c.req.query('categoryId');
+    const startDate = c.req.query('startDate');
+    const endDate = c.req.query('endDate');
+    const search = c.req.query('search');
+
+    const repos = getRepositories(c.env.DB);
+    const count = await repos.transactions.count(userId, {
+      ledger_id: ledgerId,
+      type,
+      category_id: categoryId,
+      start_date: startDate,
+      end_date: endDate,
+      search,
+    });
+
+    const res: ApiResponse<{ count: number }> = {
+      success: true,
+      data: { count },
+    };
+    return c.json(res);
+  } catch (err: any) {
+    const res: ApiResponse = {
+      success: false,
+      error: err?.message || '统计流水笔数失败',
     };
     return c.json(res, 500);
   }

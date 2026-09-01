@@ -199,12 +199,43 @@ export class D1LedgerRepository implements ILedgerRepository {
 
   async getSummariesByUserId(userId: string): Promise<LedgerSummary[]> {
     const ledgers = await this.findByUserId(userId);
-    const summaries: LedgerSummary[] = [];
-    for (const led of ledgers) {
-      const summary = await this.getSummary(led.ledger_id, userId);
-      if (summary) summaries.push(summary);
+    if (ledgers.length === 0) return [];
+
+    // 单条 SQL 原生 GROUP BY 分组汇总，零循环秒级返回准确数据
+    const { results } = await this.db
+      .prepare(
+        `SELECT
+          ledger_id,
+          COUNT(*) as tx_count,
+          COALESCE(SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END), 0) as total_expense,
+          COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END), 0) as total_income
+        FROM transactions WHERE user_id = ?
+        GROUP BY ledger_id`
+      )
+      .bind(userId)
+      .all<{ ledger_id: string; tx_count: number; total_expense: number; total_income: number }>();
+
+    const statsMap = new Map<string, { tx_count: number; total_expense: number; total_income: number }>();
+    if (results) {
+      for (const r of results) {
+        statsMap.set(r.ledger_id, {
+          tx_count: Number(r.tx_count || 0),
+          total_expense: Number(r.total_expense || 0),
+          total_income: Number(r.total_income || 0),
+        });
+      }
     }
-    return summaries;
+
+    return ledgers.map((led) => {
+      const s = statsMap.get(led.ledger_id) || { tx_count: 0, total_expense: 0, total_income: 0 };
+      return {
+        ledger: led,
+        transaction_count: s.tx_count,
+        totalExpense: s.total_expense,
+        totalIncome: s.total_income,
+        balance: s.total_income - s.total_expense,
+      };
+    });
   }
 
   async resolveUserLedgerId(userId: string, ledgerId?: string | null): Promise<string> {

@@ -33,6 +33,7 @@ import {
   getCurrencySymbol,
   calculateTotals,
   Transaction,
+  LedgerSummary,
 } from '@ledger/shared';
 import {
   createLedger,
@@ -40,6 +41,10 @@ import {
   setDefaultLedger,
   deleteLedger,
   mergeLedgers,
+  apiFetch,
+  apiUrl,
+  getAuthHeaders,
+  safeParseApiResponse,
 } from '../api/client';
 import { AuthUser } from '@ledger/shared';
 
@@ -99,7 +104,10 @@ export function LedgerManagementModal({
   const [mergeSuccessMsg, setMergeSuccessMsg] = useState<string | null>(null);
   const [isConfirmingMerge, setIsConfirmingMerge] = useState<boolean>(false);
 
-  // 初始化重置
+  // 服务端聚合统计数据 (包含原生 SQL COUNT(*) 和聚合金额)
+  const [serverSummaries, setServerSummaries] = useState<LedgerSummary[] | null>(null);
+
+  // 初始化重置与从服务端拉取精确聚合统计
   useEffect(() => {
     if (isOpen) {
       setActiveTab('list');
@@ -116,24 +124,58 @@ export function LedgerManagementModal({
         setMergeSourceId(ledgers[0].ledger_id);
         setMergeTargetId(ledgers[1].ledger_id);
       }
-    }
-  }, [isOpen, ledgers]);
 
-  // 计算每个账本的统计数据
+      // 如果已登录，从服务端拉取各账本的高效 SQL COUNT(*) 与收支统计
+      if (currentUser) {
+        apiFetch(apiUrl('/ledgers?withSummary=true'), {
+          headers: getAuthHeaders(),
+          signal: AbortSignal.timeout(5000),
+        })
+          .then((res) => (res.ok ? safeParseApiResponse<LedgerSummary[]>(res) : null))
+          .then((parsed) => {
+            if (parsed?.success && Array.isArray(parsed.data)) {
+              setServerSummaries(parsed.data);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  }, [isOpen, ledgers, currentUser]);
+
+  // 计算每个账本的统计数据 (优先使用服务端 SQL COUNT(*) 聚合统计，离线时优雅回退至本地缓存)
   const ledgerStatsMap = useMemo(() => {
     const map = new Map<string, { count: number; totalExpense: number; totalIncome: number; balance: number }>();
-    for (const led of ledgers) {
-      const ledTxs = transactions.filter((t) => t.ledger_id === led.ledger_id);
-      const totals = calculateTotals(ledTxs);
-      map.set(led.ledger_id, {
-        count: ledTxs.length,
-        totalExpense: totals.totalExpense,
-        totalIncome: totals.totalIncome,
-        balance: totals.balance,
-      });
+    if (serverSummaries && serverSummaries.length > 0) {
+      for (const s of serverSummaries) {
+        map.set(s.ledger.ledger_id, {
+          count: s.transaction_count,
+          totalExpense: s.totalExpense,
+          totalIncome: s.totalIncome,
+          balance: s.balance,
+        });
+      }
+    } else {
+      for (const led of ledgers) {
+        const ledTxs = transactions.filter((t) => t.ledger_id === led.ledger_id);
+        const totals = calculateTotals(ledTxs);
+        map.set(led.ledger_id, {
+          count: ledTxs.length,
+          totalExpense: totals.totalExpense,
+          totalIncome: totals.totalIncome,
+          balance: totals.balance,
+        });
+      }
     }
     return map;
-  }, [ledgers, transactions]);
+  }, [ledgers, transactions, serverSummaries]);
+
+  // 全局总交易笔数 (优先使用服务端 SQL COUNT(*))
+  const totalOverviewCount = useMemo(() => {
+    if (serverSummaries && serverSummaries.length > 0) {
+      return serverSummaries.reduce((sum, s) => sum + s.transaction_count, 0);
+    }
+    return transactions.length;
+  }, [serverSummaries, transactions]);
 
   if (!isOpen) return null;
 
@@ -434,7 +476,7 @@ export function LedgerManagementModal({
                 </div>
                 <div className="text-right">
                   <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400">
-                    共 {transactions.length} 笔
+                    共 {totalOverviewCount} 笔
                   </div>
                 </div>
               </div>

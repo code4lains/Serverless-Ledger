@@ -53,14 +53,59 @@ export class D1TransactionRepository implements ITransactionRepository {
       params.push(kw, kw, kw);
     }
 
-    const rawLimit = filter?.limit ?? 200;
-    const limit = isNaN(rawLimit) || rawLimit <= 0 ? 200 : Math.min(rawLimit, 500);
+    query += ' ORDER BY transaction_date DESC, created_at DESC';
 
-    query += ' ORDER BY transaction_date DESC, created_at DESC LIMIT ?';
-    params.push(limit);
+    const rawLimit = filter?.limit;
+    if (rawLimit !== undefined && rawLimit > 0) {
+      const limit = Math.min(rawLimit, 100000);
+      query += ' LIMIT ?';
+      params.push(limit);
+    }
 
     const { results } = await this.db.prepare(query).bind(...params).all<Transaction>();
     return results || [];
+  }
+
+  /**
+   * 使用高效 SQL COUNT(*) 统计符合条件的流水总笔数
+   */
+  async count(userId: string, filter?: TransactionFilter): Promise<number> {
+    let query = 'SELECT COUNT(*) as total FROM transactions WHERE user_id = ?';
+    const params: any[] = [userId];
+
+    if (filter?.ledger_id && filter.ledger_id !== 'all') {
+      query += ' AND ledger_id = ?';
+      params.push(filter.ledger_id);
+    }
+
+    if (filter?.type && filter.type !== 'all') {
+      query += ' AND type = ?';
+      params.push(filter.type);
+    }
+
+    if (filter?.category_id) {
+      query += ' AND category_id = ?';
+      params.push(filter.category_id);
+    }
+
+    if (filter?.start_date) {
+      query += ' AND transaction_date >= ?';
+      params.push(filter.start_date);
+    }
+
+    if (filter?.end_date) {
+      query += ' AND transaction_date <= ?';
+      params.push(filter.end_date);
+    }
+
+    if (filter?.search && filter.search.trim()) {
+      const kw = `%${filter.search.trim()}%`;
+      query += ' AND (remark LIKE ? OR from_account LIKE ? OR to_account LIKE ?)';
+      params.push(kw, kw, kw);
+    }
+
+    const row = await this.db.prepare(query).bind(...params).first<{ total: number }>();
+    return Number(row?.total || 0);
   }
 
   async create(

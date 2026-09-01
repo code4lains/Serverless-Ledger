@@ -68,6 +68,7 @@ export interface ICategoryRepository {
 export interface ITransactionRepository {
   findById(transactionId: string, userId?: string): Promise<Transaction | null>;
   query(userId: string, filter?: TransactionFilter): Promise<Transaction[]>;
+  count(userId: string, filter?: TransactionFilter): Promise<number>;
   create(userId: string, tx: Partial<Transaction> & { transaction_id: string; ledger_id: string; type: any; amount: number; transaction_date: string }): Promise<Transaction>;
   update(transactionId: string, userId: string, tx: Partial<Transaction>): Promise<Transaction | null>;
   delete(transactionId: string, userId: string): Promise<boolean>;
