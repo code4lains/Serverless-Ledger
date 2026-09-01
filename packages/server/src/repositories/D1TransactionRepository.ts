@@ -255,19 +255,8 @@ export class D1TransactionRepository implements ITransactionRepository {
       const txFromAccount = tx.from_account ? tx.from_account.slice(0, 100) : null;
       const txToAccount = tx.to_account ? tx.to_account.slice(0, 100) : null;
 
-      // 防跨租户主键碰撞
-      let txId = tx.transaction_id;
-      if (!txId) {
-        txId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-      } else {
-        const existingTx = await this.db
-          .prepare('SELECT user_id FROM transactions WHERE transaction_id = ?')
-          .bind(txId)
-          .first<{ user_id: string }>();
-        if (existingTx && existingTx.user_id !== userId) {
-          txId = `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-        }
-      }
+      // 确定主键 ID (若缺失则生成新主键)
+      const txId = tx.transaction_id || `tx_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
       const stmt = this.db.prepare(
         `INSERT INTO transactions (
