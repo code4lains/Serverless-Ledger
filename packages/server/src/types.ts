@@ -6,6 +6,7 @@ export interface Env {
   ENVIRONMENT?: string;
   TURNSTILE_SECRET_KEY?: string;
   TURNSTILE_SITE_KEY?: string;
+  VITE_TURNSTILE_SITE_KEY?: string;
   REG_MODE?: string | number;
 }
 

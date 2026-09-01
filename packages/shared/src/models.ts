@@ -281,6 +281,8 @@ export interface AuthUser {
 
 export interface AuthConfig {
   reg_mode: number; // 0: 关闭注册, 1: 邀请注册模式 (默认), 2: 自由注册模式
+  turnstile_site_key?: string | null; // 服务端配置的 Cloudflare Turnstile 前端站点公钥
+  turnstile_enabled?: boolean; // 服务端是否启用了人机验证 (即已配置 TURNSTILE_SECRET_KEY)
 }
 
 export type InviteCodeStatus = 'unused' | 'used' | 'expired';

@@ -19,10 +19,15 @@ interface Window {
         size?: 'normal' | 'compact' | 'flexible';
         callback?: (token: string) => void;
         'expired-callback'?: () => void;
-        'error-callback'?: (errorCode?: string) => void;
+        'error-callback'?: (errorCode?: string | number) => void;
+        'unsupported-callback'?: () => void;
+        retry?: 'auto' | 'never';
+        language?: string;
+        action?: string;
       }
     ) => string;
     reset: (widgetId?: string) => void;
     remove: (widgetId: string) => void;
+    getResponse?: (widgetId?: string) => string | undefined;
   };
 }

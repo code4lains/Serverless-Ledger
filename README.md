@@ -193,7 +193,7 @@ Wrangler 将自动执行 `packages/server/migrations/` 中的全量迁移脚本�
 | **`REG_MODE`** | `String` / `Number` | **可选 (默认为 `1`)** | **系统注册模式控制**：<br>• `0`：**关闭注册**。系统禁止任何新用户注册（仅已注册用户可登录）。<br>• `1`（默认）：**邀请注册模式**。新用户注册必须填写有效邀请码。系统预置创世邀请码（如 `INV-WELCOME`），老用户记账满 3 天后自动解锁新邀请码。<br>• `2`：**自由注册模式**。任何人无需邀请码即可自由注册。 |
 | **`JWT_SECRET`** | `String` (加密文本) | **必填** | **JWT 鉴权签名密钥**：建议填写一段包含大小写字母、数字及符号的 32 位以上高强度随机字符串（用于生成和校验用户的登录 Token）。 |
 | **`TURNSTILE_SECRET_KEY`** | `String` (加密文本) | **可选** | **Cloudflare Turnstile 服务端密钥**：用于注册、登录及重置密码时的人机验证二次校验。若不配置则跳过服务端人机校验。 |
-| **`VITE_TURNSTILE_SITE_KEY`** | `String` (纯文本) | **可选** | **Cloudflare Turnstile 前端站点公钥**：用于在前端登录注册弹窗中渲染无感人机验证微件。若不配置则前端不展示验证码。 |
+| **`TURNSTILE_SITE_KEY`** / **`VITE_TURNSTILE_SITE_KEY`** | `String` (纯文本) | **可选** | **Cloudflare Turnstile 前端站点公钥**：配置后服务端将通过 `/api/auth/config` 动态下发给 Web 端与手机 APK / 桌面端客户端渲染人机验证微件。 |
 
 > 💡 **提示**：环境变量配置完成后，请切换至 Pages 的 **Deployments（部署）** 页面，在最新的部署记录右侧点击 **`...` ➔ Retry deployment（重试部署）**，使新环境变量与 D1 绑定正式生效。
 
@@ -206,13 +206,13 @@ Turnstile 是 Cloudflare 提供的智能无感人机验证（类似 Google reCAP
 1. 登录 Cloudflare 控制台，在左侧进入 **Turnstile**。
 2. 点击 **Add site（添加站点）**：
    - **Site name（站点名称）**：`serverless-ledger`
-   - **Domain（域名）**：填入您的 Pages 生产域名（如 `serverless-ledger.pages.dev`）以及本地调试域名 `localhost`、`127.0.0.1`。
+   - **Domain（域名列表）**：**务必填入** 您的 Pages / Workers 生产域名（如 `ledger.yourdomain.top`、`serverless-ledger.pages.dev`）以及 **`localhost`**、`127.0.0.1`（**注意：手机打包成 APK 安装后 WebView 以 `localhost` 源运行，添加 `localhost` 可确保手机 App 与桌面端能够正常渲染与通过验证**）。
    - **Widget Mode（微件模式）**：选择 **Managed（托管）**。
    - 点击 **Create**。
 3. 复制生成的 **Site Key** 与 **Secret Key**：
-   - 将 **Site Key** 填入 Pages 环境变量 **`VITE_TURNSTILE_SITE_KEY`**（本地开发可写入 `packages/client/.env`）。
-   - 将 **Secret Key** 填入 Pages 环境变量 **`TURNSTILE_SECRET_KEY`**。
-4. 重试部署即可启用人机安全验证。
+   - 将 **Site Key** 填入 Pages / Workers 环境变量 **`TURNSTILE_SITE_KEY`**（或 `VITE_TURNSTILE_SITE_KEY`）。
+   - 将 **Secret Key** 填入 Pages / Workers 环境变量 **`TURNSTILE_SECRET_KEY`**。
+4. 部署或重试部署后，无论 Web 端还是手机 APK 客户端均会自动获取公钥并启用人机安全验证。
 
 ---
 

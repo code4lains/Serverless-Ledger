@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   X,
   Mail,
@@ -21,8 +21,9 @@ import {
   ChevronUp,
   RotateCcw,
   Check,
+  RefreshCw,
 } from 'lucide-react';
-import { AuthUser } from '@ledger/shared';
+import { AuthUser, AuthConfig } from '@ledger/shared';
 import {
   loginUser,
   registerUser,
@@ -42,6 +43,82 @@ interface AuthModalProps {
   onSuccess: (user: AuthUser, newRecoveryCode?: string | null) => void;
 }
 
+// 全局单例 Turnstile 脚本加载 Promise
+let turnstileScriptPromise: Promise<void> | null = null;
+
+function loadTurnstileScript(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Window 未初始化'));
+  if (window.turnstile && typeof window.turnstile.render === 'function') {
+    return Promise.resolve();
+  }
+  if (turnstileScriptPromise) {
+    return turnstileScriptPromise;
+  }
+
+  turnstileScriptPromise = new Promise<void>((resolve, reject) => {
+    const scriptId = 'cf-turnstile-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement;
+    if (!script) {
+      script = document.createElement('script');
+      script.id = scriptId;
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    const checkReady = () => {
+      if (window.turnstile && typeof window.turnstile.render === 'function') {
+        resolve();
+        return true;
+      }
+      return false;
+    };
+
+    if (checkReady()) return;
+
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (checkReady()) {
+        clearInterval(interval);
+      } else if (attempts > 120) {
+        clearInterval(interval);
+        turnstileScriptPromise = null;
+        reject(new Error('Cloudflare Turnstile 验证组件初始化超时，请检查网络'));
+      }
+    }, 50);
+
+    script.addEventListener('load', () => {
+      if (checkReady()) {
+        clearInterval(interval);
+      }
+    });
+
+    script.addEventListener('error', () => {
+      clearInterval(interval);
+      turnstileScriptPromise = null;
+      reject(new Error('Cloudflare Turnstile 验证脚本加载失败，请检查网络连接'));
+    });
+  });
+
+  return turnstileScriptPromise;
+}
+
+function formatTurnstileError(errorCode?: string | number): string {
+  const codeStr = String(errorCode || '');
+  if (codeStr.includes('110200') || codeStr.includes('domain') || codeStr.includes('hostname')) {
+    return '人机验证域名未授权 (110200)：如在手机 App 或本地调试中使用，请在 Cloudflare Turnstile 控制台将【localhost】添加到允许域名列表中。';
+  }
+  if (codeStr.includes('300030') || codeStr.includes('network') || codeStr.includes('timeout')) {
+    return '人机验证网络通信超时，请检查网络连接后重试。';
+  }
+  if (codeStr.includes('600000') || codeStr.includes('client')) {
+    return '人机验证客户端运行环境异常，请点击重试。';
+  }
+  return `人机安全验证失败 ${codeStr ? `(代码: ${codeStr})` : ''}，请点击重试。`;
+}
+
 export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthModalProps) {
   const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
@@ -49,11 +126,15 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
   const [confirmPassword, setConfirmPassword] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [recoveryCodeInput, setRecoveryCodeInput] = useState('');
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [regMode, setRegMode] = useState<number>(1); // 0: 禁止注册, 1: 邀请注册模式 (默认), 2: 自由注册
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [loading, setLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string>('');
+  const [turnstileLoading, setTurnstileLoading] = useState<boolean>(false);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+  const [turnstileRetryKey, setTurnstileRetryKey] = useState<number>(0);
 
   // 后端 API 服务器地址配置与连通性测试状态
   const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
@@ -65,86 +146,113 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetIdRef = useRef<string | null>(null);
 
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  // 动态获取 Site Key：优先使用后端下发的 Site Key，若无则使用构建时注入的环境变量
+  const effectiveSiteKey = (authConfig?.turnstile_site_key || import.meta.env.VITE_TURNSTILE_SITE_KEY || '').trim();
+  const isTurnstileRequired = Boolean(authConfig?.turnstile_enabled || effectiveSiteKey);
 
-  // 获取服务端注册模式配置
+  // 获取服务端注册模式与人机验证配置
+  const refreshAuthConfig = useCallback(async () => {
+    try {
+      const res = await getAuthConfig();
+      if (res.success && res.data) {
+        setAuthConfig(res.data);
+        setRegMode(res.data.reg_mode);
+      }
+    } catch {
+      // 保持默认
+    }
+  }, []);
+
   useEffect(() => {
     if (isOpen) {
-      getAuthConfig().then((res) => {
-        if (res.success && res.data) {
-          setRegMode(res.data.reg_mode);
-        }
-      });
+      refreshAuthConfig();
     }
-  }, [isOpen]);
+  }, [isOpen, refreshAuthConfig]);
 
   // 初始化与渲染 Cloudflare Turnstile 验证控件
   useEffect(() => {
-    if (!isOpen || !siteKey) return;
+    if (!isOpen || !effectiveSiteKey) {
+      setTurnstileLoading(false);
+      setTurnstileError(null);
+      return;
+    }
 
     let isMounted = true;
+    setTurnstileToken('');
+    setTurnstileError(null);
+    setTurnstileLoading(true);
 
-    const renderWidget = () => {
-      if (!isMounted || !turnstileContainerRef.current || !window.turnstile) return;
-
-      // 清除前一个实例
-      if (turnstileWidgetIdRef.current) {
-        try {
-          window.turnstile.remove(turnstileWidgetIdRef.current);
-        } catch {}
-        turnstileWidgetIdRef.current = null;
-      }
-
-      setTurnstileToken('');
-
+    const renderWidget = async () => {
       try {
+        await loadTurnstileScript();
+        if (!isMounted || !turnstileContainerRef.current || !window.turnstile) return;
+
+        // 清除前一个实例
+        if (turnstileWidgetIdRef.current) {
+          try {
+            window.turnstile.remove(turnstileWidgetIdRef.current);
+          } catch {}
+          turnstileWidgetIdRef.current = null;
+        }
+
+        // 清空容器子节点以防残留
+        if (turnstileContainerRef.current) {
+          turnstileContainerRef.current.innerHTML = '';
+        }
+
         const widgetId = window.turnstile.render(turnstileContainerRef.current, {
-          sitekey: siteKey,
+          sitekey: effectiveSiteKey,
           theme: 'auto',
           size: 'flexible',
+          retry: 'auto',
           callback: (token: string) => {
             if (isMounted) {
               setTurnstileToken(token);
+              setTurnstileLoading(false);
+              setTurnstileError(null);
               setErrorMsg('');
             }
           },
           'expired-callback': () => {
-            if (isMounted) setTurnstileToken('');
+            if (isMounted) {
+              setTurnstileToken('');
+              setTurnstileLoading(false);
+            }
           },
-          'error-callback': () => {
-            if (isMounted) setTurnstileToken('');
+          'error-callback': (errorCode?: string | number) => {
+            if (isMounted) {
+              setTurnstileToken('');
+              setTurnstileLoading(false);
+              setTurnstileError(formatTurnstileError(errorCode));
+            }
+          },
+          'unsupported-callback': () => {
+            if (isMounted) {
+              setTurnstileToken('');
+              setTurnstileLoading(false);
+              setTurnstileError('当前客户端环境不支持 Cloudflare Turnstile 验证');
+            }
           },
         });
+
         turnstileWidgetIdRef.current = widgetId;
-      } catch (err) {
-        console.warn('Turnstile render warning:', err);
+        if (isMounted) {
+          setTurnstileLoading(false);
+        }
+      } catch (err: any) {
+        if (isMounted) {
+          setTurnstileLoading(false);
+          setTurnstileError(err?.message || '人机验证组件加载失败，请检查网络连接');
+        }
       }
     };
 
-    if (window.turnstile) {
-      // 延迟一帧等待 DOM 挂载完毕
-      const timer = setTimeout(renderWidget, 50);
-      return () => clearTimeout(timer);
-    } else {
-      const scriptId = 'cf-turnstile-script';
-      let script = document.getElementById(scriptId) as HTMLScriptElement;
-      if (!script) {
-        script = document.createElement('script');
-        script.id = scriptId;
-        script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-        script.async = true;
-        script.defer = true;
-        script.onload = () => {
-          if (isMounted) renderWidget();
-        };
-        document.head.appendChild(script);
-      } else {
-        script.addEventListener('load', renderWidget);
-      }
-    }
+    // 延迟少许确保 DOM 已挂载渲染
+    const timer = setTimeout(renderWidget, 80);
 
     return () => {
       isMounted = false;
+      clearTimeout(timer);
       if (turnstileWidgetIdRef.current && window.turnstile) {
         try {
           window.turnstile.remove(turnstileWidgetIdRef.current);
@@ -152,7 +260,7 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
         turnstileWidgetIdRef.current = null;
       }
     };
-  }, [isOpen, tab, siteKey]);
+  }, [isOpen, tab, effectiveSiteKey, turnstileRetryKey]);
 
   if (!isOpen) return null;
 
@@ -210,8 +318,12 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
       }
     }
 
-    if (siteKey && !turnstileToken) {
-      setErrorMsg('请先完成人机安全验证');
+    if (isTurnstileRequired && !turnstileToken) {
+      if (!effectiveSiteKey) {
+        setErrorMsg('服务端已开启人机验证，但未配置 TURNSTILE_SITE_KEY，请在 Cloudflare Workers 后端环境变量中添加');
+      } else {
+        setErrorMsg('请先完成人机安全验证');
+      }
       return;
     }
 
@@ -301,11 +413,8 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
     setCustomApiUrl(serverUrlInput.trim());
     setConfigSuccessMsg('后端服务器地址已保存生效');
     setTimeout(() => setConfigSuccessMsg(''), 3000);
-    getAuthConfig().then((res) => {
-      if (res.success && res.data) {
-        setRegMode(res.data.reg_mode);
-      }
-    });
+    refreshAuthConfig();
+    setTurnstileRetryKey((k) => k + 1);
   };
 
   const handleResetServerUrl = () => {
@@ -314,11 +423,8 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
     setTestResult(null);
     setConfigSuccessMsg('已恢复为默认服务器地址');
     setTimeout(() => setConfigSuccessMsg(''), 3000);
-    getAuthConfig().then((res) => {
-      if (res.success && res.data) {
-        setRegMode(res.data.reg_mode);
-      }
-    });
+    refreshAuthConfig();
+    setTurnstileRetryKey((k) => k + 1);
   };
 
   return (
@@ -697,17 +803,64 @@ export function AuthModal({ isOpen, closable = true, onClose, onSuccess }: AuthM
             </div>
           )}
 
-          {/* Cloudflare Turnstile 人机验证挂载容器 */}
-          {siteKey && (
-            <div className="flex flex-col gap-1 py-1 items-center justify-center min-h-[65px]">
-              <div ref={turnstileContainerRef} className="w-full flex justify-center" />
+          {/* Cloudflare Turnstile 人机验证挂载与状态区域 */}
+          {isTurnstileRequired && (
+            <div className="flex flex-col gap-1.5 py-1">
+              {effectiveSiteKey ? (
+                <div className="flex flex-col items-center justify-center min-h-[65px] w-full">
+                  {turnstileLoading && (
+                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 py-3">
+                      <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                      <span>正在加载人机安全验证...</span>
+                    </div>
+                  )}
+
+                  <div
+                    ref={turnstileContainerRef}
+                    className={`w-full flex justify-center ${turnstileLoading ? 'hidden' : ''}`}
+                  />
+
+                  {turnstileError && (
+                    <div className="w-full p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-[11px] text-amber-700 dark:text-amber-300 flex flex-col gap-1.5 my-1">
+                      <div className="flex items-start gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                        <span className="leading-tight">{turnstileError}</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTurnstileRetryKey((k) => k + 1);
+                        }}
+                        className="self-end px-2 py-0.5 rounded-md bg-amber-200/80 dark:bg-amber-800/60 hover:bg-amber-300/80 text-amber-800 dark:text-amber-200 font-medium text-[10px] flex items-center gap-1 transition-colors"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        <span>重试人机验证</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {turnstileToken && (
+                    <div className="flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 py-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>人机安全验证已通过</span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50 text-[11px] text-amber-700 dark:text-amber-300 flex items-start gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-amber-600" />
+                  <span className="leading-tight">
+                    当前后端已启用安全验证，但未配置 <code className="px-1 py-0.5 bg-amber-100 dark:bg-amber-900/60 rounded font-mono text-[10px]">TURNSTILE_SITE_KEY</code>。请在 Cloudflare Workers 后端环境变量中添加该公钥。
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
           <div className="pt-2">
             <button
               type="submit"
-              disabled={loading || (tab === 'register' && regMode === 0) || (!!siteKey && !turnstileToken)}
+              disabled={loading || (tab === 'register' && regMode === 0) || (isTurnstileRequired && !turnstileToken)}
               className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-1.5"
             >
               {loading ? (

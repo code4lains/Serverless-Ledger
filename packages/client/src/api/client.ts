@@ -393,12 +393,20 @@ export async function getAuthConfig(): Promise<ApiResponse<AuthConfig>> {
     }
     return {
       success: true,
-      data: { reg_mode: 1 }, // 默认降级为 1 (邀请模式)
+      data: {
+        reg_mode: 1,
+        turnstile_site_key: import.meta.env.VITE_TURNSTILE_SITE_KEY || null,
+        turnstile_enabled: Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY),
+      },
     };
   } catch (err: any) {
     return {
       success: true,
-      data: { reg_mode: 1 }, // 默认降级为 1 (邀请模式)
+      data: {
+        reg_mode: 1,
+        turnstile_site_key: import.meta.env.VITE_TURNSTILE_SITE_KEY || null,
+        turnstile_enabled: Boolean(import.meta.env.VITE_TURNSTILE_SITE_KEY),
+      },
     };
   }
 }

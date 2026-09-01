@@ -62,10 +62,15 @@ function isValidEmail(email: string): boolean {
  */
 authRouter.get('/config', async (c) => {
   const regMode = getRegMode(c.env);
+  const siteKey = (c.env.TURNSTILE_SITE_KEY || c.env.VITE_TURNSTILE_SITE_KEY || '').trim() || null;
+  const turnstileEnabled = Boolean(c.env.TURNSTILE_SECRET_KEY && c.env.TURNSTILE_SECRET_KEY.trim());
+
   const res: ApiResponse<AuthConfig> = {
     success: true,
     data: {
       reg_mode: regMode,
+      turnstile_site_key: siteKey,
+      turnstile_enabled: turnstileEnabled,
     },
   };
   return c.json(res, 200);
