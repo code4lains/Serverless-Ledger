@@ -44,7 +44,7 @@ class NetworkMonitor {
     if (isCloudSyncEnabled()) {
       this.checkHealth();
       if (!this.checkTimer) {
-        this.startHeartbeat(30000);
+        this.startHeartbeat(600000); // 10 分钟一次健康心跳
       }
     } else {
       this.stopHeartbeat();
@@ -89,7 +89,7 @@ class NetworkMonitor {
   private handleVisibilityChange = () => {
     if (document.visibilityState === 'visible' && isCloudSyncEnabled()) {
       const now = Date.now();
-      if (now - this.lastHealthCheckTime > 15000) {
+      if (now - this.lastHealthCheckTime > 300000) { // 页面切回可见时，仅在超过 5 分钟未检查时探测
         this.checkHealth();
       }
     }
@@ -172,13 +172,13 @@ class NetworkMonitor {
   }
 
   /**
-   * 启动后台心跳探测 (仅在云同步启用时激活)
+   * 启动后台心跳探测 (仅在云同步启用时激活，默认 10 分钟一次)
    */
-  public start(intervalMs: number = 30000) {
+  public start(intervalMs: number = 600000) {
     this.startHeartbeat(intervalMs);
   }
 
-  public startHeartbeat(intervalMs: number = 30000) {
+  public startHeartbeat(intervalMs: number = 600000) {
     if (!isCloudSyncEnabled()) {
       this.stopHeartbeat();
       return;

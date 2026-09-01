@@ -60,6 +60,7 @@ import {
   getCurrencySymbol,
   Budget,
   calculateBudgetOverview,
+  LedgerSummary,
 } from '@ledger/shared';
 import {
   localDb,
@@ -82,6 +83,10 @@ import {
   getStoredUser,
   fetchCurrentUser,
   clearSession,
+  apiFetch,
+  apiUrl,
+  getAuthHeaders,
+  safeParseApiResponse,
 } from './api/client';
 import { networkMonitor, NetworkInfo } from './api/network';
 import { syncManager, SyncStats } from './api/syncManager';
@@ -220,10 +225,46 @@ export function App() {
     setPendingCount(stats.totalPending);
   };
 
+  // 服务端 SQL 聚合统计 (包含原生 COUNT(*) 与精确汇总，不占用客户端内存)
+  const [serverLedgerSummaries, setServerLedgerSummaries] = useState<LedgerSummary[] | null>(null);
+  const [serverTotalTxCount, setServerTotalTxCount] = useState<number | null>(null);
+
+  // 刷新服务端原生 SQL 统计
+  const refreshServerSummaries = async (user?: AuthUser | null) => {
+    const effectiveUser = user !== undefined ? user : currentUser;
+    if (!effectiveUser || !isCloudSyncEnabled()) return;
+    try {
+      const headers = getAuthHeaders();
+      const signal = AbortSignal.timeout(5000);
+
+      const [sumRes, countRes] = await Promise.allSettled([
+        apiFetch(apiUrl('/ledgers?withSummary=true'), { headers, signal }),
+        apiFetch(apiUrl('/transactions/count'), { headers, signal }),
+      ]);
+
+      if (sumRes.status === 'fulfilled' && sumRes.value.ok) {
+        const parsed = await safeParseApiResponse<LedgerSummary[]>(sumRes.value);
+        if (parsed.success && Array.isArray(parsed.data)) {
+          setServerLedgerSummaries(parsed.data);
+        }
+      }
+
+      if (countRes.status === 'fulfilled' && countRes.value.ok) {
+        const parsed = await safeParseApiResponse<{ count: number }>(countRes.value);
+        if (parsed.success && typeof parsed.data?.count === 'number') {
+          setServerTotalTxCount(parsed.data.count);
+        }
+      }
+    } catch {
+      // 离线静默处理
+    }
+  };
+
   // 刷新账本列表
   const refreshLedgers = async () => {
     const leds = await getLedgers();
     setLedgers(leds);
+    refreshServerSummaries().catch(() => {});
 
     // 确保 selectedLedgerForRecord 指向有效账本
     const defaultLed = leds.find((l) => l.is_default === 1) || leds[0];
@@ -338,11 +379,13 @@ export function App() {
       checkServerHealth().then((health) => {
         setServerStatus({ ok: health.isOnline, data: health });
         if (health.isOnline) {
+          refreshServerSummaries(user).catch(() => {});
           syncManager.syncAll(true).then(async () => {
             await refreshLedgers();
             await refreshBudgets();
             await refreshCategories();
             await loadLocalData(user);
+            await refreshServerSummaries(user);
           }).catch(() => {});
         }
       }).catch(() => {});
@@ -351,8 +394,8 @@ export function App() {
 
   // 初始化应用 (纯本地 Dexie 0ms 秒开)
   useEffect(() => {
-    // 启动网络感知器与后台自动同步
-    networkMonitor.start(30000);
+    // 启动网络感知器与后台自动同步 (心跳频率调整为 10 分钟一次，极大节省 Worker 额度)
+    networkMonitor.start(600000);
     syncManager.start();
 
     // 订阅同步完成事件以自动刷新本地 UI
@@ -724,10 +767,41 @@ export function App() {
     return () => observer.disconnect();
   }, [navTab, filteredTransactions.length]);
 
-  // 独立账本核算：收支与结余统计 (基于当前筛选的所有交易)
+  // 独立账本核算：收支与结余统计 (优先使用服务端 SQL COUNT/SUM 聚合统计，离线或筛选时精确计算本地切片)
   const totals = useMemo(() => {
+    const isUnfilteredOverview = filterType === 'all' && !searchKeyword.trim();
+    if (isUnfilteredOverview && serverLedgerSummaries && serverLedgerSummaries.length > 0) {
+      if (activeLedgerId === 'all') {
+        const totalExp = serverLedgerSummaries.reduce((sum, s) => sum + (s.totalExpense || 0), 0);
+        const totalInc = serverLedgerSummaries.reduce((sum, s) => sum + (s.totalIncome || 0), 0);
+        return {
+          totalExpense: totalExp,
+          totalIncome: totalInc,
+          balance: totalInc - totalExp,
+          totalTransfer: 0,
+          totalLoanLent: 0,
+          totalLoanBorrowed: 0,
+          totalLoanRepaid: 0,
+          totalLoanCollected: 0,
+        };
+      } else {
+        const targetSummary = serverLedgerSummaries.find((s) => s.ledger.ledger_id === activeLedgerId);
+        if (targetSummary) {
+          return {
+            totalExpense: targetSummary.totalExpense,
+            totalIncome: targetSummary.totalIncome,
+            balance: targetSummary.balance,
+            totalTransfer: 0,
+            totalLoanLent: 0,
+            totalLoanBorrowed: 0,
+            totalLoanRepaid: 0,
+            totalLoanCollected: 0,
+          };
+        }
+      }
+    }
     return calculateTotals(activeLedgerTransactions);
-  }, [activeLedgerTransactions]);
+  }, [activeLedgerTransactions, serverLedgerSummaries, activeLedgerId, filterType, searchKeyword]);
 
   // 独立账本月度总预算与各大分类预算消耗进度计算 (支持小分类消费归集与 80% 预警)
   const budgetOverview = useMemo(() => {
@@ -986,13 +1060,14 @@ export function App() {
                   <span className={`text-[10px] px-1 py-0.2 rounded-full ${
                     activeLedgerId === 'all' ? 'bg-indigo-700 text-indigo-100' : 'bg-gray-100 dark:bg-neutral-700 text-gray-400'
                   }`}>
-                    {transactions.length}
+                    {serverTotalTxCount !== null ? serverTotalTxCount : transactions.length}
                   </span>
                 </button>
 
                 {/* 各独立账本 */}
                 {ledgers.map((led) => {
                   const isCur = activeLedgerId === led.ledger_id;
+                  const ledSum = serverLedgerSummaries?.find((item) => item.ledger.ledger_id === led.ledger_id);
                   return (
                     <button
                       key={led.ledger_id}
@@ -1011,7 +1086,7 @@ export function App() {
                       <span className={`text-[10px] font-normal ${
                         isCur ? 'text-indigo-200' : 'text-gray-400'
                       }`}>
-                        {led.currency}
+                        {ledSum ? `${ledSum.transaction_count} 笔` : led.currency}
                       </span>
                     </button>
                   );
@@ -1813,6 +1888,7 @@ export function App() {
             isSyncing={isSyncing}
             darkMode={darkMode}
             vaultStatus={vaultStatus}
+            cloudTotalCount={serverTotalTxCount}
             onToggleDarkMode={() => setDarkMode(!darkMode)}
             onSync={handleSync}
             onOpenLedgerModal={() => setIsLedgerModalOpen(true)}

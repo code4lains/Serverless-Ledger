@@ -77,6 +77,7 @@ interface ProfileViewProps {
   isSyncing: boolean;
   darkMode: boolean;
   vaultStatus?: 'uninitialized' | 'unlocked' | 'locked';
+  cloudTotalCount?: number | null;
   onToggleDarkMode: () => void;
   onSync: () => Promise<void>;
   onOpenLedgerModal: () => void;
@@ -101,6 +102,7 @@ export function ProfileView({
   isSyncing,
   darkMode,
   vaultStatus = 'uninitialized',
+  cloudTotalCount,
   onToggleDarkMode,
   onSync,
   onOpenLedgerModal,
@@ -813,9 +815,13 @@ export function ProfileView({
           {/* 本地存储细分指标 */}
           <div className="grid grid-cols-3 gap-2 text-xs">
             <div className="p-2.5 rounded-2xl bg-gray-50 dark:bg-neutral-900/60 flex flex-col gap-0.5">
-              <span className="text-[10px] text-gray-400">流水数量</span>
+              <span className="text-[10px] text-gray-400">
+                {cloudTotalCount !== undefined && cloudTotalCount !== null ? '总流水 (云端/库)' : '本地缓存流水'}
+              </span>
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
-                {storageStats ? storageStats.transactions : transactions.length} 笔
+                {cloudTotalCount !== undefined && cloudTotalCount !== null
+                  ? `${cloudTotalCount} 笔`
+                  : `${storageStats ? storageStats.transactions : transactions.length} 笔`}
               </span>
             </div>
 
