@@ -383,8 +383,11 @@ class SyncManager {
         const localData = await exportAllLocalData(user.user_id);
         const mutations: Array<{ entity_type: string; entity_id: string; action: string; payload?: any }> = [];
 
+        // 仅推送用户自定义分类，系统默认分类服务端已有预置，无需重复写入
         for (const cat of localData.categories) {
-          mutations.push({ entity_type: 'category', entity_id: cat.category_id, action: 'create', payload: cat });
+          if (cat.user_id) {
+            mutations.push({ entity_type: 'category', entity_id: cat.category_id, action: 'create', payload: cat });
+          }
         }
         for (const led of localData.ledgers) {
           mutations.push({ entity_type: 'ledger', entity_id: led.ledger_id, action: 'create', payload: led });
