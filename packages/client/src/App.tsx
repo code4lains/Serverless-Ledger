@@ -180,6 +180,44 @@ export function App() {
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
 
+  // 分类层级分组选项 (支出与收入分别按父子分类排序)
+  const categoryFilterOptions = useMemo(() => {
+    const expenseParents = categories.filter((c) => c.type === 'expense' && !c.parent_id);
+    const incomeParents = categories.filter((c) => c.type === 'income' && !c.parent_id);
+    const childrenMap = new Map<string, Category[]>();
+
+    for (const c of categories) {
+      if (c.parent_id) {
+        if (!childrenMap.has(c.parent_id)) childrenMap.set(c.parent_id, []);
+        childrenMap.get(c.parent_id)!.push(c);
+      }
+    }
+
+    return {
+      expense: expenseParents.map((p) => ({
+        parent: p,
+        children: childrenMap.get(p.category_id) || [],
+      })),
+      income: incomeParents.map((p) => ({
+        parent: p,
+        children: childrenMap.get(p.category_id) || [],
+      })),
+    };
+  }, [categories]);
+
+  // 当前选中的分类展示名称
+  const selectedFilterCatName = useMemo(() => {
+    if (filterCategoryId === 'all') return null;
+    const cat = categories.find((c) => c.category_id === filterCategoryId);
+    if (!cat) return null;
+    const typeLabel = cat.type === 'expense' ? '支出' : '收入';
+    if (cat.parent_id) {
+      const pCat = categories.find((c) => c.category_id === cat.parent_id);
+      return `${typeLabel} · ${pCat?.name || ''} · ${cat.name}`;
+    }
+    return `${typeLabel} · ${cat.name} (全部)`;
+  }, [filterCategoryId, categories]);
+
   // 同步状态
   const [syncStats, setSyncStats] = useState<SyncStats>(() => syncManager.getStats());
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'info' | 'success' | 'warning' } | null>(null);
@@ -799,37 +837,138 @@ export function App() {
                   />
                 )}
                 {/* 检索与筛选栏 */}
-                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-3">
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
+                <div className="p-3.5 sm:p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-3">
+                  {/* 第一行：搜索框 + 收支类型 + 分类下拉选择 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                    {/* 搜索框 (支持备注与分类名称搜索) */}
+                    <div className="relative sm:col-span-6">
                       <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
-                        placeholder="按备注搜索账单..."
+                        placeholder="按备注、分类搜索..."
                         value={filterSearch}
                         onChange={(e) => setFilterSearch(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        className="w-full pl-9 pr-7 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none placeholder:text-slate-400"
                       />
+                      {filterSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterSearch('')}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 收支类型快速过滤 */}
+                    <div className="sm:col-span-3">
+                      <select
+                        value={filterType}
+                        onChange={(e) => setFilterType(e.target.value as 'all' | TransactionType)}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer font-medium"
+                      >
+                        <option value="all">全部类型</option>
+                        <option value="expense">🔴 仅看支出</option>
+                        <option value="income">🟢 仅看收入</option>
+                        <option value="transfer">🔵 仅看转账</option>
+                        <option value="loan">🟣 仅看借贷</option>
+                      </select>
+                    </div>
+
+                    {/* 分类下拉选择 (支持父子分类与单选) */}
+                    <div className="sm:col-span-3">
+                      <select
+                        value={filterCategoryId}
+                        onChange={(e) => setFilterCategoryId(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:outline-none cursor-pointer font-medium"
+                      >
+                        <option value="all">全部分类</option>
+                        {categoryFilterOptions.expense.length > 0 && (
+                          <optgroup label="── 支出分类 ──">
+                            {categoryFilterOptions.expense.map(({ parent, children }) => (
+                              <React.Fragment key={parent.category_id}>
+                                <option value={parent.category_id}>支出 - {parent.name} (全部)</option>
+                                {children.map((c) => (
+                                  <option key={c.category_id} value={c.category_id}>
+                                    &nbsp;&nbsp;└ {c.name}
+                                  </option>
+                                ))}
+                              </React.Fragment>
+                            ))}
+                          </optgroup>
+                        )}
+                        {categoryFilterOptions.income.length > 0 && (
+                          <optgroup label="── 收入分类 ──">
+                            {categoryFilterOptions.income.map(({ parent, children }) => (
+                              <React.Fragment key={parent.category_id}>
+                                <option value={parent.category_id}>收入 - {parent.name} (全部)</option>
+                                {children.map((c) => (
+                                  <option key={c.category_id} value={c.category_id}>
+                                    &nbsp;&nbsp;└ {c.name}
+                                  </option>
+                                ))}
+                              </React.Fragment>
+                            ))}
+                          </optgroup>
+                        )}
+                      </select>
                     </div>
                   </div>
 
-                  {/* 汇总统计条 */}
+                  {/* 激活的筛选标签与一键清除 */}
+                  {(filterType !== 'all' || filterCategoryId !== 'all' || filterSearch) && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 text-[11px]">
+                      <span className="text-slate-400 font-medium">当前筛选:</span>
+                      {filterType !== 'all' && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold">
+                          {filterType === 'expense' ? '支出' : filterType === 'income' ? '收入' : filterType === 'transfer' ? '转账' : '借贷'}
+                          <button type="button" onClick={() => setFilterType('all')} className="hover:opacity-75 cursor-pointer">✕</button>
+                        </span>
+                      )}
+                      {selectedFilterCatName && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold">
+                          {selectedFilterCatName}
+                          <button type="button" onClick={() => setFilterCategoryId('all')} className="hover:opacity-75 cursor-pointer">✕</button>
+                        </span>
+                      )}
+                      {filterSearch && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-semibold">
+                          "{filterSearch}"
+                          <button type="button" onClick={() => setFilterSearch('')} className="hover:opacity-75 cursor-pointer">✕</button>
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilterType('all');
+                          setFilterCategoryId('all');
+                          setFilterSearch('');
+                        }}
+                        className="ml-auto text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                      >
+                        清空筛选
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 汇总统计条 (随当前筛选结果即时动态计算) */}
                   <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
                     <div className="p-2 rounded-xl bg-rose-50/50 dark:bg-rose-950/20">
                       <div className="text-[11px] text-rose-600 dark:text-rose-400">总支出</div>
-                      <div className="text-sm font-bold text-rose-700 dark:text-rose-300 mt-0.5">
+                      <div className="text-sm font-bold text-rose-700 dark:text-rose-300 mt-0.5 font-mono">
                         {formatMoney(totals.totalExpense, curSymbol)}
                       </div>
                     </div>
                     <div className="p-2 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20">
                       <div className="text-[11px] text-emerald-600 dark:text-emerald-400">总收入</div>
-                      <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                      <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-0.5 font-mono">
                         {formatMoney(totals.totalIncome, curSymbol)}
                       </div>
                     </div>
                     <div className="p-2 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20">
                       <div className="text-[11px] text-indigo-600 dark:text-indigo-400">收支结余</div>
-                      <div className="text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-0.5">
+                      <div className="text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-0.5 font-mono">
                         {formatMoney(totals.balance, curSymbol)}
                       </div>
                     </div>

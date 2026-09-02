@@ -9,6 +9,7 @@ import {
   ChevronRight,
   BookOpen,
   Sparkles,
+  X,
 } from 'lucide-react';
 import {
   Transaction,
@@ -91,7 +92,7 @@ export function StatisticsView({
 
   const currencySymbol = getCurrencySymbol(currentLedger?.currency);
 
-  // 切换上一周期 (上个月 / 上一年)
+  // 切换上一周期 (上个月 / 上一年 / 上一自定义区间)
   const handlePrevPeriod = () => {
     if (period === 'month') {
       if (selectedMonth === 1) {
@@ -102,10 +103,18 @@ export function StatisticsView({
       }
     } else if (period === 'year') {
       setSelectedYear((y) => y - 1);
+    } else if (period === 'custom' && customStartDate && customEndDate) {
+      const s = new Date(customStartDate);
+      const e = new Date(customEndDate);
+      const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (24 * 3600 * 1000)));
+      s.setDate(s.getDate() - diffDays);
+      e.setDate(e.getDate() - diffDays);
+      setCustomStartDate(formatDateKey(s));
+      setCustomEndDate(formatDateKey(e));
     }
   };
 
-  // 切换下一周期 (下个月 / 下一年)
+  // 切换下一周期 (下个月 / 下一年 / 下一自定义区间)
   const handleNextPeriod = () => {
     if (period === 'month') {
       if (selectedMonth === 12) {
@@ -116,6 +125,14 @@ export function StatisticsView({
       }
     } else if (period === 'year') {
       setSelectedYear((y) => y + 1);
+    } else if (period === 'custom' && customStartDate && customEndDate) {
+      const s = new Date(customStartDate);
+      const e = new Date(customEndDate);
+      const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (24 * 3600 * 1000)));
+      s.setDate(s.getDate() + diffDays);
+      e.setDate(e.getDate() + diffDays);
+      setCustomStartDate(formatDateKey(s));
+      setCustomEndDate(formatDateKey(e));
     }
   };
 
@@ -322,6 +339,11 @@ export function StatisticsView({
         customEndDate &&
         new Date(customEndDate).getTime() - new Date(customStartDate).getTime() <= 35 * 24 * 3600 * 1000);
 
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+
     const points: { label: string; date: string; expense: number; income: number }[] = [];
 
     if (isDaily) {
@@ -331,11 +353,24 @@ export function StatisticsView({
 
       if (period === 'month') {
         startDate = new Date(selectedYear, selectedMonth - 1, 1);
-        daysCount = new Date(selectedYear, selectedMonth, 0).getDate();
+        const totalDaysInMonth = new Date(selectedYear, selectedMonth, 0).getDate();
+
+        if (selectedYear > currentYear || (selectedYear === currentYear && selectedMonth > currentMonth)) {
+          // 未来月份：尚未到来，不生成数据点
+          daysCount = 0;
+        } else if (selectedYear === currentYear && selectedMonth === currentMonth) {
+          // 当前进行中的月份：仅展示截止到今天的天数
+          daysCount = currentDay;
+        } else {
+          // 过去已结束月份：展示该月完整天数
+          daysCount = totalDaysInMonth;
+        }
       } else {
         startDate = new Date(customStartDate || defaultStartDate);
-        const endDate = new Date(customEndDate || defaultEndDate);
-        daysCount = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1);
+        const rawEndDate = new Date(customEndDate || defaultEndDate);
+        // 如果自定义范围跨越了未来，且起始日期在今天及之前，自动截止到今天
+        const endDate = rawEndDate > now && startDate <= now ? now : rawEndDate;
+        daysCount = Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1);
       }
 
       const dailyMap = new Map<string, { expense: number; income: number }>();
@@ -376,7 +411,14 @@ export function StatisticsView({
       }
 
       if (period === 'year') {
-        for (let m = 1; m <= 12; m++) {
+        let maxMonth = 12;
+        if (targetYear === currentYear) {
+          maxMonth = currentMonth; // 当前年仅展示截止到当前月份
+        } else if (targetYear > currentYear) {
+          maxMonth = 0; // 未来年份无数据点
+        }
+
+        for (let m = 1; m <= maxMonth; m++) {
           const mKey = `${targetYear}-${String(m).padStart(2, '0')}`;
           const entry = monthMap.get(mKey) || { expense: 0, income: 0 };
           points.push({
@@ -387,18 +429,75 @@ export function StatisticsView({
           });
         }
       } else {
-        // all 或跨多月自定义：获取最近 6 个有记录或完整的月度
-        const curDate = new Date();
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(curDate.getFullYear(), curDate.getMonth() - i, 1);
-          const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          const entry = monthMap.get(mKey) || { expense: 0, income: 0 };
-          points.push({
-            label: `${d.getMonth() + 1}月`,
-            date: mKey,
-            expense: entry.expense,
-            income: entry.income,
-          });
+        // all 或跨多月自定义：获取真实的起止月份区间
+        const sortedDates = filteredTransactions
+          .map((t) => formatDateKey(t.transaction_date))
+          .filter(Boolean)
+          .sort();
+
+        if (sortedDates.length === 0) {
+          const curDate = new Date();
+          for (let i = 5; i >= 0; i--) {
+            const d = new Date(curDate.getFullYear(), curDate.getMonth() - i, 1);
+            const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            points.push({
+              label: `${d.getMonth() + 1}月`,
+              date: mKey,
+              expense: 0,
+              income: 0,
+            });
+          }
+        } else {
+          const earliestDateStr = sortedDates[0];
+          const latestDateStr = sortedDates[sortedDates.length - 1];
+
+          const eYear = parseInt(earliestDateStr.slice(0, 4), 10);
+          const eMonth = parseInt(earliestDateStr.slice(5, 7), 10);
+
+          const lYear = parseInt(latestDateStr.slice(0, 4), 10);
+          const lMonth = parseInt(latestDateStr.slice(5, 7), 10);
+
+          const totalMonths = Math.max(1, (lYear - eYear) * 12 + (lMonth - eMonth) + 1);
+          const isCrossYear = eYear !== lYear;
+
+          if (totalMonths <= 24) {
+            // 2 年内逐月平铺
+            for (let i = 0; i < totalMonths; i++) {
+              const d = new Date(eYear, eMonth - 1 + i, 1);
+              const y = d.getFullYear();
+              const m = d.getMonth() + 1;
+              const mKey = `${y}-${String(m).padStart(2, '0')}`;
+              const entry = monthMap.get(mKey) || { expense: 0, income: 0 };
+              const label = isCrossYear ? `${String(y).slice(2)}/${m}月` : `${m}月`;
+              points.push({
+                label,
+                date: mKey,
+                expense: entry.expense,
+                income: entry.income,
+              });
+            }
+          } else {
+            // 超过 2 年按年度汇总
+            const yearMap = new Map<number, { expense: number; income: number }>();
+            for (const tx of filteredTransactions) {
+              const dKey = formatDateKey(tx.transaction_date);
+              if (!dKey) continue;
+              const y = parseInt(dKey.slice(0, 4), 10);
+              if (!yearMap.has(y)) yearMap.set(y, { expense: 0, income: 0 });
+              const entry = yearMap.get(y)!;
+              if (tx.type === 'expense') entry.expense += tx.amount;
+              if (tx.type === 'income') entry.income += tx.amount;
+            }
+            for (let y = eYear; y <= lYear; y++) {
+              const entry = yearMap.get(y) || { expense: 0, income: 0 };
+              points.push({
+                label: `${y}年`,
+                date: `${y}`,
+                expense: entry.expense,
+                income: entry.income,
+              });
+            }
+          }
         }
       }
     }
@@ -406,18 +505,21 @@ export function StatisticsView({
     // 智能分析小结
     const totalExp = totals.totalExpense;
     const totalInc = totals.totalIncome;
-    const days = Math.max(points.length, 1);
-    const dailyAvgExpense = totalExp / days;
+    const count = Math.max(points.length, 1);
+    const avgExpense = totalExp / count;
+    const avgIncome = totalInc / count;
+    const avgLabel = isDaily ? '日均' : points.length > 0 && points[0].label.includes('年') ? '年均' : '月均';
+
     const topExpenseCategories = expenseCategoryStats.list.slice(0, 3).map((item) => item.category?.name || '其他');
     const topIncomeCategories = incomeCategoryStats.list.slice(0, 2).map((item) => item.category?.name || '其他');
 
     const summaryText =
       selectedType === 'expense'
         ? totalExp > 0
-          ? `支出 ${formatMoney(totalExp, currencySymbol)}，日均 ${formatMoney(dailyAvgExpense, currencySymbol)}，主要去向是 ${topExpenseCategories.join('、')}`
+          ? `支出 ${formatMoney(totalExp, currencySymbol)}，${avgLabel} ${formatMoney(avgExpense, currencySymbol)}，主要去向是 ${topExpenseCategories.join('、')}`
           : '当前时间段内暂无支出明细'
         : totalInc > 0
-        ? `总收入 ${formatMoney(totalInc, currencySymbol)}，主要来源于 ${topIncomeCategories.join('、')}`
+        ? `总收入 ${formatMoney(totalInc, currencySymbol)}，${avgLabel} ${formatMoney(avgIncome, currencySymbol)}，主要来源于 ${topIncomeCategories.join('、')}`
         : '当前时间段内暂无收入明细';
 
     return {
@@ -498,7 +600,9 @@ export function StatisticsView({
                 type="button"
                 onClick={() => {
                   setPeriod(id);
-                  if (id === 'custom') setShowCustomPicker(true);
+                  if (id === 'custom') {
+                    setShowCustomPicker(true);
+                  }
                 }}
                 className={`px-3 py-1 rounded-xl transition-all duration-150 active:scale-95 text-xs ${
                   isCur
@@ -513,23 +617,29 @@ export function StatisticsView({
         </div>
       </div>
 
-      {/* 2. 周期快捷前后切换导航条 (参考图顶部：< 2026-09 >) */}
+      {/* 2. 周期快捷前后切换导航条 (参考图顶部：< 2026-09 > 或 < 2026-08-04 ~ 2026-09-02 >) */}
       <div className="flex items-center justify-between px-3 py-2 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
         <button
           type="button"
           disabled={period === 'all'}
           onClick={handlePrevPeriod}
-          className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:pointer-events-none transition"
+          title={period === 'custom' ? '前移相同天数区间' : '上一个周期'}
+          className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
 
-        <div
+        <button
+          type="button"
           onClick={() => {
-            if (period === 'custom') setShowCustomPicker(!showCustomPicker);
+            if (period === 'custom') {
+              setShowCustomPicker(true);
+            }
           }}
-          className={`flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-100 ${
-            period === 'custom' ? 'cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400' : ''
+          className={`flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-100 px-2 py-1 rounded-xl transition ${
+            period === 'custom'
+              ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/40 hover:text-indigo-600 dark:hover:text-indigo-400'
+              : ''
           }`}
         >
           <Calendar className="w-3.5 h-3.5 text-indigo-500" />
@@ -539,66 +649,102 @@ export function StatisticsView({
               调整
             </span>
           )}
-        </div>
+        </button>
 
         <button
           type="button"
           disabled={period === 'all'}
           onClick={handleNextPeriod}
-          className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:pointer-events-none transition"
+          title={period === 'custom' ? '后移相同天数区间' : '下一个周期'}
+          className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
 
-      {/* 3. 自定义日期范围快捷筛选面板 (当 period === 'custom' 时展开) */}
-      {period === 'custom' && (
-        <div className="p-4 rounded-3xl bg-white dark:bg-slate-900 border border-indigo-100 dark:border-indigo-900/40 shadow-sm space-y-3 animate-fade-in">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-              <span>选择自定义时间范围</span>
-            </span>
-            <div className="flex items-center gap-1">
-              {(
-                [
-                  { id: '7d', label: '近7天' },
-                  { id: '30d', label: '近30天' },
-                  { id: 'this_month', label: '本月' },
-                  { id: 'last_month', label: '上月' },
-                  { id: 'this_year', label: '本年' },
-                ] as const
-              ).map(({ id, label }) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setCustomPreset(id)}
-                  className="px-2 py-1 rounded-lg text-[11px] font-medium bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300 text-slate-600 dark:text-slate-300 transition"
-                >
-                  {label}
-                </button>
-              ))}
+      {/* 3. 自定义日期范围快捷筛选弹窗 */}
+      {showCustomPicker && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in"
+          onClick={() => setShowCustomPicker(false)}
+        >
+          <div
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-5 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-4 animate-slide-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Calendar className="w-4 h-4 text-indigo-500" />
+                <span className="text-sm font-bold text-slate-900 dark:text-white">自定义统计时间范围</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCustomPicker(false)}
+                className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
             </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-3 pt-1">
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">起始日期</label>
-              <input
-                type="date"
-                value={customStartDate}
-                onChange={(e) => setCustomStartDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+            {/* 快捷预设按钮组 */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">快捷预设</label>
+              <div className="grid grid-cols-3 gap-2">
+                {(
+                  [
+                    { id: '7d', label: '近 7 天' },
+                    { id: '30d', label: '近 30 天' },
+                    { id: 'this_month', label: '本月' },
+                    { id: 'last_month', label: '上月' },
+                    { id: 'this_year', label: '本年' },
+                  ] as const
+                ).map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setCustomPreset(id)}
+                    className="py-2 px-2.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-300 text-slate-700 dark:text-slate-200 transition active:scale-95 cursor-pointer text-center"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-slate-500 dark:text-slate-400">结束日期</label>
-              <input
-                type="date"
-                value={customEndDate}
-                onChange={(e) => setCustomEndDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+
+            {/* 精确日期选择 */}
+            <div className="grid grid-cols-2 gap-3 pt-1">
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">起始日期</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">结束日期</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* 确认应用按钮 */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPeriod('custom');
+                  setShowCustomPicker(false);
+                }}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-md shadow-indigo-600/20 active:scale-95 transition cursor-pointer"
+              >
+                应用时间筛选
+              </button>
             </div>
           </div>
         </div>
@@ -1027,9 +1173,11 @@ function DonutChartSvg({
         className="text-slate-100 dark:text-slate-800"
       />
 
-      {/* 各分类圆弧片段 */}
+      {/* 各分类圆弧片段 (使用 butt 与平滑间隙，彻底消除 round 端头重叠问题) */}
       {items.map((item) => {
         const sliceLength = total > 0 ? (item.totalAmount / total) * circumference : 0;
+        const gap = items.length > 1 ? 1.5 : 0;
+        const sliceArc = Math.max(0, sliceLength - gap);
         const offset = -accumulatedLength;
         accumulatedLength += sliceLength;
         const isHovered = hoveredId === item.categoryId;
@@ -1043,9 +1191,9 @@ function DonutChartSvg({
             fill="transparent"
             stroke={item.color}
             strokeWidth={isHovered ? strokeWidth + 3 : strokeWidth}
-            strokeDasharray={`${sliceLength} ${circumference}`}
+            strokeDasharray={`${sliceArc} ${circumference - sliceArc}`}
             strokeDashoffset={offset}
-            strokeLinecap="round"
+            strokeLinecap="butt"
             onMouseEnter={() => onHover(item.categoryId)}
             onMouseLeave={() => onHover(null)}
             className="transition-all duration-300 cursor-pointer"
@@ -1101,10 +1249,15 @@ function SmoothAreaTrendChartSvg({
     return { x, y, val, label: d.label, date: d.date };
   });
 
-  // 三次贝塞尔曲线控制点计算
+  // 三次贝塞尔曲线控制点计算 (带非负基准线与局部极值单调约束，彻底杜绝越界下穿)
   const getSmoothPath = (pts: typeof points) => {
     if (pts.length === 0) return '';
-    if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
+    if (pts.length === 1) return `M ${pts[0].x - 35} ${pts[0].y} L ${pts[0].x + 35} ${pts[0].y}`;
+    if (pts.length === 2) return `M ${pts[0].x} ${pts[0].y} L ${pts[1].x} ${pts[1].y}`;
+
+    const bottomY = paddingTop + chartHeight;
+    const topY = paddingTop;
+
     let d = `M ${pts[0].x} ${pts[0].y}`;
     for (let i = 0; i < pts.length - 1; i++) {
       const p0 = pts[i === 0 ? 0 : i - 1];
@@ -1113,9 +1266,23 @@ function SmoothAreaTrendChartSvg({
       const p3 = pts[i + 2 >= pts.length ? i + 1 : i + 2];
 
       const cp1x = p1.x + (p2.x - p0.x) / 6;
-      const cp1y = p1.y + (p2.y - p0.y) / 6;
+      let cp1y = p1.y + (p2.y - p0.y) / 6;
       const cp2x = p2.x - (p3.x - p1.x) / 6;
-      const cp2y = p2.y - (p3.y - p1.y) / 6;
+      let cp2y = p2.y - (p3.y - p1.y) / 6;
+
+      // 如果两个端点值均为 0，走水平基线
+      if (p1.val === 0 && p2.val === 0) {
+        cp1y = bottomY;
+        cp2y = bottomY;
+      } else {
+        // 如果端点为 0，切线平行于基线，不允许下穿
+        if (p1.val === 0) cp1y = bottomY;
+        if (p2.val === 0) cp2y = bottomY;
+
+        // 限制在 [topY, bottomY] 区间内
+        cp1y = Math.min(bottomY, Math.max(topY, cp1y));
+        cp2y = Math.min(bottomY, Math.max(topY, cp2y));
+      }
 
       d += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
     }
@@ -1123,7 +1290,10 @@ function SmoothAreaTrendChartSvg({
   };
 
   const linePath = getSmoothPath(points);
-  const areaPath = `${linePath} L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`;
+  const areaPath =
+    points.length === 1
+      ? `M ${points[0].x - 35} ${points[0].y} L ${points[0].x + 35} ${points[0].y} L ${points[0].x + 35} ${height - paddingBottom} L ${points[0].x - 35} ${height - paddingBottom} Z`
+      : `${linePath} L ${points[points.length - 1].x} ${height - paddingBottom} L ${points[0].x} ${height - paddingBottom} Z`;
 
   const isExpense = type !== 'income';
   const strokeColor = isExpense ? '#F43F5E' : '#10B981'; // 玫红 vs 翠绿
@@ -1157,11 +1327,11 @@ function SmoothAreaTrendChartSvg({
       {/* 数据节点圆点与悬浮互动 */}
       {points.map((p, i) => (
         <g key={i}>
-          {p.val > 0 && (
+          {(p.val > 0 || points.length <= 10) && (
             <circle
               cx={p.x}
               cy={p.y}
-              r="3"
+              r="3.5"
               fill="white"
               stroke={strokeColor}
               strokeWidth="2"
@@ -1172,7 +1342,7 @@ function SmoothAreaTrendChartSvg({
           <circle
             cx={p.x}
             cy={p.y}
-            r="12"
+            r="14"
             fill="transparent"
             onMouseEnter={() => onHoverPoint({ label: p.label, amount: p.val, date: p.date })}
             onMouseLeave={() => onHoverPoint(null)}
@@ -1181,13 +1351,30 @@ function SmoothAreaTrendChartSvg({
         </g>
       ))}
 
-      {/* 最新/末端数值气泡 (参考图中的 283.00) */}
+      {/* 最新/末端数值气泡 (带胶囊背景与边界偏移保护) */}
       {latestPoint && latestPoint.val > 0 && (
-        <g transform={`translate(${latestPoint.x - 20}, ${latestPoint.y - 12})`}>
+        <g
+          transform={`translate(${Math.max(25, Math.min(width - 30, latestPoint.x))}, ${Math.max(
+            16,
+            latestPoint.y - 12
+          )})`}
+        >
+          <rect
+            x="-22"
+            y="-10"
+            width="44"
+            height="14"
+            rx="4"
+            fill={isExpense ? '#FFF1F2' : '#ECFDF5'}
+            className="dark:fill-slate-800"
+            stroke={strokeColor}
+            strokeWidth="1"
+          />
           <text
             x="0"
-            y="0"
-            fontSize="10"
+            y="1"
+            textAnchor="middle"
+            fontSize="9.5"
             fontWeight="bold"
             fill={strokeColor}
             className="font-mono"
@@ -1199,9 +1386,8 @@ function SmoothAreaTrendChartSvg({
 
       {/* X 轴刻度标签 */}
       {points.map((p, i) => {
-        // 如果点太多（例如 30 天），每隔 5 天显示一个标签
         const shouldShowLabel =
-          points.length <= 12 ||
+          points.length <= 10 ||
           i === 0 ||
           i === points.length - 1 ||
           i % Math.ceil(points.length / 6) === 0;

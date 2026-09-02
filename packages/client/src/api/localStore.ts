@@ -372,7 +372,15 @@ export async function queryTransactions(
       list = list.filter((t) => t.type === filter.type);
     }
     if (filter.category_id && filter.category_id !== 'all') {
-      list = list.filter((t) => t.category_id === filter.category_id);
+      const allCats = await localDb.categories.toArray();
+      const targetCatId = filter.category_id;
+      const matchedCategoryIds = new Set<string>([targetCatId]);
+      for (const c of allCats) {
+        if (c.parent_id === targetCatId) {
+          matchedCategoryIds.add(c.category_id);
+        }
+      }
+      list = list.filter((t) => Boolean(t.category_id && matchedCategoryIds.has(t.category_id)));
     }
     if (filter.start_date) {
       list = list.filter((t) => t.transaction_date >= filter.start_date!);
@@ -381,10 +389,24 @@ export async function queryTransactions(
       list = list.filter((t) => t.transaction_date <= filter.end_date!);
     }
     if (filter.search) {
-      const q = filter.search.toLowerCase();
-      list = list.filter((t) =>
-        Boolean(t.remark && t.remark.toLowerCase().includes(q))
-      );
+      const q = filter.search.toLowerCase().trim();
+      if (q) {
+        const allCats = await localDb.categories.toArray();
+        const catMap = new Map(allCats.map((c) => [c.category_id, c]));
+
+        list = list.filter((t) => {
+          if (t.remark && t.remark.toLowerCase().includes(q)) return true;
+          const cat = t.category_id ? catMap.get(t.category_id) : undefined;
+          if (cat) {
+            if (cat.name.toLowerCase().includes(q)) return true;
+            if (cat.parent_id) {
+              const pCat = catMap.get(cat.parent_id);
+              if (pCat && pCat.name.toLowerCase().includes(q)) return true;
+            }
+          }
+          return false;
+        });
+      }
     }
     if (filter.limit && filter.limit > 0) {
       list = list.slice(0, filter.limit);

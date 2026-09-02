@@ -404,7 +404,7 @@ export function ProfileView({
                   className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-xs font-semibold flex items-center gap-1.5 transition"
                 >
                   <Lock className="w-3.5 h-3.5 text-amber-300" />
-                  <span>锁定保险库</span>
+                  <span>锁定系统</span>
                 </button>
               ) : (
                 <button
@@ -413,7 +413,7 @@ export function ProfileView({
                   className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 text-xs font-bold flex items-center gap-1.5 transition shadow"
                 >
                   <Unlock className="w-3.5 h-3.5" />
-                  <span>解锁保险库</span>
+                  <span>解锁系统</span>
                 </button>
               )
             ) : (
