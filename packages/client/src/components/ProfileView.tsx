@@ -27,6 +27,10 @@ import {
   Sparkles,
   Globe,
   Sliders,
+  Eye,
+  EyeOff,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
 import { Ledger, Transaction, SyncConfig, SyncProviderType } from '@ledger/shared';
 import { syncManager, SyncStats } from '../api/syncManager';
@@ -117,6 +121,12 @@ export function ProfileView({
   // 本地保险库状态
   const [isVaultActive, setIsVaultActive] = useState<boolean>(false);
   const [isVaultCached, setIsVaultCached] = useState<boolean>(false);
+
+  // WebDAV 跨设备恢复解密弹窗状态
+  const [pullPasswordModalOpen, setPullPasswordModalOpen] = useState(false);
+  const [pullPasswordInput, setPullPasswordInput] = useState('');
+  const [pullPasswordError, setPullPasswordError] = useState('');
+  const [showPullPassword, setShowPullPassword] = useState(false);
 
   useEffect(() => {
     // 若在原生端运行，自动纠正之前可能误存的代理配置
@@ -250,17 +260,33 @@ export function ProfileView({
     setTimeout(() => setConfigSaveSuccess(''), 3000);
   };
 
-  // 手动快照上传/恢复
+  // 手动触发快照上传与恢复
   const handleManualSync = async (direction: 'push' | 'pull') => {
-    if (!isVaultActive) {
-      if (onOpenVaultModal) onOpenVaultModal('setup');
-      setSyncFeedback({ type: 'error', message: '尚未初始化本地安全保险库，请先设置主密码以加密保护快照数据' });
+    if (!isWebdavSyncConfigured()) {
+      setSyncFeedback({ type: 'error', message: '请先完整配置 WebDAV 服务并保存后再执行同步' });
       return;
     }
 
-    if (!isVaultUnlocked()) {
-      if (onOpenVaultModal) onOpenVaultModal('unlock');
-      setSyncFeedback({ type: 'error', message: '本地保险库当前处于锁定状态，请先输入主密码解锁后再执行 WebDAV 同步' });
+    // 若当前为推送，且保险库未解锁，提示解锁
+    if (direction === 'push') {
+      if (!isVaultActive) {
+        if (onOpenVaultModal) onOpenVaultModal('setup');
+        setSyncFeedback({ type: 'error', message: '尚未初始化本地安全保险库，请先设置主密码以加密保护快照数据' });
+        return;
+      }
+      if (!isVaultUnlocked()) {
+        if (onOpenVaultModal) onOpenVaultModal('unlock');
+        setSyncFeedback({ type: 'error', message: '本地保险库当前处于锁定状态，请先输入主密码解锁后再执行推送' });
+        return;
+      }
+    }
+
+    // 若当前为从 WebDAV 恢复：
+    // 若当前本地保险库未解锁，或者未初始化，直接弹窗请求输入主密码解密远端快照
+    if (direction === 'pull' && (!isVaultActive || !isVaultUnlocked())) {
+      setPullPasswordError('');
+      setPullPasswordInput('');
+      setPullPasswordModalOpen(true);
       return;
     }
 
@@ -276,10 +302,55 @@ export function ProfileView({
         }
         refreshStorageAndVault();
       } else {
-        setSyncFeedback({ type: 'error', message: res.message || res.error || '同步失败' });
+        const errorText = res.message || res.error || '';
+        // 检测是否由于跨设备盐值不一致或需要密码解密
+        if (direction === 'pull' && (errorText.includes('DECRYPTION_PASSWORD_REQUIRED') || errorText.includes('解密失败') || errorText.includes('密码不匹配'))) {
+          setPullPasswordError('远端快照由另一台设备加密生成（加密盐值不同）。请输入您在主设备（电脑端）上设置的保险库主密码以解密恢复：');
+          setPullPasswordInput('');
+          setPullPasswordModalOpen(true);
+        } else {
+          setSyncFeedback({ type: 'error', message: res.message || res.error || '同步失败' });
+        }
       }
     } catch (err: any) {
-      setSyncFeedback({ type: 'error', message: err?.message || '同步发生异常' });
+      const errorText = err?.message || '';
+      if (direction === 'pull' && (errorText.includes('DECRYPTION_PASSWORD_REQUIRED') || errorText.includes('解密失败') || errorText.includes('密码不匹配'))) {
+        setPullPasswordError('远端快照由另一台设备加密生成（加密盐值不同）。请输入您在主设备（电脑端）上设置的保险库主密码以解密恢复：');
+        setPullPasswordInput('');
+        setPullPasswordModalOpen(true);
+      } else {
+        setSyncFeedback({ type: 'error', message: err?.message || '同步发生异常' });
+      }
+    } finally {
+      setManualSyncing(null);
+    }
+  };
+
+  // 通过输入主密码确认从 WebDAV 恢复跨设备快照
+  const handleConfirmPullWithPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pullPasswordInput || pullPasswordInput.length < 6) {
+      setPullPasswordError('主密码长度不能少于 6 位');
+      return;
+    }
+
+    setManualSyncing('pull');
+    setPullPasswordError('');
+    try {
+      const res = await syncManager.sync('pull', { password: pullPasswordInput });
+      if (res.success) {
+        setSyncFeedback({ type: 'success', message: `✅ ${res.message}，多端保险库凭证已自动对齐同步！` });
+        setPullPasswordModalOpen(false);
+        setPullPasswordInput('');
+        if (onRefreshData) {
+          await onRefreshData();
+        }
+        refreshStorageAndVault();
+      } else {
+        setPullPasswordError(res.message || res.error || '解密失败，请检查主密码是否正确');
+      }
+    } catch (err: any) {
+      setPullPasswordError(err?.message || '从 WebDAV 恢复失败');
     } finally {
       setManualSyncing(null);
     }
@@ -900,6 +971,108 @@ export function ProfileView({
         </p>
         <p>100% 本地优先 · 零知识安全保险库 · WebDAV 快照同步</p>
       </div>
+
+      {/* WebDAV 跨设备恢复主密码解密弹窗 */}
+      {pullPasswordModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-100 dark:border-slate-800 space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    从 WebDAV 恢复数据
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    跨设备快照解密与密钥同步
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setPullPasswordModalOpen(false);
+                  setPullPasswordInput('');
+                  setPullPasswordError('');
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+              🔒 <strong>零知识端到端保护</strong>：云端仅存储经 AES-256 强加密的密文快照。请输入您在主设备（电脑端）上设置的<strong>保险库主密码</strong>，系统将自动派生密钥完成解密，并自动对齐多端加密凭证。
+            </p>
+
+            {pullPasswordError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/50 text-xs text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{pullPasswordError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleConfirmPullWithPassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  保险库主密码
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPullPassword ? 'text' : 'password'}
+                    value={pullPasswordInput}
+                    onChange={(e) => setPullPasswordInput(e.target.value)}
+                    placeholder="请输入主密码"
+                    required
+                    autoFocus
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPullPassword(!showPullPassword)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    {showPullPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPullPasswordModalOpen(false);
+                    setPullPasswordInput('');
+                    setPullPasswordError('');
+                  }}
+                  className="w-1/3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  disabled={manualSyncing === 'pull' || !pullPasswordInput}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-md shadow-emerald-600/20 flex items-center justify-center gap-1.5 transition"
+                >
+                  {manualSyncing === 'pull' ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>正在解密并恢复...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-3.5 h-3.5" />
+                      <span>确认解密并恢复</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

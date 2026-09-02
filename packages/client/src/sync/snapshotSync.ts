@@ -11,10 +11,13 @@ import {
 import { exportAllLocalData, importAllLocalData } from '../db';
 import {
   getCachedKey,
+  setCachedKey,
   createEncryptedBackupPackage,
   restoreEncryptedBackupPackage,
+  deriveKeyFromPassword,
   generateRandomSalt,
 } from '../crypto';
+import { persistVaultSession, notifyVaultStatusChanged } from '../auth/localAuth';
 import { getWebDavAdapter } from './webdavAdapter';
 import { getSyncConfig, saveSyncConfig, isWebdavSyncConfigured } from './syncConfig';
 
@@ -57,12 +60,12 @@ export async function exportSnapshot(
 }
 
 /**
- * 校验、解密并原子全量导入远端快照数据至本地 Dexie 数据库
+ * 校验、解密并原子全量导入远端快照数据至本地 Dexie 数据库 (支持跨设备主密码派生与自动对齐凭证)
  */
 export async function importSnapshot(
   encryptedPackage: EncryptedBackupPackage,
   vaultKey?: CryptoKey,
-  options: { overwrite?: boolean } = { overwrite: true }
+  options: { overwrite?: boolean; password?: string } = { overwrite: true }
 ): Promise<{
   importedTransactions: number;
   importedLedgers: number;
@@ -70,15 +73,40 @@ export async function importSnapshot(
   importedBudgets: number;
   importedRecurring: number;
 }> {
-  const key = vaultKey || getCachedKey();
-  if (!key) {
-    throw new Error('未检测到已解锁的本地保险库密钥，无法解密快照');
+  let key: CryptoKey | null = null;
+
+  // 1. 如果显式提供了密码，且备份包包含 salt，优先基于该 salt 派生密钥
+  if (options.password && encryptedPackage?.payload?.salt) {
+    key = await deriveKeyFromPassword(options.password, encryptedPackage.payload.salt);
+  } else {
+    key = vaultKey || getCachedKey();
   }
 
-  const decryptedData = await restoreEncryptedBackupPackage<SnapshotData>(
-    encryptedPackage,
-    key
-  );
+  if (!key) {
+    throw new Error('DECRYPTION_PASSWORD_REQUIRED: 本地保险库尚未解锁或远端快照来自其他设备，请输入主密码进行解密同步');
+  }
+
+  let decryptedData: SnapshotData;
+  try {
+    decryptedData = await restoreEncryptedBackupPackage<SnapshotData>(
+      encryptedPackage,
+      key
+    );
+  } catch (err: any) {
+    // 若使用当前本地 key 解密失败，但提供了密码，则尝试使用密码派生解密
+    if (options.password && encryptedPackage?.payload?.salt) {
+      const derived = await deriveKeyFromPassword(options.password, encryptedPackage.payload.salt);
+      decryptedData = await restoreEncryptedBackupPackage<SnapshotData>(
+        encryptedPackage,
+        derived
+      );
+      key = derived;
+    } else {
+      throw new Error(
+        'DECRYPTION_PASSWORD_REQUIRED: 该 WebDAV 快照由其他设备加密生成（加密盐值不同）。请输入主密码以解密并同步数据。'
+      );
+    }
+  }
 
   if (!decryptedData || typeof decryptedData !== 'object') {
     throw new Error('解密快照内容损坏或格式非法');
@@ -87,6 +115,16 @@ export async function importSnapshot(
   const result = await importAllLocalData(decryptedData, {
     overwrite: options.overwrite !== false,
   });
+
+  // 2. 跨设备凭证对齐：将解密成功的密钥同步写入当前会话与持久化存储
+  if (key) {
+    setCachedKey('default_vault', key);
+    await persistVaultSession('default_vault', key);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('ledger_vault_locked_default_vault');
+    }
+    notifyVaultStatusChanged();
+  }
 
   return result;
 }
@@ -98,6 +136,7 @@ export async function syncWithRemoteWebDAV(options?: {
   forceDirection?: 'push' | 'pull';
   remotePath?: string;
   vaultKey?: CryptoKey;
+  password?: string;
 }): Promise<SnapshotSyncResult> {
   if (!isWebdavSyncConfigured()) {
     return {
@@ -109,7 +148,7 @@ export async function syncWithRemoteWebDAV(options?: {
   }
 
   const key = options?.vaultKey || getCachedKey();
-  if (!key) {
+  if (!key && options?.forceDirection !== 'pull' && !options?.password) {
     return {
       success: false,
       action: 'error',
@@ -125,6 +164,14 @@ export async function syncWithRemoteWebDAV(options?: {
   try {
     // 1. 强制推送 (Push Local to Remote)
     if (options?.forceDirection === 'push') {
+      if (!key) {
+        return {
+          success: false,
+          action: 'error',
+          message: '本地保险库未解锁，无法执行推送',
+          error: 'Vault locked',
+        };
+      }
       const snapshotPkg = await exportSnapshot(key);
       const uploadRes = await adapter.uploadSnapshot(snapshotPkg, targetPath);
 
@@ -152,7 +199,10 @@ export async function syncWithRemoteWebDAV(options?: {
           ? JSON.parse(downloadRes.data)
           : downloadRes.data;
 
-      const importStats = await importSnapshot(pkg, key, { overwrite: true });
+      const importStats = await importSnapshot(pkg, key || undefined, {
+        overwrite: true,
+        password: options?.password,
+      });
 
       const now = new Date().toISOString();
       saveSyncConfig({
@@ -171,6 +221,15 @@ export async function syncWithRemoteWebDAV(options?: {
     }
 
     // 3. 智能双向比对同步 (Smart Auto Sync)
+    if (!key) {
+      return {
+        success: false,
+        action: 'error',
+        message: '本地保险库未解锁，无法执行自动比对同步',
+        error: 'Vault locked',
+      };
+    }
+
     const remoteMeta = await adapter.getRemoteMetadata(targetPath);
 
     // 远端文件尚不存在 -> 直接初始上传
@@ -210,7 +269,10 @@ export async function syncWithRemoteWebDAV(options?: {
           ? JSON.parse(downloadRes.data)
           : downloadRes.data;
 
-      const importStats = await importSnapshot(pkg, key, { overwrite: true });
+      const importStats = await importSnapshot(pkg, key, {
+        overwrite: true,
+        password: options?.password,
+      });
 
       const now = new Date().toISOString();
       saveSyncConfig({

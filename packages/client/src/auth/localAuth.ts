@@ -34,6 +34,8 @@ import {
   restoreEncryptedBackupPackage,
   exportBackupWithPassword,
   importBackupWithPassword,
+  exportKeyToBase64,
+  importKeyFromBase64,
 } from '../crypto';
 import {
   localDb,
@@ -137,8 +139,9 @@ export async function setupMasterPassword(
   // 6. 自动迁移未加密或默认访客数据至该保险库
   await migrateLocalDataToVault(vaultId);
 
-  // 7. 将解密密钥保留在纯内存会话中并清除手动锁定标记
+  // 7. 将解密密钥保留在纯内存会话中并持久化解锁状态，清除手动锁定标记
   setCachedKey(vaultId, masterKey);
+  await persistVaultSession(vaultId, masterKey);
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
   }
@@ -152,7 +155,7 @@ export async function setupMasterPassword(
 }
 
 /**
- * 2. 解锁本地保险库 (验证主密码正确性并载入内存密钥)
+ * 2. 解锁本地保险库 (验证主密码正确性并载入内存密钥，记住解锁状态)
  * @param password 用户输入的主密码
  * @param vaultId 保险库 ID (默认 'default_vault')
  */
@@ -177,8 +180,9 @@ export async function unlockVault(
       return false;
     }
 
-    // 3. 验证通过，载入内存会话并清除手动锁定标记
+    // 3. 验证通过，载入内存会话并记住解锁状态
     setCachedKey(vaultId, derivedKey);
+    await persistVaultSession(vaultId, derivedKey);
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
     }
@@ -235,8 +239,9 @@ export async function changeMasterPassword(
 
   await saveVaultMeta(meta);
 
-  // 5. 更新内存会话密钥
+  // 5. 更新内存会话密钥并持久化
   setCachedKey(vaultId, newKey);
+  await persistVaultSession(vaultId, newKey);
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
   }
@@ -318,8 +323,9 @@ export async function resetPasswordWithRecoveryCode(
 
   await saveVaultMeta(meta);
 
-  // 6. 更新内存会话密钥
+  // 6. 更新内存会话密钥并持久化解锁状态
   setCachedKey(vaultId, newMasterKey);
+  await persistVaultSession(vaultId, newMasterKey);
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
   }
@@ -362,14 +368,83 @@ export function isVaultManuallyLocked(vaultId: string = 'default_vault'): boolea
 }
 
 /**
- * 7. 检查本地保险库当前是否已在内存中解锁 (即内存中持有有效解密密钥)
+ * 7. 持久化保存当前解锁的会话密钥 (用于下次打开 App 自动保持解锁状态)
+ */
+export async function persistVaultSession(vaultId: string, key: CryptoKey): Promise<void> {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const base64 = await exportKeyToBase64(key);
+    localStorage.setItem(`ledger_vault_session_${vaultId}`, base64);
+    localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+  } catch (err) {
+    console.warn('[Vault] Failed to persist vault session key:', err);
+  }
+}
+
+/**
+ * 清除已持久化的会话密钥 (用户手动锁定时调用)
+ */
+export function clearPersistedVaultSession(vaultId: string = 'default_vault'): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.removeItem(`ledger_vault_session_${vaultId}`);
+  } catch {}
+}
+
+/**
+ * 8. 尝试自动恢复上次未手动锁定的解锁会话状态
+ * 若上次退出前未手动点击锁定，重新打开 App 时将自动恢复解锁状态
+ */
+export async function restoreVaultSession(vaultId: string = 'default_vault'): Promise<boolean> {
+  // 1. 如果当前内存中已经持有密钥，直接返回 true
+  if (isVaultUnlocked(vaultId)) {
+    return true;
+  }
+
+  // 2. 如果用户之前手动锁定了，不自动恢复
+  if (isVaultManuallyLocked(vaultId)) {
+    return false;
+  }
+
+  if (typeof localStorage === 'undefined') return false;
+  const sessionKeyBase64 = localStorage.getItem(`ledger_vault_session_${vaultId}`);
+  if (!sessionKeyBase64) {
+    return false;
+  }
+
+  const meta = await getVaultMeta(vaultId);
+  if (!meta || !meta.verify_hash) {
+    clearPersistedVaultSession(vaultId);
+    return false;
+  }
+
+  try {
+    const restoredKey = await importKeyFromBase64(sessionKeyBase64);
+    const verifyPayload = JSON.parse(meta.verify_hash);
+    const decrypted = await decryptObject<{ token: string }>(verifyPayload, restoredKey);
+
+    if (decrypted.token !== VAULT_VERIFICATION_TOKEN) {
+      clearPersistedVaultSession(vaultId);
+      return false;
+    }
+
+    setCachedKey(vaultId, restoredKey);
+    return true;
+  } catch {
+    clearPersistedVaultSession(vaultId);
+    return false;
+  }
+}
+
+/**
+ * 9. 检查本地保险库当前是否已在内存中解锁 (即内存中持有有效解密密钥)
  */
 export function isVaultUnlocked(vaultId: string = 'default_vault'): boolean {
   return isKeyCached(vaultId);
 }
 
 /**
- * 8. 获取当前活跃的保险库会话状态
+ * 10. 获取当前活跃的保险库会话状态
  */
 export function getActiveSession(vaultId: string = 'default_vault'): VaultSessionInfo | null {
   const session = getCachedSession(vaultId);
@@ -382,10 +457,11 @@ export function getActiveSession(vaultId: string = 'default_vault'): VaultSessio
 }
 
 /**
- * 9. 锁定指定保险库 (持久化手动锁定标记并抹除纯内存 CryptoKey)
+ * 11. 锁定指定保险库 (清除持久化会话、设置手动锁定标记并抹除内存密钥)
  */
 export function lockVault(vaultId: string = 'default_vault'): void {
   clearCachedKey(vaultId);
+  clearPersistedVaultSession(vaultId);
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(`ledger_vault_locked_${vaultId}`, 'true');
   }
@@ -393,10 +469,11 @@ export function lockVault(vaultId: string = 'default_vault'): void {
 }
 
 /**
- * 10. 全局锁定所有已解锁的保险库
+ * 12. 全局锁定所有已解锁的保险库
  */
 export function lockAllVaults(): void {
   clearAllCachedKeys();
+  clearPersistedVaultSession('default_vault');
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('ledger_vault_locked_default_vault', 'true');
   }
@@ -404,7 +481,7 @@ export function lockAllVaults(): void {
 }
 
 /**
- * 10. 获取当前内存中的保险库主密钥 (若已锁定则抛出异常)
+ * 13. 获取当前内存中的保险库主密钥 (若已锁定则抛出异常)
  */
 export function getVaultMasterKey(vaultId: string = 'default_vault'): CryptoKey {
   const key = getCachedKey(vaultId);
@@ -415,17 +492,18 @@ export function getVaultMasterKey(vaultId: string = 'default_vault'): CryptoKey 
 }
 
 /**
- * 11. 获取保险库元数据对象
+ * 14. 获取保险库元数据对象
  */
 export async function getVaultMetadata(vaultId: string = 'default_vault'): Promise<VaultMetadata | undefined> {
   return await getVaultMeta(vaultId);
 }
 
 /**
- * 12. 彻底销毁本地保险库
+ * 15. 彻底销毁本地保险库
  */
 export async function destroyVault(vaultId: string = 'default_vault'): Promise<void> {
   lockVault(vaultId);
+  clearPersistedVaultSession(vaultId);
   await deleteVaultMeta(vaultId);
 }
 
@@ -477,21 +555,40 @@ export async function importVaultEncryptedBackup(
   importedRecurring: number;
 }> {
   let decryptedData: any;
+  let effectiveKey: CryptoKey | null = null;
 
   if (typeof passwordOrKey === 'string') {
-    decryptedData = await importBackupWithPassword(pkg, passwordOrKey);
+    if (!pkg?.payload?.salt) {
+      throw new Error('备份包缺少加密盐值 (salt)，无法进行密码派生');
+    }
+    effectiveKey = await deriveKeyFromPassword(passwordOrKey, pkg.payload.salt);
+    decryptedData = await restoreEncryptedBackupPackage(pkg, effectiveKey);
   } else if (passwordOrKey instanceof CryptoKey) {
     decryptedData = await restoreEncryptedBackupPackage(pkg, passwordOrKey);
+    effectiveKey = passwordOrKey;
   } else {
     // 默认尝试使用当前已解锁的保险库密钥
     const masterKey = getVaultMasterKey(targetVaultId);
     decryptedData = await restoreEncryptedBackupPackage(pkg, masterKey);
+    effectiveKey = masterKey;
   }
 
-  return await importAllLocalData(decryptedData, {
+  const result = await importAllLocalData(decryptedData, {
     overwrite: true,
     targetUserId: targetVaultId,
   });
+
+  // 跨设备导入成功后同步更新当前会话密钥
+  if (effectiveKey) {
+    setCachedKey(targetVaultId, effectiveKey);
+    await persistVaultSession(targetVaultId, effectiveKey);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`ledger_vault_locked_${targetVaultId}`);
+    }
+    notifyVaultStatusChanged();
+  }
+
+  return result;
 }
 
 // 别名导出 (保持 API 规范一致性)

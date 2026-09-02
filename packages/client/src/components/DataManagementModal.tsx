@@ -52,11 +52,15 @@ import {
   getVaultMasterKey,
   exportVaultEncryptedBackup,
   importVaultEncryptedBackup,
+  persistVaultSession,
+  notifyVaultStatusChanged,
 } from '../auth/localAuth';
 import {
   exportBackupWithPassword,
   importBackupWithPassword,
   restoreEncryptedBackupPackage,
+  deriveKeyFromPassword,
+  setCachedKey,
 } from '../crypto';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -377,13 +381,29 @@ export function DataManagementModal({
     try {
       let decrypted: any;
       if (useVaultKeyForDecrypt && isVaultUnlocked()) {
-        const key = getVaultMasterKey();
-        decrypted = await restoreEncryptedBackupPackage(rawEncryptedPkg, key);
+        try {
+          const key = getVaultMasterKey();
+          decrypted = await restoreEncryptedBackupPackage(rawEncryptedPkg, key);
+        } catch (err: any) {
+          throw new Error(
+            '使用当前本地主密钥解密失败。该备份文件可能由另一台设备生成（加密盐值不同）。请取消勾选上方「尝试使用当前保险库主密钥」，直接在下方输入主密码即可解密。'
+          );
+        }
       } else {
         if (!decryptPassword) {
           throw new Error('请输入备份解密密码');
         }
         decrypted = await importBackupWithPassword(rawEncryptedPkg, decryptPassword);
+        // 跨设备导入成功后同步更新当前会话密钥
+        if (rawEncryptedPkg.payload.salt) {
+          const derived = await deriveKeyFromPassword(decryptPassword, rawEncryptedPkg.payload.salt);
+          setCachedKey('default_vault', derived);
+          await persistVaultSession('default_vault', derived);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem('ledger_vault_locked_default_vault');
+          }
+          notifyVaultStatusChanged();
+        }
       }
 
       setDecryptedBackupData(decrypted);
@@ -928,17 +948,24 @@ export function DataManagementModal({
                       </div>
 
                       {isVaultUnlocked() && (
-                        <label className="flex items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={useVaultKeyForDecrypt}
-                            onChange={(e) => setUseVaultKeyForDecrypt(e.target.checked)}
-                            className="rounded accent-indigo-600"
-                          />
-                          <span className="text-gray-800 dark:text-gray-200 font-semibold">
-                            尝试使用当前已解锁的本地安全保险库主密钥
-                          </span>
-                        </label>
+                        <div className="space-y-1">
+                          <label className="flex items-center gap-2 p-3 rounded-2xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-xs cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={useVaultKeyForDecrypt}
+                              onChange={(e) => setUseVaultKeyForDecrypt(e.target.checked)}
+                              className="rounded accent-indigo-600"
+                            />
+                            <span className="text-gray-800 dark:text-gray-200 font-semibold">
+                              尝试使用本机当前保险库主密钥 (仅适用于在本机导出的备份)
+                            </span>
+                          </label>
+                          {useVaultKeyForDecrypt && (
+                            <p className="text-[10px] text-gray-500 dark:text-gray-400 px-1">
+                              💡 提示：如果备份文件来自其他设备（如电脑端），两端初始随机盐值不同，请取消勾选并直接在下方输入主密码解密。
+                            </p>
+                          )}
+                        </div>
                       )}
 
                       {(!useVaultKeyForDecrypt || !isVaultUnlocked()) && (

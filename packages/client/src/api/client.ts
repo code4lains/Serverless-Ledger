@@ -72,6 +72,7 @@ export {
   lockVault,
   isVaultInitialized,
   isVaultUnlocked,
+  restoreVaultSession,
   getVaultMetadata,
 } from '../auth/localAuth';
 

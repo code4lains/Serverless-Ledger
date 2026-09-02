@@ -102,10 +102,11 @@ class SyncManager {
   }
 
   /**
-   * 执行 WebDAV 快照同步 (可指定强制推送或拉取)
+   * 执行 WebDAV 快照同步 (可指定强制推送或拉取，支持跨设备密码解密)
    */
   public async sync(
-    direction?: 'push' | 'pull'
+    direction?: 'push' | 'pull',
+    options?: { password?: string }
   ): Promise<SnapshotSyncResult> {
     if (this.isSyncing) {
       return {
@@ -133,7 +134,10 @@ class SyncManager {
       message: '未执行同步',
     };
     try {
-      result = await syncWithRemoteWebDAV({ forceDirection: direction });
+      result = await syncWithRemoteWebDAV({
+        forceDirection: direction,
+        password: options?.password,
+      });
       if (result.success) {
         this.lastSyncedAt = new Date().toISOString();
       }

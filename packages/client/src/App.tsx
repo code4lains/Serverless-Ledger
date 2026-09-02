@@ -78,6 +78,7 @@ import {
   isWebdavSyncConfigured,
   isVaultInitialized,
   isVaultUnlocked,
+  restoreVaultSession,
   lockVault,
 } from './api/client';
 import { CategoryIcon } from './components/CategoryIcon';
@@ -175,7 +176,7 @@ export function App() {
     }
   }, [darkMode]);
 
-  // 检测保险库状态
+  // 检测保险库状态 (支持自动记住上次未手动锁定的解锁会话)
   const checkVaultStatus = async () => {
     const initialized = await isVaultInitialized();
     if (!initialized) {
@@ -185,6 +186,7 @@ export function App() {
         setIsOnboardingOpen(true);
       }
     } else {
+      await restoreVaultSession();
       const unlocked = isVaultUnlocked();
       setVaultStatus(unlocked ? 'unlocked' : 'locked');
     }

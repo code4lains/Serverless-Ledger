@@ -136,11 +136,35 @@ export async function deriveKeyFromPassword(
       name: 'AES-GCM',
       length: AES_KEY_BIT_LENGTH,
     },
-    false, // 内存中标记为不可导出，防止被恶意提取
+    true, // 允许提取原始密钥以支持可信本地会话持久化
     ['encrypt', 'decrypt']
   );
 
   return derivedKey;
+}
+
+/**
+ * 将 CryptoKey 导出为 Base64 原始字节字符串
+ */
+export async function exportKeyToBase64(key: CryptoKey): Promise<string> {
+  const subtle = getSubtleCrypto();
+  const rawBuffer = await subtle.exportKey('raw', key);
+  return bytesToBase64(new Uint8Array(rawBuffer));
+}
+
+/**
+ * 从 Base64 原始字节字符串重新导入 AES-GCM CryptoKey
+ */
+export async function importKeyFromBase64(base64: string): Promise<CryptoKey> {
+  const subtle = getSubtleCrypto();
+  const rawBytes = base64ToBytes(base64);
+  return await subtle.importKey(
+    'raw',
+    rawBytes as unknown as BufferSource,
+    { name: 'AES-GCM' },
+    true,
+    ['encrypt', 'decrypt']
+  );
 }
 
 /**

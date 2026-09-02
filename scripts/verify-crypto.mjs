@@ -63,7 +63,23 @@ async function deriveKeyFromPassword(password, salt, iterations = DEFAULT_PBKDF2
       name: 'AES-GCM',
       length: AES_KEY_BIT_LENGTH,
     },
-    false,
+    true,
+    ['encrypt', 'decrypt']
+  );
+}
+
+async function exportKeyToBase64(key) {
+  const rawBuffer = await crypto.subtle.exportKey('raw', key);
+  return bytesToBase64(new Uint8Array(rawBuffer));
+}
+
+async function importKeyFromBase64(base64) {
+  const rawBytes = base64ToBytes(base64);
+  return await crypto.subtle.importKey(
+    'raw',
+    rawBytes,
+    { name: 'AES-GCM' },
+    true,
     ['encrypt', 'decrypt']
   );
 }
@@ -165,7 +181,13 @@ async function runTests() {
   assert.ok(key1a instanceof CryptoKey, 'Derived key must be a CryptoKey');
   assert.equal(key1a.algorithm.name, 'AES-GCM', 'Algorithm name must be AES-GCM');
   assert.equal(key1a.algorithm.length, 256, 'Key length must be 256 bits');
-  assert.equal(key1a.extractable, false, 'Key must be non-extractable in memory');
+  assert.equal(key1a.extractable, true, 'Key must be extractable for session persistence');
+
+  // Test 1b: Key export to Base64 and re-import
+  const exportedKeyB64 = await exportKeyToBase64(key1a);
+  assert.ok(typeof exportedKeyB64 === 'string' && exportedKeyB64.length > 0);
+  const reimportedKey = await importKeyFromBase64(exportedKeyB64);
+  assert.ok(reimportedKey instanceof CryptoKey);
 
   // Test 2: Encrypt & Decrypt Round-Trip (String, Object, Binary)
   console.log('Test 2: AES-GCM Encrypt & Decrypt Round-Trip...');
