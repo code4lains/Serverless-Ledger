@@ -21,6 +21,8 @@ export interface SyncConfig {
   webdavUsername?: string;
   webdavPassword?: string;
   remotePath?: string; // e.g. "/ServerlessLedger/ledger-vault.enc.json"
+  corsProxyUrl?: string; // 自定义 CORS 代理中继地址 (例如: /api/webdav-proxy 或 https://proxy.example.com)
+  useCorsProxy?: boolean; // 是否启用 CORS 跨域中继
   autoSyncEnabled?: boolean;
   syncIntervalSeconds?: number;
   lastSyncedAt?: string | null;

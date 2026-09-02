@@ -443,7 +443,7 @@ export function App() {
               <div className="flex items-center gap-1.5">
                 <h1 className="text-base font-bold tracking-tight">账盾</h1>
                 <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-800/50">
-                  v3 本地
+                  v3.0
                 </span>
               </div>
             </div>

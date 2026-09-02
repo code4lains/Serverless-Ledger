@@ -25,6 +25,8 @@ import {
   Zap,
   Layers,
   Sparkles,
+  Globe,
+  Sliders,
 } from 'lucide-react';
 import { Ledger, Transaction, SyncConfig, SyncProviderType } from '@ledger/shared';
 import { syncManager, SyncStats } from '../api/syncManager';
@@ -92,10 +94,18 @@ export function ProfileView({
   const [webdavUsername, setWebdavUsername] = useState<string>(() => syncConfig.webdavUsername || '');
   const [webdavPassword, setWebdavPassword] = useState<string>(() => syncConfig.webdavPassword || '');
   const [remotePath, setRemotePath] = useState<string>(() => syncConfig.remotePath || DEFAULT_REMOTE_PATH);
+  const [useCorsProxy, setUseCorsProxy] = useState<boolean>(() => syncConfig.useCorsProxy || false);
+  const [corsProxyUrl, setCorsProxyUrl] = useState<string>(() => syncConfig.corsProxyUrl || '');
+  const [showAdvancedCors, setShowAdvancedCors] = useState<boolean>(false);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(() => syncConfig.autoSyncEnabled !== false);
 
   const [testingWebdav, setTestingWebdav] = useState(false);
-  const [webdavTestResult, setWebdavTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [webdavTestResult, setWebdavTestResult] = useState<{
+    success: boolean;
+    message: string;
+    isCorsError?: boolean;
+    suggestProxy?: boolean;
+  } | null>(null);
   const [configSaveSuccess, setConfigSaveSuccess] = useState('');
 
   // 快照手动同步触发状态
@@ -117,6 +127,8 @@ export function ProfileView({
       setWebdavUsername(cfg.webdavUsername || '');
       setWebdavPassword(cfg.webdavPassword || '');
       setRemotePath(cfg.remotePath || DEFAULT_REMOTE_PATH);
+      setUseCorsProxy(cfg.useCorsProxy || false);
+      setCorsProxyUrl(cfg.corsProxyUrl || '');
       setAutoSyncEnabled(cfg.autoSyncEnabled !== false);
     };
 
@@ -145,7 +157,7 @@ export function ProfileView({
   }, [transactions.length, vaultStatus]);
 
   // 测试 WebDAV 连通性
-  const handleTestWebDav = async () => {
+  const handleTestWebDav = async (overrideProxy?: boolean) => {
     if (!webdavUrl.trim()) {
       setWebdavTestResult({ success: false, message: '请先填写 WebDAV 服务器地址' });
       return;
@@ -154,12 +166,15 @@ export function ProfileView({
     setTestingWebdav(true);
     setWebdavTestResult(null);
 
+    const effectiveProxy = overrideProxy !== undefined ? overrideProxy : useCorsProxy;
     const tempConfig: SyncConfig = {
       provider: 'webdav',
       webdavUrl: webdavUrl.trim(),
       webdavUsername: webdavUsername.trim(),
       webdavPassword: webdavPassword.trim(),
       remotePath: remotePath.trim() || DEFAULT_REMOTE_PATH,
+      useCorsProxy: effectiveProxy,
+      corsProxyUrl: corsProxyUrl.trim(),
     };
 
     try {
@@ -176,6 +191,26 @@ export function ProfileView({
     }
   };
 
+  // 一键开启 CORS 中继并保存
+  const handleEnableProxyAndSave = () => {
+    setUseCorsProxy(true);
+    const updated = saveSyncConfig({
+      provider: selectedProvider,
+      webdavUrl: webdavUrl.trim(),
+      webdavUsername: webdavUsername.trim(),
+      webdavPassword: webdavPassword.trim(),
+      remotePath: remotePath.trim() || DEFAULT_REMOTE_PATH,
+      autoSyncEnabled,
+      useCorsProxy: true,
+      corsProxyUrl: corsProxyUrl.trim() || '/api/webdav-proxy',
+    });
+
+    setSyncConfig(updated);
+    setConfigSaveSuccess('已自动开启内置 CORS 跨域中继并保存！');
+    setTimeout(() => setConfigSaveSuccess(''), 3000);
+    handleTestWebDav(true);
+  };
+
   // 保存 WebDAV 设置
   const handleSaveWebDavConfig = (e: React.FormEvent) => {
     e.preventDefault();
@@ -185,6 +220,8 @@ export function ProfileView({
       webdavUsername: webdavUsername.trim(),
       webdavPassword: webdavPassword.trim(),
       remotePath: remotePath.trim() || DEFAULT_REMOTE_PATH,
+      useCorsProxy,
+      corsProxyUrl: corsProxyUrl.trim(),
       autoSyncEnabled,
     });
 
@@ -439,21 +476,78 @@ export function ProfileView({
               />
             </div>
 
+            {/* 跨域 CORS 中继选项 (针对网页版直连坚果云/NAS) */}
+            <div className="p-3.5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                      CORS 跨域中继转发
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                      网页版连接未开启跨域的坚果云/NAS 时启用
+                    </div>
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={useCorsProxy}
+                  onChange={(e) => setUseCorsProxy(e.target.checked)}
+                  className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                />
+              </div>
+
+              {useCorsProxy && (
+                <div className="space-y-1.5 pt-1 border-t border-sky-100 dark:border-sky-900/30">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                      跨域中继代理 URL
+                    </label>
+                    <span className="text-[10px] text-slate-400">
+                      留空默认使用内置中继 (`/api/webdav-proxy`)
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="/api/webdav-proxy 或 https://your-cors-proxy.workers.dev"
+                    value={corsProxyUrl}
+                    onChange={(e) => setCorsProxyUrl(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                  />
+                </div>
+              )}
+            </div>
+
             {/* 测试连通性结果反馈 */}
             {webdavTestResult && (
               <div
-                className={`p-3 rounded-xl text-xs flex items-start gap-2 ${
+                className={`p-3.5 rounded-xl text-xs space-y-2 ${
                   webdavTestResult.success
                     ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                     : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
                 }`}
               >
-                {webdavTestResult.success ? (
-                  <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                <div className="flex items-start gap-2">
+                  {webdavTestResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                  )}
+                  <div className="leading-relaxed">{webdavTestResult.message}</div>
+                </div>
+
+                {/* 针对 Failed to fetch (CORS 拦截) 提供一键解决按钮 */}
+                {webdavTestResult.suggestProxy && !useCorsProxy && (
+                  <button
+                    type="button"
+                    onClick={handleEnableProxyAndSave}
+                    className="mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition flex items-center gap-1.5"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-300" />
+                    <span>一键启用 CORS 跨域中继并重试</span>
+                  </button>
                 )}
-                <div>{webdavTestResult.message}</div>
               </div>
             )}
 
@@ -467,7 +561,7 @@ export function ProfileView({
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
-                onClick={handleTestWebDav}
+                onClick={() => handleTestWebDav()}
                 disabled={testingWebdav}
                 className="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2"
               >

@@ -14,6 +14,8 @@ const DEFAULT_CONFIG: SyncConfig = {
   webdavUsername: '',
   webdavPassword: '',
   remotePath: DEFAULT_REMOTE_PATH,
+  corsProxyUrl: '',
+  useCorsProxy: false,
   autoSyncEnabled: true,
   syncIntervalSeconds: 300, // 5 分钟
   lastSyncedAt: null,
