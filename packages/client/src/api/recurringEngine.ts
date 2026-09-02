@@ -108,7 +108,7 @@ class RecurringEngine {
         }
 
         // 计算更新后的 next_run_date
-        const nextNext = calculateNextRunDate(rule, lastDueDate);
+        const nextNext = calculateNextRunDate({ ...rule, start_date: undefined }, lastDueDate);
         const updatedRule: RecurringRule = {
           ...rule,
           last_run_date: lastDueDate,

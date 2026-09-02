@@ -368,10 +368,33 @@ export function isVaultManuallyLocked(vaultId: string = 'default_vault'): boolea
 }
 
 /**
+ * 检查是否启用了保险库会话持久化 (记住解锁状态)
+ * 默认为 true (开启)，保证向后兼容性
+ */
+export function isVaultRememberSessionEnabled(): boolean {
+  if (typeof localStorage === 'undefined') return true;
+  const val = localStorage.getItem('ledger_vault_remember_session');
+  if (val === null) return true;
+  return val === 'true';
+}
+
+/**
+ * 设置是否启用保险库会话持久化
+ */
+export function setVaultRememberSessionEnabled(enabled: boolean): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.setItem('ledger_vault_remember_session', enabled ? 'true' : 'false');
+  if (!enabled) {
+    clearPersistedVaultSession('default_vault');
+  }
+}
+
+/**
  * 7. 持久化保存当前解锁的会话密钥 (用于下次打开 App 自动保持解锁状态)
  */
 export async function persistVaultSession(vaultId: string, key: CryptoKey): Promise<void> {
   if (typeof localStorage === 'undefined') return;
+  if (!isVaultRememberSessionEnabled()) return;
   try {
     const base64 = await exportKeyToBase64(key);
     localStorage.setItem(`ledger_vault_session_${vaultId}`, base64);

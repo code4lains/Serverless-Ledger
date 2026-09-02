@@ -19,6 +19,7 @@ import {
   getCurrencySymbol,
   calculateTotals,
   formatDateKey,
+  classifyLoanTransaction,
 } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -314,10 +315,11 @@ export function StatisticsView({
 
     for (const tx of filteredTransactions) {
       if (tx.type === 'loan') {
-        if (tx.category_id === 'cat_loan_lend') lend += tx.amount;
-        else if (tx.category_id === 'cat_loan_borrow') borrow += tx.amount;
-        else if (tx.category_id === 'cat_loan_repay') repaid += tx.amount;
-        else if (tx.category_id === 'cat_loan_collect') collected += tx.amount;
+        const loanKind = classifyLoanTransaction(tx);
+        if (loanKind === 'lend') lend += tx.amount;
+        else if (loanKind === 'borrow') borrow += tx.amount;
+        else if (loanKind === 'repay') repaid += tx.amount;
+        else if (loanKind === 'collect') collected += tx.amount;
       }
     }
 

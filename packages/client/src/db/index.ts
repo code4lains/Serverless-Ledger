@@ -153,10 +153,10 @@ export async function exportAllLocalData(userId?: string): Promise<{
 
   if (userId && userId !== 'all') {
     txs = txs.filter((t) => t.user_id === userId || !t.user_id || t.user_id === 'default_user');
-    cats = cats.filter((c) => !c.user_id || c.user_id === userId);
+    cats = cats.filter((c) => !c.user_id || c.user_id === userId || c.user_id === 'default_user');
     leds = leds.filter((l) => l.user_id === userId || !l.user_id || l.user_id === 'default_user');
-    bds = bds.filter((b) => b.user_id === userId);
-    rrs = rrs.filter((r) => r.user_id === userId);
+    bds = bds.filter((b) => b.user_id === userId || !b.user_id || b.user_id === 'default_user');
+    rrs = rrs.filter((r) => r.user_id === userId || !r.user_id || r.user_id === 'default_user');
   }
 
   return {
@@ -288,14 +288,24 @@ export async function migrateLocalDataToVault(vaultId: string = 'default_vault')
   migratedTransactions: number;
   migratedLedgers: number;
   migratedCategories: number;
+  migratedBudgets: number;
+  migratedRecurringRules: number;
 }> {
   let txCount = 0;
   let ledCount = 0;
   let catCount = 0;
+  let bdCount = 0;
+  let rrCount = 0;
 
   await localDb.transaction(
     'rw',
-    [localDb.transactions, localDb.ledgers, localDb.categories],
+    [
+      localDb.transactions,
+      localDb.ledgers,
+      localDb.categories,
+      localDb.budgets,
+      localDb.recurring_rules,
+    ],
     async () => {
       const txs = await localDb.transactions
         .filter((t) => !t.user_id || t.user_id === 'default_user')
@@ -323,6 +333,24 @@ export async function migrateLocalDataToVault(vaultId: string = 'default_vault')
         await localDb.categories.put(c);
         catCount++;
       }
+
+      const bds = await localDb.budgets
+        .filter((b) => !b.user_id || b.user_id === 'default_user')
+        .toArray();
+      for (const b of bds) {
+        b.user_id = vaultId;
+        await localDb.budgets.put(b);
+        bdCount++;
+      }
+
+      const rrs = await localDb.recurring_rules
+        .filter((r) => !r.user_id || r.user_id === 'default_user')
+        .toArray();
+      for (const r of rrs) {
+        r.user_id = vaultId;
+        await localDb.recurring_rules.put(r);
+        rrCount++;
+      }
     }
   );
 
@@ -330,6 +358,8 @@ export async function migrateLocalDataToVault(vaultId: string = 'default_vault')
     migratedTransactions: txCount,
     migratedLedgers: ledCount,
     migratedCategories: catCount,
+    migratedBudgets: bdCount,
+    migratedRecurringRules: rrCount,
   };
 }
 
@@ -363,7 +393,7 @@ export async function clearUserData(userId?: string): Promise<void> {
   );
 
   await seedLocalCategories();
-  await seedLocalLedgers();
+  await seedLocalLedgers(userId);
 }
 
 /**

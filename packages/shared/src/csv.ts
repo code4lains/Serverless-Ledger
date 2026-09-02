@@ -1025,19 +1025,19 @@ function parseStandardLedgerCsv(rows: string[][], categories: Category[], target
     const rawId = idIdx >= 0 ? row[idIdx] : '';
     const rawTime = timeIdx >= 0 ? row[timeIdx] : '';
     const rawType = typeIdx >= 0 ? row[typeIdx] : '支出';
-    const rawAmount = amountIdx >= 0 ? parseFloat(row[amountIdx]) : NaN;
+    const rawAmountStr = (amountIdx >= 0 ? String(row[amountIdx]) : '').replace(/[¥$, ]/g, '');
     const rawCat = (pathIdx >= 0 ? row[pathIdx] : '') || (subCatIdx >= 0 ? row[subCatIdx] : '') || (mainCatIdx >= 0 ? row[mainCatIdx] : '');
     const rawFrom = fromIdx >= 0 ? row[fromIdx] : '';
     const rawTo = toIdx >= 0 ? row[toIdx] : '';
     const rawRemark = remarkIdx >= 0 ? row[remarkIdx] : '';
 
-    if (isNaN(rawAmount) || rawAmount <= 0) {
+    const amountInCents = toCents(rawAmountStr);
+    if (isNaN(amountInCents) || amountInCents <= 0) {
       invalidCount++;
       continue;
     }
 
     const type: TransactionType = typeReverseMap[rawType.trim()] || 'expense';
-    const amountInCents = toCents(rawAmount);
 
     const isoDate = parseExcelDateValue(rawTime);
 

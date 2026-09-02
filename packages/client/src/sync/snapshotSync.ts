@@ -115,6 +115,7 @@ export async function importSnapshot(
 
   const result = await importAllLocalData(decryptedData, {
     overwrite: options.overwrite !== false,
+    targetUserId: 'default_vault',
   });
 
   // 2. 跨设备凭证对齐：将解密成功的密钥同步写入当前会话与持久化存储
@@ -262,8 +263,27 @@ export async function syncWithRemoteWebDAV(options?: {
       ? new Date(config.lastRemoteModified).getTime()
       : 0;
 
-    // 若远端时间较新且与上次记录的不一致 -> 下载远端新快照
+    // 若远端时间较新且与上次记录的不一致 -> 检测本地是否有未同步变动以避免冲突覆盖
     if (remoteModTime > lastKnownRemoteTime && remoteModTime > 0) {
+      const lastSyncIso = config.lastSyncedAt;
+      if (lastSyncIso && !options?.forceDirection) {
+        const localData = await exportAllLocalData();
+        const hasLocalChanges = localData.transactions.some(
+          (tx) =>
+            (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
+            (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+        );
+        if (hasLocalChanges) {
+          return {
+            success: false,
+            action: 'conflict_detected',
+            remoteModified: remoteMeta.lastModified,
+            localModified: new Date().toISOString(),
+            message: '检测到云端与其他设备均有更新，存在同步冲突，请选择合并或指定同步方向',
+          };
+        }
+      }
+
       const downloadRes = await adapter.downloadSnapshot(targetPath);
       const pkg =
         typeof downloadRes.data === 'string'
