@@ -6,6 +6,7 @@ import {
   Sun,
   ShieldCheck,
   ChevronRight,
+  ChevronDown,
   Database,
   Cloud,
   CloudOff,
@@ -113,6 +114,8 @@ export function ProfileView({
     suggestProxy?: boolean;
   } | null>(null);
   const [configSaveSuccess, setConfigSaveSuccess] = useState('');
+  // WebDAV 服务器参数表单折叠状态（默认收起，保持页面紧凑）
+  const [isWebdavFormExpanded, setIsWebdavFormExpanded] = useState<boolean>(false);
 
   // 快照手动同步触发状态
   const [manualSyncing, setManualSyncing] = useState<'push' | 'pull' | null>(null);
@@ -429,36 +432,43 @@ export function ProfileView({
           </div>
         </div>
 
-        {/* 存储统计徽章 */}
-        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-6 mt-6 border-t border-white/10 text-center">
-          <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
-            <div className="text-[11px] text-indigo-200">账单流水</div>
-            <div className="text-base font-bold mt-0.5">
-              {isVaultActive && !isVaultCached ? '***' : storageStats?.transactions || transactions.length}
+        {/* 存储统计徽章 (手机端两行：第一行 3 列，第二行 2 列等宽对称；桌面端单行 5 列) */}
+        <div className="space-y-2 sm:space-y-0 sm:grid sm:grid-cols-5 sm:gap-2 pt-6 mt-6 border-t border-white/10 text-center">
+          {/* 第一行：3 项 (账单流水、账本数量、分类标签) */}
+          <div className="grid grid-cols-3 gap-2 sm:contents">
+            <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
+              <div className="text-[11px] text-indigo-200">账单流水</div>
+              <div className="text-base font-bold mt-0.5">
+                {isVaultActive && !isVaultCached ? '***' : storageStats?.transactions || transactions.length}
+              </div>
+            </div>
+            <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
+              <div className="text-[11px] text-indigo-200">账本数量</div>
+              <div className="text-base font-bold mt-0.5">
+                {isVaultActive && !isVaultCached ? '***' : storageStats?.ledgers || ledgers.length}
+              </div>
+            </div>
+            <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
+              <div className="text-[11px] text-indigo-200">分类标签</div>
+              <div className="text-base font-bold mt-0.5">
+                {isVaultActive && !isVaultCached ? '***' : storageStats?.categories || 0}
+              </div>
             </div>
           </div>
-          <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
-            <div className="text-[11px] text-indigo-200">账本数量</div>
-            <div className="text-base font-bold mt-0.5">
-              {isVaultActive && !isVaultCached ? '***' : storageStats?.ledgers || ledgers.length}
+
+          {/* 第二行：2 项等宽对称 (月度预算、周期规则)，总宽度与第一行完全对齐一致 */}
+          <div className="grid grid-cols-2 gap-2 sm:contents">
+            <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
+              <div className="text-[11px] text-indigo-200">月度预算</div>
+              <div className="text-base font-bold mt-0.5">
+                {isVaultActive && !isVaultCached ? '***' : storageStats?.budgets || 0}
+              </div>
             </div>
-          </div>
-          <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
-            <div className="text-[11px] text-indigo-200">分类标签</div>
-            <div className="text-base font-bold mt-0.5">
-              {isVaultActive && !isVaultCached ? '***' : storageStats?.categories || 0}
-            </div>
-          </div>
-          <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
-            <div className="text-[11px] text-indigo-200">月度预算</div>
-            <div className="text-base font-bold mt-0.5">
-              {isVaultActive && !isVaultCached ? '***' : storageStats?.budgets || 0}
-            </div>
-          </div>
-          <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm col-span-3 sm:col-span-1">
-            <div className="text-[11px] text-indigo-200">周期规则</div>
-            <div className="text-base font-bold mt-0.5">
-              {isVaultActive && !isVaultCached ? '***' : storageStats?.recurringRules || 0}
+            <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
+              <div className="text-[11px] text-indigo-200">周期规则</div>
+              <div className="text-base font-bold mt-0.5">
+                {isVaultActive && !isVaultCached ? '***' : storageStats?.recurringRules || 0}
+              </div>
             </div>
           </div>
         </div>
@@ -501,7 +511,7 @@ export function ProfileView({
           <button
             type="button"
             onClick={() => setSelectedProvider('none')}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
               selectedProvider === 'none'
                 ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -513,7 +523,7 @@ export function ProfileView({
           <button
             type="button"
             onClick={() => setSelectedProvider('webdav')}
-            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 ${
+            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2 cursor-pointer ${
               selectedProvider === 'webdav'
                 ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
                 : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
@@ -525,182 +535,212 @@ export function ProfileView({
         </div>
 
         {selectedProvider === 'webdav' && (
-          <form onSubmit={handleSaveWebDavConfig} className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                服务器地址
-              </label>
-              <input
-                type="text"
-                placeholder="例如: https://dav.jianguoyun.com/dav/ 或 https://nas:5006"
-                value={webdavUrl}
-                onChange={(e) => setWebdavUrl(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  账号 / 邮箱
-                </label>
-                <input
-                  type="text"
-                  placeholder="用户名或坚果云账号"
-                  value={webdavUsername}
-                  onChange={(e) => setWebdavUsername(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+          <div className="space-y-3 pt-1">
+            {/* 折叠/展开配置切换按钮 (默认收起) */}
+            <button
+              type="button"
+              onClick={() => setIsWebdavFormExpanded(!isWebdavFormExpanded)}
+              className="w-full py-2.5 px-3.5 rounded-2xl bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/60 dark:hover:bg-slate-800 border border-slate-200/80 dark:border-slate-700/80 text-xs font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between transition cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Sliders className="w-3.5 h-3.5 text-indigo-500" />
+                <span>服务器地址与授权配置</span>
+                {isWebdavSyncConfigured() && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 font-normal">
+                    已保存
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 font-medium">
+                <span>{isWebdavFormExpanded ? '收起配置' : '展开配置'}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                    isWebdavFormExpanded ? 'rotate-180' : ''
+                  }`}
                 />
               </div>
+            </button>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  密码 / 应用授权码
-                </label>
-                <input
-                  type="password"
-                  placeholder="WebDAV 专用应用密码"
-                  value={webdavPassword}
-                  onChange={(e) => setWebdavPassword(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                云端保存路径
-              </label>
-              <input
-                type="text"
-                placeholder="/ServerlessLedger/ledger-vault.enc.json"
-                value={remotePath}
-                onChange={(e) => setRemotePath(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-              />
-            </div>
-
-            {/* 自动同步勾选 */}
-            <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-              <div className="text-xs">
-                <div className="font-semibold text-slate-800 dark:text-slate-200">
-                  自动同步
+            {/* 可折叠服务器地址与账号配置表单 */}
+            {isWebdavFormExpanded && (
+              <form onSubmit={handleSaveWebDavConfig} className="space-y-4 pt-1 animate-fade-in">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    服务器地址
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="例如: https://dav.jianguoyun.com/dav/ 或 https://nas:5006"
+                    value={webdavUrl}
+                    onChange={(e) => setWebdavUrl(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
                 </div>
-                <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                  记账或数据变动时自动同步至云端
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={autoSyncEnabled}
-                onChange={(e) => setAutoSyncEnabled(e.target.checked)}
-                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-              />
-            </div>
 
-            {/* 网页版跨域中继选项 (原生 App 环境不显示) */}
-            {!isNative && (
-              <div className="p-3.5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />
-                    <div>
-                      <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                        跨域代理
-                      </div>
-                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        网页端直连 WebDAV 失败时可开启
-                      </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      账号 / 邮箱
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="用户名或坚果云账号"
+                      value={webdavUsername}
+                      onChange={(e) => setWebdavUsername(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      密码 / 应用授权码
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="WebDAV 专用应用密码"
+                      value={webdavPassword}
+                      onChange={(e) => setWebdavPassword(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    云端保存路径
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="/ServerlessLedger/ledger-vault.enc.json"
+                    value={remotePath}
+                    onChange={(e) => setRemotePath(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                {/* 自动同步勾选 */}
+                <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                  <div className="text-xs">
+                    <div className="font-semibold text-slate-800 dark:text-slate-200">
+                      自动同步
+                    </div>
+                    <div className="text-slate-500 dark:text-slate-400 mt-0.5">
+                      记账或数据变动时自动同步至云端
                     </div>
                   </div>
                   <input
                     type="checkbox"
-                    checked={useCorsProxy}
-                    onChange={(e) => setUseCorsProxy(e.target.checked)}
-                    className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                    checked={autoSyncEnabled}
+                    onChange={(e) => setAutoSyncEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                   />
                 </div>
 
-                {useCorsProxy && (
-                  <div className="space-y-1.5 pt-1 border-t border-sky-100 dark:border-sky-900/30">
+                {/* 网页版跨域中继选项 (原生 App 环境不显示) */}
+                {!isNative && (
+                  <div className="p-3.5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                        代理服务地址
-                      </label>
-                      <span className="text-[10px] text-slate-400">
-                        留空使用默认代理
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                        <div>
+                          <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                            跨域代理
+                          </div>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                            网页端直连 WebDAV 失败时可开启
+                          </div>
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={useCorsProxy}
+                        onChange={(e) => setUseCorsProxy(e.target.checked)}
+                        className="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 cursor-pointer"
+                      />
                     </div>
-                    <input
-                      type="text"
-                      placeholder="/api/webdav-proxy 或 https://your-cors-proxy.workers.dev"
-                      value={corsProxyUrl}
-                      onChange={(e) => setCorsProxyUrl(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none"
-                    />
+
+                    {useCorsProxy && (
+                      <div className="space-y-1.5 pt-1 border-t border-sky-100 dark:border-sky-900/30">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                            代理服务地址
+                          </label>
+                          <span className="text-[10px] text-slate-400">
+                            留空使用默认代理
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="/api/webdav-proxy 或 https://your-cors-proxy.workers.dev"
+                          value={corsProxyUrl}
+                          onChange={(e) => setCorsProxyUrl(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl border border-sky-200 dark:border-sky-800 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:ring-2 focus:ring-sky-500 focus:outline-none"
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {/* 测试连通性结果反馈 */}
-            {webdavTestResult && (
-              <div
-                className={`p-3.5 rounded-xl text-xs space-y-2 ${
-                  webdavTestResult.success
-                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                    : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
-                }`}
-              >
-                <div className="flex items-start gap-2">
-                  {webdavTestResult.success ? (
-                    <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
-                  )}
-                  <div className="leading-relaxed">{webdavTestResult.message}</div>
-                </div>
+                {/* 测试连通性结果反馈 */}
+                {webdavTestResult && (
+                  <div
+                    className={`p-3.5 rounded-xl text-xs space-y-2 ${
+                      webdavTestResult.success
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+                    }`}
+                  >
+                    <div className="flex items-start gap-2">
+                      {webdavTestResult.success ? (
+                        <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-500" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-500" />
+                      )}
+                      <div className="leading-relaxed">{webdavTestResult.message}</div>
+                    </div>
 
-                {/* 针对 Failed to fetch (CORS 拦截) 提供一键解决按钮 */}
-                {webdavTestResult.suggestProxy && !useCorsProxy && (
+                    {/* 针对 Failed to fetch (CORS 拦截) 提供一键解决按钮 */}
+                    {webdavTestResult.suggestProxy && !useCorsProxy && (
+                      <button
+                        type="button"
+                        onClick={handleEnableProxyAndSave}
+                        className="mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition flex items-center gap-1.5"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-300" />
+                        <span>一键启用 CORS 跨域中继并重试</span>
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {configSaveSuccess && (
+                  <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2 border border-emerald-200 dark:border-emerald-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    <span>{configSaveSuccess}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={handleEnableProxyAndSave}
-                    className="mt-1 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow transition flex items-center gap-1.5"
+                    onClick={() => handleTestWebDav()}
+                    disabled={testingWebdav}
+                    className="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2 cursor-pointer"
                   >
-                    <Zap className="w-3.5 h-3.5 text-amber-300" />
-                    <span>一键启用 CORS 跨域中继并重试</span>
+                    <Zap className={`w-3.5 h-3.5 text-amber-500 ${testingWebdav ? 'animate-spin' : ''}`} />
+                    <span>{testingWebdav ? '测试中...' : '测试连通性'}</span>
                   </button>
-                )}
-              </div>
+
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>保存 WebDAV 配置</span>
+                  </button>
+                </div>
+              </form>
             )}
-
-            {configSaveSuccess && (
-              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs flex items-center gap-2 border border-emerald-200 dark:border-emerald-800">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <span>{configSaveSuccess}</span>
-              </div>
-            )}
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => handleTestWebDav()}
-                disabled={testingWebdav}
-                className="py-2.5 px-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold hover:bg-slate-50 dark:hover:bg-slate-700 transition flex items-center justify-center gap-2"
-              >
-                <Zap className={`w-3.5 h-3.5 text-amber-500 ${testingWebdav ? 'animate-spin' : ''}`} />
-                <span>{testingWebdav ? '测试中...' : '测试连通性'}</span>
-              </button>
-
-              <button
-                type="submit"
-                className="flex-1 py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-md shadow-indigo-600/20 transition flex items-center justify-center gap-2"
-              >
-                <span>保存 WebDAV 配置</span>
-              </button>
-            </div>
-          </form>
+          </div>
         )}
 
         {/* 手动同步操作区域 */}

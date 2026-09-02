@@ -66,7 +66,7 @@ export function NumericKeypad({
 
   return (
     <div className="w-full select-none bg-slate-50/70 dark:bg-slate-900/60 rounded-2xl p-1 sm:p-1.5 border border-slate-100 dark:border-slate-800/80 shadow-inner flex flex-col justify-center h-full">
-      <div className="grid grid-cols-4 gap-1 sm:gap-1.5 h-52 sm:h-64 md:h-[290px]">
+      <div className="grid grid-cols-4 gap-1 sm:gap-1.5 h-56 sm:h-64 md:h-[290px]">
         {/* Row 1: 1, 2, 3, ⌫ */}
         <button
           type="button"

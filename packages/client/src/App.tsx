@@ -623,7 +623,7 @@ export function App() {
       </header>
 
       {/* 主体视口容器 */}
-      <main className={`flex-1 max-w-4xl w-full mx-auto ${navTab === 'record' ? 'px-2 py-1.5 sm:p-6 space-y-2 sm:space-y-6' : 'p-4 sm:p-6 space-y-6'}`}>
+      <main className={`flex-1 max-w-4xl w-full mx-auto ${navTab === 'record' ? 'p-2 sm:p-6 flex flex-col' : 'p-4 sm:p-6 space-y-6'}`}>
         {/* 当保险库处于锁定状态且不在设置页时，展示全局数据遮蔽与快速解锁面板 */}
         {vaultStatus === 'locked' && navTab !== 'profile' ? (
           <div className="py-14 px-4 max-w-md mx-auto space-y-6 text-center animate-fade-in">
@@ -667,12 +667,12 @@ export function App() {
           <>
             {/* 视口内容切换 */}
             {navTab === 'record' && (
-              <div className="space-y-2 sm:space-y-6">
-                {/* 记账主面板 (桌面端左右分栏：左卡片表单 + 右数字键盘，手机端单列紧凑一屏) */}
-                <div className="p-2.5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-6 items-center">
-                    {/* 左侧区域：类型选择、金额输入、分类/账户、时间与备注 */}
-                    <div className="md:col-span-7 space-y-2.5 sm:space-y-3.5">
+              <div className="flex-1 flex flex-col">
+                {/* 记账主面板 (桌面端左右分栏：左卡片表单 + 右数字键盘，手机端纵向铺满到底部) */}
+                <div className="p-2.5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex-1 flex flex-col justify-between">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-6 items-stretch flex-1">
+                    {/* 左侧/上方区域：类型选择、金额输入、分类/账户、时间与备注 */}
+                    <div className="md:col-span-7 space-y-2.5 sm:space-y-3.5 flex flex-col justify-start">
                       {/* 收支类型切换 */}
                       <div className="grid grid-cols-4 gap-1 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800/60">
                         {(['expense', 'income', 'transfer', 'loan'] as TransactionType[]).map((t) => (
@@ -809,8 +809,8 @@ export function App() {
                       </div>
                     </div>
 
-                    {/* 右侧区域：触控数字键盘 (桌面端右侧分栏展示，移动端自动排列在下方) */}
-                    <div className="md:col-span-5 flex flex-col justify-center h-full pt-0.5 md:pt-0">
+                    {/* 右侧/下方区域：触控数字键盘 (手机端自动贴底展示，桌面端右侧分栏) */}
+                    <div className="md:col-span-5 flex flex-col justify-end h-full pt-1.5 md:pt-0 mt-auto md:mt-0">
                       <NumericKeypad
                         value={recordAmountStr}
                         onChange={setRecordAmountStr}
