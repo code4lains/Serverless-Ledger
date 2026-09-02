@@ -30,8 +30,6 @@ export function CalculatorModal({
     }
   }, [isOpen, initialValue]);
 
-  if (!isOpen) return null;
-
   // 辅助安全求值
   const evaluateTokens = (tokenList: string[], lastNum: string): number => {
     const allTokens = [...tokenList];
@@ -244,6 +242,8 @@ export function CalculatorModal({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, currentNum, tokens, isCalculated, initialValue]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-fade-in">
