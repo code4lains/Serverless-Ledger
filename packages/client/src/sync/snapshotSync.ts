@@ -44,7 +44,8 @@ export async function exportSnapshot(
     version: 3,
   };
 
-  const salt = generateRandomSalt(16);
+  // 必须使用本地保险库的真实主密码盐 (vaultMeta.salt)，以支持多端凭主密码零知识解密
+  const salt = localData.vaultMeta?.salt || generateRandomSalt(16);
   const encryptedPackage = await createEncryptedBackupPackage(
     snapshotData,
     key,
