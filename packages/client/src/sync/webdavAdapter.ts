@@ -4,6 +4,7 @@
  * 内置对浏览器跨域 (CORS) 代理中继及原生端直连的支持
  */
 
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import {
   ISyncAdapter,
   SyncConfig,
@@ -12,6 +13,17 @@ import {
   EncryptedBackupPackage,
 } from '@ledger/shared';
 import { getSyncConfig } from './syncConfig';
+
+/**
+ * 判断当前是否运行在原生移动端 App 环境 (Android / iOS)
+ */
+export function isNativeAppEnvironment(): boolean {
+  try {
+    return typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+  } catch {
+    return false;
+  }
+}
 
 export class WebDavAdapter implements ISyncAdapter {
   readonly provider: SyncProviderType = 'webdav';
@@ -24,7 +36,7 @@ export class WebDavAdapter implements ISyncAdapter {
   /**
    * 构造 Basic Auth 认证头
    */
-  private getAuthHeaders(): HeadersInit {
+  private getAuthHeaders(): Record<string, string> {
     const headers: Record<string, string> = {};
     if (this.config.webdavUsername && this.config.webdavPassword) {
       const token = btoa(
@@ -54,12 +66,103 @@ export class WebDavAdapter implements ISyncAdapter {
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
     const directUrl = `${baseUrl}${normalizedPath}`;
 
+    // 原生 App (Capacitor/Android/iOS) 绝不使用相对路径的 CORS 代理，始终直连
+    if (isNativeAppEnvironment()) {
+      return directUrl;
+    }
+
     if (!forceDirect && (this.config.useCorsProxy || this.config.corsProxyUrl)) {
       const proxyBase = (this.config.corsProxyUrl || '/api/webdav-proxy').trim();
       return `${proxyBase}?target=${encodeURIComponent(directUrl)}`;
     }
 
     return directUrl;
+  }
+
+  /**
+   * 检测响应是否为 HTML 网页页面 (如误请求到了本地静态资源 index.html 或代理失效)
+   */
+  private isHtmlResponse(text: string): boolean {
+    if (!text) return false;
+    const trimmed = text.trimStart().toLowerCase();
+    return (
+      trimmed.startsWith('<!doctype') ||
+      trimmed.startsWith('<html') ||
+      trimmed.startsWith('<head')
+    );
+  }
+
+  /**
+   * 统一网络请求封装 (原生端走 CapacitorHttp 避开 CORS，网页端走标准 fetch)
+   */
+  private async executeRequest(
+    url: string,
+    options: {
+      method: string;
+      headers?: Record<string, string>;
+      body?: string;
+    }
+  ): Promise<{
+    status: number;
+    statusText: string;
+    ok: boolean;
+    headers: {
+      get: (name: string) => string | null;
+    };
+    text: () => Promise<string>;
+  }> {
+    const isNative = isNativeAppEnvironment();
+
+    if (isNative) {
+      try {
+        const res = await CapacitorHttp.request({
+          url,
+          method: options.method,
+          headers: options.headers || {},
+          data: options.body,
+          responseType: 'text',
+        });
+
+        const headerMap = new Map<string, string>();
+        if (res.headers) {
+          for (const [k, v] of Object.entries(res.headers)) {
+            headerMap.set(k.toLowerCase(), String(v));
+          }
+        }
+
+        const textData = typeof res.data === 'string' ? res.data : JSON.stringify(res.data ?? '');
+        const ok = res.status >= 200 && res.status < 300;
+
+        return {
+          status: res.status,
+          statusText: ok ? 'OK' : `HTTP ${res.status}`,
+          ok,
+          headers: {
+            get: (name: string) => headerMap.get(name.toLowerCase()) || null,
+          },
+          text: async () => textData,
+        };
+      } catch (err: any) {
+        throw new Error(`原生网络请求失败 (${options.method} ${url}): ${err?.message || '未知网络异常'}`);
+      }
+    } else {
+      const fetchHeaders: HeadersInit = { ...(options.headers || {}) };
+      const res = await fetch(url, {
+        method: options.method,
+        headers: fetchHeaders,
+        body: options.body,
+      });
+
+      return {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        headers: {
+          get: (name: string) => res.headers.get(name),
+        },
+        text: async () => await res.text(),
+      };
+    }
   }
 
   /**
@@ -76,17 +179,28 @@ export class WebDavAdapter implements ISyncAdapter {
     const startTime = Date.now();
     try {
       const targetUrl = this.resolveUrl('/');
-      const headers = {
+      const headers: Record<string, string> = {
         ...this.getAuthHeaders(),
         Depth: '0',
       };
 
-      const res = await fetch(targetUrl, {
+      const res = await this.executeRequest(targetUrl, {
         method: 'PROPFIND',
         headers,
       });
 
+      const responseText = await res.text();
       const latencyMs = Date.now() - startTime;
+
+      // 检查是否返回了 HTML 页面（说明访问到了本地静态资源 index.html 或代理失效）
+      if (this.isHtmlResponse(responseText)) {
+        return {
+          success: false,
+          message: 'WebDAV 响应异常：服务端返回了 HTML 网页内容而非 WebDAV 协议响应。请检查 WebDAV 地址是否正确；若在手机 App 运行请务必关闭「CORS 跨域中继转发」。',
+          latencyMs,
+          statusCode: res.status,
+        };
+      }
 
       if (res.status === 207 || (res.status >= 200 && res.status < 300)) {
         return {
@@ -108,11 +222,12 @@ export class WebDavAdapter implements ISyncAdapter {
 
       if (res.status === 405) {
         // 部分 WebDAV 服务器根路径不支持 PROPFIND，退化测试 OPTIONS
-        const optRes = await fetch(targetUrl, {
+        const optRes = await this.executeRequest(targetUrl, {
           method: 'OPTIONS',
           headers: this.getAuthHeaders(),
         });
-        if (optRes.ok) {
+        const optText = await optRes.text();
+        if (optRes.ok && !this.isHtmlResponse(optText)) {
           return {
             success: true,
             message: `WebDAV 连接成功 (OPTIONS 兼容模式，延迟 ${Date.now() - startTime}ms)`,
@@ -132,8 +247,8 @@ export class WebDavAdapter implements ISyncAdapter {
       const latencyMs = Date.now() - startTime;
       const isFailedToFetch = err?.message?.includes('Failed to fetch') || err?.name === 'TypeError';
 
-      // 若当前未启用代理，且遇到了 Failed to fetch (典型的浏览器 CORS 拦截)，尝试探测内置 /api/webdav-proxy
-      if (isFailedToFetch && !this.config.useCorsProxy && !this.config.corsProxyUrl) {
+      // 若当前未启用代理，且在网页端遇到了 Failed to fetch (典型的浏览器 CORS 拦截)，尝试探测内置 /api/webdav-proxy
+      if (isFailedToFetch && !isNativeAppEnvironment() && !this.config.useCorsProxy && !this.config.corsProxyUrl) {
         try {
           const directUrl = this.resolveUrl('/', true);
           const proxyUrl = `/api/webdav-proxy?target=${encodeURIComponent(directUrl)}`;
@@ -145,7 +260,8 @@ export class WebDavAdapter implements ISyncAdapter {
             },
           });
 
-          if (proxyRes.status === 207 || (proxyRes.status >= 200 && proxyRes.status < 300)) {
+          const proxyText = await proxyRes.text();
+          if (!this.isHtmlResponse(proxyText) && (proxyRes.status === 207 || (proxyRes.status >= 200 && proxyRes.status < 300))) {
             return {
               success: true,
               message: `通过内置 CORS 跨域中继连接成功 (延迟 ${Date.now() - startTime}ms)`,
@@ -171,11 +287,11 @@ export class WebDavAdapter implements ISyncAdapter {
       return {
         success: false,
         message: isFailedToFetch
-          ? 'WebDAV 连接受阻：检测到浏览器同源策略 (CORS) 拦截。请勾选下方「启用 CORS 跨域中继」或在桌面/手机端原生运行。'
+          ? 'WebDAV 连接受阻：检测到浏览器同源策略 (CORS) 拦截。网页版请勾选「启用 CORS 跨域中继」，或直接使用 Android/iOS 手机客户端。'
           : `WebDAV 连接失败: ${err?.message || '网络连接异常'}`,
         latencyMs,
         isCorsError: isFailedToFetch,
-        suggestProxy: isFailedToFetch,
+        suggestProxy: isFailedToFetch && !isNativeAppEnvironment(),
       };
     }
   }
@@ -190,12 +306,12 @@ export class WebDavAdapter implements ISyncAdapter {
     const targetUrl = this.resolveUrl(path);
 
     try {
-      const headers = {
+      const headers: Record<string, string> = {
         ...this.getAuthHeaders(),
         Depth: '0',
       };
 
-      const res = await fetch(targetUrl, {
+      const res = await this.executeRequest(targetUrl, {
         method: 'PROPFIND',
         headers,
       });
@@ -207,13 +323,20 @@ export class WebDavAdapter implements ISyncAdapter {
         };
       }
 
+      const text = await res.text();
+      if (this.isHtmlResponse(text)) {
+        throw new Error(
+          'WebDAV 服务端返回了 HTML 网页而非有效快照元数据。若在手机 App 运行，请在设置中关闭「CORS 跨域中继转发」，并核对服务器地址。'
+        );
+      }
+
       if (!res.ok && res.status !== 207) {
-        throw new Error(`PROPFIND 响应异常 (HTTP ${res.status})`);
+        throw new Error(`PROPFIND 响应异常 (HTTP ${res.status}: ${res.statusText})`);
       }
 
       // 从响应头解析 Last-Modified 与 ETag
-      const lastModified = res.headers.get('last-modified') || res.headers.get('Last-Modified');
-      const etag = res.headers.get('etag') || res.headers.get('ETag');
+      const lastModified = res.headers.get('last-modified');
+      const etag = res.headers.get('etag');
       const contentLengthHeader = res.headers.get('content-length');
       const contentLength = contentLengthHeader ? parseInt(contentLengthHeader, 10) : undefined;
 
@@ -223,7 +346,6 @@ export class WebDavAdapter implements ISyncAdapter {
       let parsedETag = etag;
 
       try {
-        const text = await res.text();
         if (text) {
           const lmMatch = text.match(/<(?:\w+:)?getlastmodified[^>]*>([^<]+)<\/(?:\w+:)?getlastmodified>/i);
           if (lmMatch && lmMatch[1]) {
@@ -275,7 +397,7 @@ export class WebDavAdapter implements ISyncAdapter {
 
       try {
         // 尝试检测目录是否存在
-        const checkRes = await fetch(folderUrl, {
+        const checkRes = await this.executeRequest(folderUrl, {
           method: 'PROPFIND',
           headers: {
             ...this.getAuthHeaders(),
@@ -289,7 +411,7 @@ export class WebDavAdapter implements ISyncAdapter {
 
         if (checkRes.status === 404) {
           // 目录不存在，发起 MKCOL 创建
-          const mkRes = await fetch(folderUrl, {
+          const mkRes = await this.executeRequest(folderUrl, {
             method: 'MKCOL',
             headers: this.getAuthHeaders(),
           });
@@ -328,18 +450,22 @@ export class WebDavAdapter implements ISyncAdapter {
         ? encryptedPackage
         : JSON.stringify(encryptedPackage, null, 2);
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       ...this.getAuthHeaders(),
       'Content-Type': 'application/json; charset=utf-8',
     };
 
-    const res = await fetch(targetUrl, {
+    const res = await this.executeRequest(targetUrl, {
       method: 'PUT',
       headers,
       body: contentStr,
     });
 
     if (!res.ok && res.status !== 201 && res.status !== 204) {
+      const errText = await res.text();
+      if (this.isHtmlResponse(errText)) {
+        throw new Error('WebDAV 快照上传失败：服务端返回了 HTML 页面。请检查 WebDAV 地址与路径是否正确。');
+      }
       throw new Error(`WebDAV 快照上传失败 (HTTP ${res.status}: ${res.statusText})`);
     }
 
@@ -367,12 +493,12 @@ export class WebDavAdapter implements ISyncAdapter {
     const path = remotePath || this.config.remotePath || '/ServerlessLedger/ledger-vault.enc.json';
     const targetUrl = this.resolveUrl(path);
 
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       ...this.getAuthHeaders(),
       Accept: 'application/json, text/plain, */*',
     };
 
-    const res = await fetch(targetUrl, {
+    const res = await this.executeRequest(targetUrl, {
       method: 'GET',
       headers,
     });
@@ -388,6 +514,12 @@ export class WebDavAdapter implements ISyncAdapter {
     const lastModified = res.headers.get('last-modified') || undefined;
     const etag = res.headers.get('etag') || undefined;
     const text = await res.text();
+
+    if (this.isHtmlResponse(text)) {
+      throw new Error(
+        'WebDAV 服务端返回了 HTML 网页而非有效快照数据。若在手机 App 中运行，请在设置中关闭「CORS 跨域中继转发」，并核对 WebDAV 存储路径与服务器地址。'
+      );
+    }
 
     try {
       const parsed = JSON.parse(text);
@@ -414,3 +546,4 @@ export class WebDavAdapter implements ISyncAdapter {
 export function getWebDavAdapter(config?: SyncConfig): WebDavAdapter {
   return new WebDavAdapter(config);
 }
+

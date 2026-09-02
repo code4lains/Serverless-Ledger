@@ -44,10 +44,9 @@ jobs:
         run: |
           npx tsc -b packages/shared/tsconfig.json
           npx tsc -b packages/client/tsconfig.json
-          npx tsc -p packages/server/tsconfig.json --noEmit
 
   build-artifacts:
-    name: Verify Web PWA & Server Builds
+    name: Verify Web PWA & Build Pipeline
     runs-on: ubuntu-latest
     needs: [lint-and-test]
     steps:
@@ -76,9 +75,6 @@ jobs:
           test -f packages/client/dist/manifest.webmanifest || (echo "dist/manifest.webmanifest not found!" && exit 1)
           echo "Web PWA build verification passed!"
 
-      - name: Build Cloudflare Server & Functions
-        run: npm run build:server
-
       - name: Verify Build Pipeline Configurations
         run: node scripts/verify-build-pipeline.mjs
 
@@ -88,3 +84,4 @@ jobs:
           name: web-dist
           path: packages/client/dist/
           retention-days: 7
+

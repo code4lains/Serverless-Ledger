@@ -172,4 +172,23 @@ saveSyncConfig({ provider: 'none' });
 assert.strictEqual(isWebdavSyncConfigured(), false);
 
 console.log('✅ WebDAV Sync config tests passed!');
+
+// Test 3: HTML Response detection contract
+function isHtmlResponse(text) {
+  if (!text) return false;
+  const trimmed = text.trimStart().toLowerCase();
+  return (
+    trimmed.startsWith('<!doctype') ||
+    trimmed.startsWith('<html') ||
+    trimmed.startsWith('<head')
+  );
+}
+
+assert.strictEqual(isHtmlResponse('<!doctype html><html><head><title>Vite App</title></head></html>'), true);
+assert.strictEqual(isHtmlResponse('<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN">'), true);
+assert.strictEqual(isHtmlResponse('<html><body>404 Not Found</body></html>'), true);
+assert.strictEqual(isHtmlResponse('{"app":"ServerlessLedger","version":3}'), false);
+assert.strictEqual(isHtmlResponse('<?xml version="1.0" encoding="utf-8" ?><D:multistatus xmlns:D="DAV:"/>'), false);
+
+console.log('✅ HTML response detection tests passed!');
 console.log('🎉 ALL CLIENT WEBDAV SNAPSHOT SYNC TESTS COMPLETED SUCCESSFULLY!');

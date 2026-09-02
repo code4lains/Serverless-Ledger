@@ -438,7 +438,7 @@ export function App() {
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       {/* Toast 提示条 */}
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+        <div className="fixed top-[max(1rem,calc(1rem+env(safe-area-inset-top,0px)))] left-1/2 -translate-x-1/2 z-50 animate-bounce">
           <div
             className={`px-4 py-2 rounded-2xl shadow-xl text-xs font-semibold flex items-center gap-2 ${
               toastMessage.type === 'success'
@@ -455,7 +455,7 @@ export function App() {
       )}
 
       {/* 顶部导航栏 */}
-      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 py-3">
+      <header className="sticky top-0 z-30 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800/80 px-4 pt-[max(0.75rem,calc(0.75rem+env(safe-area-inset-top,0px)))] pb-3">
         <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-2xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/20">
@@ -906,7 +906,7 @@ export function App() {
       </main>
 
       {/* 底部固定导航栏 */}
-      <footer className="sticky bottom-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/80 py-2 px-4">
+      <footer className="sticky bottom-0 z-30 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-t border-slate-200/80 dark:border-slate-800/80 pt-2 pb-[max(0.5rem,calc(0.5rem+env(safe-area-inset-bottom,0px)))] px-4">
         <div className="max-w-md mx-auto grid grid-cols-5 gap-1 text-center">
           {[
             { key: 'record', label: '记账', icon: PlusCircle },
