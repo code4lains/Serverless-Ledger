@@ -481,12 +481,12 @@ export function StatisticsView({
           </select>
         </div>
 
-        {/* 周期切换 Pills (本月 / 本年 / 自定义 / 全部) */}
+        {/* 周期切换 Pills (月度 / 年度 / 自定义 / 全部) */}
         <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl text-xs font-medium">
           {(
             [
-              { id: 'month', label: '本月' },
-              { id: 'year', label: '本年' },
+              { id: 'month', label: '月度' },
+              { id: 'year', label: '年度' },
               { id: 'custom', label: '自定义' },
               { id: 'all', label: '全部' },
             ] as const
@@ -610,7 +610,7 @@ export function StatisticsView({
         <div className="p-5 rounded-3xl bg-white dark:bg-slate-900 shadow-sm border border-slate-100 dark:border-slate-800 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-400">
-              {period === 'month' ? '当月净结余' : period === 'year' ? '年度净结余' : '期内净结余'}
+              {period === 'month' ? '月度净结余' : period === 'year' ? '年度净结余' : '期内净结余'}
             </span>
             <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold">
               {filteredTransactions.length} 笔明细

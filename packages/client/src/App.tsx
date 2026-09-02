@@ -97,6 +97,8 @@ import { RecoveryCodeModal } from './components/RecoveryCodeModal';
 import { RecurringManagementModal } from './components/RecurringManagementModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { VaultModal, VaultModalAction } from './components/VaultModal';
+import { NumericKeypad } from './components/NumericKeypad';
+import { CalculatorModal } from './components/CalculatorModal';
 import { recurringEngine } from './api/recurringEngine';
 
 export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profile';
@@ -115,6 +117,7 @@ export function App() {
   const [isVaultModalOpen, setIsVaultModalOpen] = useState<boolean>(false);
   const [vaultModalAction, setVaultModalAction] = useState<VaultModalAction>('unlock');
 
+  const [isCalculatorOpen, setIsCalculatorOpen] = useState<boolean>(false);
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState<boolean>(false);
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState<boolean>(false);
   const [isBudgetModalOpen, setIsBudgetModalOpen] = useState<boolean>(false);
@@ -146,6 +149,29 @@ export function App() {
   });
   const [recordRemark, setRecordRemark] = useState<string>('');
   const [isSubmittingRecord, setIsSubmittingRecord] = useState<boolean>(false);
+
+  // 检测是否为移动触控设备 (移动端屏蔽系统软键盘，PC/Web 端放开实体键盘输入)
+  const isMobile = useMemo(() => {
+    if (typeof window === 'undefined') return false;
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || ('ontouchstart' in window && window.innerWidth < 768);
+  }, []);
+
+  // PC/Web 端实体键盘安全格式化处理 (只允许数字与至多两位小数)
+  const handleAmountInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value.replace(/[^0-9.]/g, '');
+    const dotCount = (val.match(/\./g) || []).length;
+    if (dotCount > 1) {
+      const firstDot = val.indexOf('.');
+      val = val.slice(0, firstDot + 1) + val.slice(firstDot + 1).replace(/\./g, '');
+    }
+    if (val.includes('.')) {
+      const [intPart, decPart] = val.split('.');
+      val = `${intPart.slice(0, 9)}.${decPart.slice(0, 2)}`;
+    } else {
+      val = val.slice(0, 9);
+    }
+    setRecordAmountStr(val);
+  };
 
   // 明细检索过滤状态
   const [filterSearch, setFilterSearch] = useState<string>('');
@@ -328,9 +354,9 @@ export function App() {
     }
   };
 
-  // 记账提交
-  const handleRecordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // 记账提交 (支持普通保存与保存再记)
+  const handleRecordSubmit = async (e?: React.FormEvent, stayAndContinue = false) => {
+    if (e) e.preventDefault();
     const cleanStr = String(recordAmountStr).trim().replace(/,/g, '').replace(/[^0-9.-]/g, '');
     const amountInCents = toCents(cleanStr);
 
@@ -364,7 +390,11 @@ export function App() {
 
       setRecordAmountStr('');
       setRecordRemark('');
-      showToast('记账成功！', 'success');
+      if (stayAndContinue) {
+        showToast('已保存，请继续记账', 'success');
+      } else {
+        showToast('记账成功！', 'success');
+      }
       await refreshTransactions();
       await refreshBudgets();
 
@@ -657,22 +687,39 @@ export function App() {
                     </div>
                   )}
 
-                  {/* 记账表单 */}
-                  <form onSubmit={handleRecordSubmit} className="space-y-4">
-                    {/* 金额输入框 */}
-                    <div className="relative">
-                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-slate-400">
-                        {curSymbol}
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={recordAmountStr}
-                        onChange={(e) => setRecordAmountStr(e.target.value)}
-                        className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-3xl font-black tracking-tight text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        autoFocus
-                      />
+                  {/* 记账表单与自定义触控数字键盘 */}
+                  <div className="space-y-4">
+                    {/* 金额输入与展示框 (移动端防软键盘，PC/Web 端支持实体键盘输入并按 Enter 快速保存) */}
+                    <div className="flex items-center justify-between p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition shadow-xs">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-xl sm:text-2xl font-bold text-slate-400 shrink-0">
+                          {curSymbol}
+                        </span>
+                        <input
+                          type="text"
+                          inputMode={isMobile ? 'none' : 'decimal'}
+                          readOnly={isMobile}
+                          placeholder="0.00"
+                          value={recordAmountStr}
+                          onChange={handleAmountInputChange}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleRecordSubmit(undefined, e.shiftKey || e.ctrlKey);
+                            }
+                          }}
+                          className="w-full bg-transparent border-none p-0 text-3xl sm:text-4xl font-black tracking-tight font-mono text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-0"
+                          autoFocus={!isMobile}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsCalculatorOpen(true)}
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-xs font-bold text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-600 shadow-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer"
+                      >
+                        <span>🧮</span>
+                        <span>计算器</span>
+                      </button>
                     </div>
 
                     {/* 分类选择 */}
@@ -726,16 +773,18 @@ export function App() {
                       </div>
                     </div>
 
-                    {/* 记账提交按钮 */}
-                    <button
-                      type="submit"
-                      disabled={isSubmittingRecord}
-                      className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-98 transition flex items-center justify-center gap-2"
-                    >
-                      <PlusCircle className="w-5 h-5" />
-                      <span>{isSubmittingRecord ? '保存中...' : '立即记一笔'}</span>
-                    </button>
-                  </form>
+                    {/* 自定义触控数字键盘 (含保存再记、保存大按钮与计算器入口) */}
+                    <div className="pt-2">
+                      <NumericKeypad
+                        value={recordAmountStr}
+                        onChange={setRecordAmountStr}
+                        onSubmit={() => handleRecordSubmit(undefined, false)}
+                        onSubmitAndContinue={() => handleRecordSubmit(undefined, true)}
+                        onOpenCalculator={() => setIsCalculatorOpen(true)}
+                        isSubmitting={isSubmittingRecord}
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* 月度预算进度概览卡片 */}
@@ -1042,6 +1091,14 @@ export function App() {
         activeLedgerId={activeLedgerId}
         onClose={() => setIsDataModalOpen(false)}
         onImportSuccess={loadAllData}
+      />
+
+      {/* 10. 简易计算器弹窗抽屉 */}
+      <CalculatorModal
+        isOpen={isCalculatorOpen}
+        initialValue={recordAmountStr}
+        onClose={() => setIsCalculatorOpen(false)}
+        onConfirm={(val) => setRecordAmountStr(val)}
       />
     </div>
   );
