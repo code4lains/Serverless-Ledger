@@ -345,9 +345,9 @@ export class CloudflareSyncAdapter implements ISyncAdapter {
       console.warn('[CloudflareSyncAdapter] Pull budgets notice:', err);
     }
 
-    // 4. 获取流水 (轻量缓存最新 100 条，保护带宽与本地存储)
+    // 4. 获取流水 (拉取云端流水并缓存至本地 Dexie)
     try {
-      const res = await apiFetch(apiUrl('/transactions?limit=100'), { headers, signal });
+      const res = await apiFetch(apiUrl('/transactions'), { headers, signal });
       if (res.ok) {
         const parsed = await safeParseApiResponse<Transaction[]>(res);
         if (parsed.success && Array.isArray(parsed.data)) {

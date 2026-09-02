@@ -127,6 +127,11 @@ export function App() {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
+  const currentUserRef = useRef<AuthUser | null>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
+
   const [vaultStatus, setVaultStatus] = useState<'uninitialized' | 'unlocked' | 'locked'>('uninitialized');
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -206,7 +211,7 @@ export function App() {
 
   // 从本地 Dexie 加载流水与待同步状态
   const loadLocalData = async (user?: AuthUser | null) => {
-    const effectiveUser = user !== undefined ? user : currentUser;
+    const effectiveUser = user !== undefined ? user : (currentUserRef.current ?? getStoredUser());
     let list: Transaction[] = [];
     if (effectiveUser) {
       list = await localDb.transactions
@@ -216,7 +221,7 @@ export function App() {
     } else {
       // 访客 / 离线模式：加载本地未归属其他用户的流水或 default_user 流水
       list = await localDb.transactions
-        .filter((t) => !t.user_id || t.user_id === 'default_user')
+        .filter((t) => !t.user_id || t.user_id === 'default_user' || t.user_id === 'default_vault')
         .sortBy('transaction_date');
     }
     list.reverse();
@@ -231,7 +236,7 @@ export function App() {
 
   // 刷新服务端原生 SQL 统计
   const refreshServerSummaries = async (user?: AuthUser | null) => {
-    const effectiveUser = user !== undefined ? user : currentUser;
+    const effectiveUser = user !== undefined ? user : (currentUserRef.current ?? getStoredUser());
     if (!effectiveUser || !isCloudSyncEnabled()) return;
     try {
       const headers = getAuthHeaders();
@@ -352,6 +357,8 @@ export function App() {
 
   // 载入并同步当前用户数据 (0ms 离线启动，网络在后台非阻塞静默同步)
   const loadUserData = async (user: AuthUser) => {
+    currentUserRef.current = user;
+
     // 自动将本地离线/访客模式下的流水与账单迁移至该登录账号
     await migrateGuestDataToUser(user.user_id);
 
@@ -374,20 +381,19 @@ export function App() {
     await loadLocalData(user);
     await triggerRecurringAutoProcess(user);
 
-    // 如果开启了云端同步且网络可用，在后台静默发起双向同步，绝不阻塞用户界面渲染
+    // 如果开启了云端同步，在后台发起双向同步（不阻塞 UI）并在完成后刷新数据
     if (isCloudSyncEnabled()) {
       checkServerHealth().then((health) => {
         setServerStatus({ ok: health.isOnline, data: health });
-        if (health.isOnline) {
-          refreshServerSummaries(user).catch(() => {});
-          syncManager.syncAll(true).then(async () => {
-            await refreshLedgers();
-            await refreshBudgets();
-            await refreshCategories();
-            await loadLocalData(user);
-            await refreshServerSummaries(user);
-          }).catch(() => {});
-        }
+      }).catch(() => {});
+
+      refreshServerSummaries(user).catch(() => {});
+      syncManager.syncAll(true).then(async () => {
+        await refreshLedgers();
+        await refreshBudgets();
+        await refreshCategories();
+        await loadLocalData(user);
+        await refreshServerSummaries(user);
       }).catch(() => {});
     }
   };
@@ -405,7 +411,7 @@ export function App() {
         refreshLedgers();
         refreshBudgets();
         refreshCategories();
-        loadLocalData();
+        loadLocalData(currentUserRef.current ?? getStoredUser());
       }
     });
 
@@ -416,11 +422,13 @@ export function App() {
       // 2. 立即从本地 IndexedDB 加载基础数据 (0ms 秒开)
       const stored = getStoredUser();
       if (!stored) {
+        currentUserRef.current = null;
         setCurrentUser(null);
         await loadGuestData();
         return;
       }
 
+      currentUserRef.current = stored;
       setCurrentUser(stored);
       await loadUserData(stored);
 
@@ -428,9 +436,11 @@ export function App() {
       if (isCloudSyncEnabled()) {
         fetchCurrentUser().then((userRes) => {
           if (userRes.success && userRes.data) {
+            currentUserRef.current = userRes.data;
             setCurrentUser(userRes.data);
           } else {
             clearSession();
+            currentUserRef.current = null;
             setCurrentUser(null);
             loadGuestData();
           }
@@ -441,8 +451,9 @@ export function App() {
     init();
 
     const handleUnauthorized = async () => {
-      const prevUser = getStoredUser();
+      const prevUser = currentUserRef.current ?? getStoredUser();
       clearSession();
+      currentUserRef.current = null;
       setCurrentUser(null);
       if (prevUser) {
         await clearUserData(prevUser.user_id);
@@ -639,8 +650,9 @@ export function App() {
   // 确认退出登录 (BUG-C04: 彻底清理本地 IndexedDB 私有数据)
   const handleConfirmLogout = async () => {
     setShowLogoutConfirm(false);
-    const prevUser = currentUser;
+    const prevUser = currentUserRef.current ?? currentUser ?? getStoredUser();
     clearSession();
+    currentUserRef.current = null;
     setCurrentUser(null);
     if (prevUser) {
       await clearUserData(prevUser.user_id);
@@ -653,9 +665,11 @@ export function App() {
 
   // 登录/注册成功回调 (BUG-C04: 切换账号时先清理前一个用户的本地私有数据)
   const handleAuthSuccess = async (user: AuthUser, newRecoveryCode?: string | null) => {
-    if (currentUser && currentUser.user_id !== user.user_id) {
-      await clearUserData(currentUser.user_id);
+    const prevUser = currentUserRef.current ?? currentUser;
+    if (prevUser && prevUser.user_id !== user.user_id) {
+      await clearUserData(prevUser.user_id);
     }
+    currentUserRef.current = user;
     setCurrentUser(user);
     setIsAuthModalOpen(false);
     await loadUserData(user);
@@ -667,9 +681,10 @@ export function App() {
 
   // 账号注销成功回调 (BUG-C04: 注销时原子清理本地私有数据与缓存)
   const handleDeleteAccountSuccess = async () => {
-    const prevUser = currentUser;
+    const prevUser = currentUserRef.current ?? currentUser ?? getStoredUser();
     setIsDeleteAccountModalOpen(false);
     clearSession();
+    currentUserRef.current = null;
     setCurrentUser(null);
     if (prevUser) {
       await clearUserData(prevUser.user_id);

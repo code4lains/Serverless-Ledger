@@ -29,6 +29,7 @@ class NetworkMonitor {
   private checkTimer: any = null;
   private isChecking = false;
   private lastHealthCheckTime = 0;
+  private activeHealthPromise: Promise<NetworkInfo> | null = null;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -123,52 +124,60 @@ class NetworkMonitor {
       return this.currentState;
     }
 
-    if (this.isChecking) return this.currentState;
-    this.isChecking = true;
-    this.lastHealthCheckTime = Date.now();
-
-    const startTime = performance.now();
-    try {
-      const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/health`, {
-        signal: AbortSignal.timeout(3000),
-        headers: { Accept: 'application/json' },
-        cache: 'no-store',
-      });
-
-      const latency = Math.round(performance.now() - startTime);
-      const parsed = await safeParseApiResponse<any>(res);
-
-      if (res.ok && parsed.success) {
-        const state: NetworkState = latency > 1200 ? 'weak' : 'online';
-        this.updateState({
-          state,
-          isOnline: true,
-          latencyMs: latency,
-          error: undefined,
-        });
-      } else {
-        this.updateState({
-          state: 'weak',
-          isOnline: true,
-          latencyMs: latency,
-          error: parsed.error || `服务端响应异常: ${res.status}`,
-        });
-      }
-    } catch (err: any) {
-      const latency = Math.round(performance.now() - startTime);
-      const isTimeout = err?.name === 'TimeoutError' || err?.message?.includes('timeout');
-      this.updateState({
-        state: isTimeout ? 'weak' : 'offline',
-        isOnline: isTimeout,
-        latencyMs: isTimeout ? latency : null,
-        error: err?.message || '网络连接不可用',
-      });
-    } finally {
-      this.isChecking = false;
+    if (this.activeHealthPromise) {
+      return this.activeHealthPromise;
     }
 
-    return this.currentState;
+    this.activeHealthPromise = (async () => {
+      this.isChecking = true;
+      this.lastHealthCheckTime = Date.now();
+
+      const startTime = performance.now();
+      try {
+        const apiBase = getApiBase();
+        const res = await fetch(`${apiBase}/health`, {
+          signal: AbortSignal.timeout(3000),
+          headers: { Accept: 'application/json' },
+          cache: 'no-store',
+        });
+
+        const latency = Math.round(performance.now() - startTime);
+        const parsed = await safeParseApiResponse<any>(res);
+
+        if (res.ok && parsed.success) {
+          const state: NetworkState = latency > 1200 ? 'weak' : 'online';
+          this.updateState({
+            state,
+            isOnline: true,
+            latencyMs: latency,
+            error: undefined,
+          });
+        } else {
+          this.updateState({
+            state: 'weak',
+            isOnline: true,
+            latencyMs: latency,
+            error: parsed.error || `服务端响应异常: ${res.status}`,
+          });
+        }
+      } catch (err: any) {
+        const latency = Math.round(performance.now() - startTime);
+        const isTimeout = err?.name === 'TimeoutError' || err?.message?.includes('timeout');
+        this.updateState({
+          state: isTimeout ? 'weak' : 'offline',
+          isOnline: isTimeout,
+          latencyMs: isTimeout ? latency : null,
+          error: err?.message || '网络连接不可用',
+        });
+      } finally {
+        this.isChecking = false;
+        this.activeHealthPromise = null;
+      }
+
+      return this.currentState;
+    })();
+
+    return this.activeHealthPromise;
   }
 
   /**
