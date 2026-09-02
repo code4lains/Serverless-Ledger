@@ -166,7 +166,7 @@ export class WebDavAdapter implements ISyncAdapter {
   }
 
   /**
-   * 连通性测试 (发送 PROPFIND 或 OPTIONS 请求验证鉴权与网络)
+   * 连通性测试 (发送 OPTIONS/HEAD 或 PROPFIND 请求验证鉴权与网络)
    */
   public async testConnection(): Promise<{
     success: boolean;
@@ -177,17 +177,47 @@ export class WebDavAdapter implements ISyncAdapter {
     suggestProxy?: boolean;
   }> {
     const startTime = Date.now();
+    const isNative = isNativeAppEnvironment();
+
     try {
       const targetUrl = this.resolveUrl('/');
-      const headers: Record<string, string> = {
-        ...this.getAuthHeaders(),
-        Depth: '0',
-      };
+      let res;
 
-      const res = await this.executeRequest(targetUrl, {
-        method: 'PROPFIND',
-        headers,
-      });
+      if (isNative) {
+        // 在原生 App (Android / iOS) 环境中，底层 OkHttp 仅支持标准 HTTP 方法 [OPTIONS, GET, HEAD, POST, PUT, DELETE, TRACE, PATCH]
+        // 优先使用 OPTIONS 测试 WebDAV 服务端连通性与 Basic Auth 鉴权
+        res = await this.executeRequest(targetUrl, {
+          method: 'OPTIONS',
+          headers: this.getAuthHeaders(),
+        });
+
+        // 若部分 WebDAV 服务器对根路径的 OPTIONS 返回 404 或 405，退化使用 HEAD 测试
+        if (res.status === 404 || res.status === 405) {
+          res = await this.executeRequest(targetUrl, {
+            method: 'HEAD',
+            headers: this.getAuthHeaders(),
+          });
+        }
+      } else {
+        // 网页端优先发送 PROPFIND
+        const headers: Record<string, string> = {
+          ...this.getAuthHeaders(),
+          Depth: '0',
+        };
+
+        res = await this.executeRequest(targetUrl, {
+          method: 'PROPFIND',
+          headers,
+        });
+
+        if (res.status === 405) {
+          // 部分 WebDAV 服务器根路径不支持 PROPFIND，退化测试 OPTIONS
+          res = await this.executeRequest(targetUrl, {
+            method: 'OPTIONS',
+            headers: this.getAuthHeaders(),
+          });
+        }
+      }
 
       const responseText = await res.text();
       const latencyMs = Date.now() - startTime;
@@ -218,23 +248,6 @@ export class WebDavAdapter implements ISyncAdapter {
           latencyMs,
           statusCode: res.status,
         };
-      }
-
-      if (res.status === 405) {
-        // 部分 WebDAV 服务器根路径不支持 PROPFIND，退化测试 OPTIONS
-        const optRes = await this.executeRequest(targetUrl, {
-          method: 'OPTIONS',
-          headers: this.getAuthHeaders(),
-        });
-        const optText = await optRes.text();
-        if (optRes.ok && !this.isHtmlResponse(optText)) {
-          return {
-            success: true,
-            message: `WebDAV 连接成功 (OPTIONS 兼容模式，延迟 ${Date.now() - startTime}ms)`,
-            latencyMs: Date.now() - startTime,
-            statusCode: optRes.status,
-          };
-        }
       }
 
       return {
@@ -297,24 +310,54 @@ export class WebDavAdapter implements ISyncAdapter {
   }
 
   /**
-   * 查询远端快照文件的元数据 (PROPFIND)
+   * 查询远端快照文件的元数据 (HEAD / PROPFIND)
    */
   public async getRemoteMetadata(
     remotePath?: string
   ): Promise<RemoteSnapshotMetadata> {
     const path = remotePath || this.config.remotePath || '/ServerlessLedger/ledger-vault.enc.json';
     const targetUrl = this.resolveUrl(path);
+    const isNative = isNativeAppEnvironment();
 
     try {
-      const headers: Record<string, string> = {
-        ...this.getAuthHeaders(),
-        Depth: '0',
-      };
+      let res;
+      let isHead = false;
 
-      const res = await this.executeRequest(targetUrl, {
-        method: 'PROPFIND',
-        headers,
-      });
+      if (isNative) {
+        // 原生 App 端使用标准 HEAD 请求获取快照元数据 (避开 OkHttp 对 PROPFIND 的限制)
+        res = await this.executeRequest(targetUrl, {
+          method: 'HEAD',
+          headers: this.getAuthHeaders(),
+        });
+        isHead = true;
+
+        if (res.status === 405) {
+          // 若不支持 HEAD，使用 GET 请求探测
+          res = await this.executeRequest(targetUrl, {
+            method: 'GET',
+            headers: this.getAuthHeaders(),
+          });
+          isHead = false;
+        }
+      } else {
+        const headers: Record<string, string> = {
+          ...this.getAuthHeaders(),
+          Depth: '0',
+        };
+
+        res = await this.executeRequest(targetUrl, {
+          method: 'PROPFIND',
+          headers,
+        });
+
+        if (res.status === 405) {
+          res = await this.executeRequest(targetUrl, {
+            method: 'HEAD',
+            headers: this.getAuthHeaders(),
+          });
+          isHead = true;
+        }
+      }
 
       if (res.status === 404) {
         return {
@@ -323,15 +366,15 @@ export class WebDavAdapter implements ISyncAdapter {
         };
       }
 
-      const text = await res.text();
-      if (this.isHtmlResponse(text)) {
+      const text = isHead ? '' : await res.text();
+      if (text && this.isHtmlResponse(text)) {
         throw new Error(
           'WebDAV 服务端返回了 HTML 网页而非有效快照元数据。若在手机 App 运行，请在设置中关闭「CORS 跨域中继转发」，并核对服务器地址。'
         );
       }
 
       if (!res.ok && res.status !== 207) {
-        throw new Error(`PROPFIND 响应异常 (HTTP ${res.status}: ${res.statusText})`);
+        throw new Error(`WebDAV 响应异常 (HTTP ${res.status}: ${res.statusText})`);
       }
 
       // 从响应头解析 Last-Modified 与 ETag
@@ -387,6 +430,13 @@ export class WebDavAdapter implements ISyncAdapter {
   public async ensureDirectoryExists(dirPath: string): Promise<boolean> {
     const cleanPath = dirPath.replace(/\/+$/, '').replace(/^\/+/, '');
     if (!cleanPath) return true;
+
+    // 原生 App 端 (Capacitor/Android) 的 OkHttp 限制了自定义 MKCOL 请求，
+    // 现代 WebDAV 服务端在客户端 PUT 文件时会自动建目录或允许 PUT 直写，原生端直接跳过 MKCOL
+    const isNative = isNativeAppEnvironment();
+    if (isNative) {
+      return true;
+    }
 
     const segments = cleanPath.split('/');
     let currentPath = '';

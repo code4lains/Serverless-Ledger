@@ -585,7 +585,7 @@ export function App() {
       </header>
 
       {/* 主体视口容器 */}
-      <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-6">
+      <main className={`flex-1 max-w-4xl w-full mx-auto ${navTab === 'record' ? 'px-2 py-1.5 sm:p-6 space-y-2 sm:space-y-6' : 'p-4 sm:p-6 space-y-6'}`}>
         {/* 当保险库处于锁定状态且不在设置页时，展示全局数据遮蔽与快速解锁面板 */}
         {vaultStatus === 'locked' && navTab !== 'profile' ? (
           <div className="py-14 px-4 max-w-md mx-auto space-y-6 text-center animate-fade-in">
@@ -629,152 +629,150 @@ export function App() {
           <>
             {/* 视口内容切换 */}
             {navTab === 'record' && (
-              <div className="space-y-6">
-                {/* 记账卡片 */}
-                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-5">
-                  {/* 收支类型切换 */}
-                  <div className="grid grid-cols-4 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/60">
-                    {(['expense', 'income', 'transfer', 'loan'] as TransactionType[]).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => {
-                          setRecordType(t);
-                          if (t === 'loan') {
-                            handleLoanTypeChange(recordLoanType);
-                          }
-                        }}
-                        className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                          recordType === t
-                            ? t === 'expense'
-                              ? 'bg-rose-500 text-white shadow-sm'
-                              : t === 'income'
-                              ? 'bg-emerald-500 text-white shadow-sm'
-                              : t === 'transfer'
-                              ? 'bg-blue-500 text-white shadow-sm'
-                              : 'bg-purple-500 text-white shadow-sm'
-                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                        }`}
-                      >
-                        {t === 'expense' && '支出'}
-                        {t === 'income' && '收入'}
-                        {t === 'transfer' && '转账'}
-                        {t === 'loan' && '借贷'}
-                      </button>
-                    ))}
-                  </div>
+              <div className="space-y-2 sm:space-y-6">
+                {/* 记账主面板 (桌面端左右分栏：左卡片表单 + 右数字键盘，手机端单列紧凑一屏) */}
+                <div className="p-2.5 sm:p-6 rounded-2xl sm:rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 md:gap-6 items-center">
+                    {/* 左侧区域：类型选择、金额输入、分类/账户、时间与备注 */}
+                    <div className="md:col-span-7 space-y-2.5 sm:space-y-3.5">
+                      {/* 收支类型切换 */}
+                      <div className="grid grid-cols-4 gap-1 p-0.5 sm:p-1 rounded-xl sm:rounded-2xl bg-slate-100 dark:bg-slate-800/60">
+                        {(['expense', 'income', 'transfer', 'loan'] as TransactionType[]).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => {
+                              setRecordType(t);
+                              if (t === 'loan') {
+                                handleLoanTypeChange(recordLoanType);
+                              }
+                            }}
+                            className={`py-1.5 sm:py-2 px-2 rounded-lg sm:rounded-xl text-xs font-bold transition flex items-center justify-center gap-1 ${
+                              recordType === t
+                                ? t === 'expense'
+                                : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                            } ${
+                              recordType === t && t === 'expense' ? 'bg-rose-500 text-white shadow-sm' : ''
+                            } ${
+                              recordType === t && t === 'income' ? 'bg-emerald-500 text-white shadow-sm' : ''
+                            } ${
+                              recordType === t && t === 'transfer' ? 'bg-blue-500 text-white shadow-sm' : ''
+                            } ${
+                              recordType === t && t === 'loan' ? 'bg-purple-500 text-white shadow-sm' : ''
+                            }`}
+                          >
+                            {t === 'expense' && '支出'}
+                            {t === 'income' && '收入'}
+                            {t === 'transfer' && '转账'}
+                            {t === 'loan' && '借贷'}
+                          </button>
+                        ))}
+                      </div>
 
-                  {/* 借贷子类型切换 */}
-                  {recordType === 'loan' && (
-                    <div className="grid grid-cols-4 gap-2 p-1 rounded-xl bg-purple-50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-300">
-                      {(['lend', 'borrow', 'repay', 'collect'] as LoanType[]).map((lt) => (
+                      {/* 借贷子类型切换 */}
+                      {recordType === 'loan' && (
+                        <div className="grid grid-cols-4 gap-1 p-0.5 sm:p-1 rounded-lg sm:rounded-xl bg-purple-50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-300">
+                          {(['lend', 'borrow', 'repay', 'collect'] as LoanType[]).map((lt) => (
+                            <button
+                              key={lt}
+                              type="button"
+                              onClick={() => handleLoanTypeChange(lt)}
+                              className={`py-1 px-1 rounded-md sm:rounded-lg text-[11px] sm:text-xs font-semibold transition ${
+                                recordLoanType === lt
+                                  ? 'bg-purple-600 text-white shadow-xs'
+                                  : 'text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40'
+                              }`}
+                            >
+                              {lt === 'lend' && '借出款项'}
+                              {lt === 'borrow' && '借入款项'}
+                              {lt === 'repay' && '归还借款'}
+                              {lt === 'collect' && '收回借款'}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 金额输入与展示框 */}
+                      <div className="flex items-center justify-between p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition shadow-xs">
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <span className="text-lg sm:text-2xl font-bold text-slate-400 shrink-0">
+                            {curSymbol}
+                          </span>
+                          <input
+                            type="text"
+                            inputMode={isMobile ? 'none' : 'decimal'}
+                            readOnly={isMobile}
+                            placeholder="0.00"
+                            value={recordAmountStr}
+                            onChange={handleAmountInputChange}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleRecordSubmit(undefined, e.shiftKey || e.ctrlKey);
+                              }
+                            }}
+                            className="w-full bg-transparent border-none p-0 text-2xl sm:text-4xl font-black tracking-tight font-mono text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-0"
+                            autoFocus={!isMobile}
+                          />
+                        </div>
                         <button
-                          key={lt}
                           type="button"
-                          onClick={() => handleLoanTypeChange(lt)}
-                          className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
-                            recordLoanType === lt
-                              ? 'bg-purple-600 text-white shadow-xs'
-                              : 'text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40'
-                          }`}
+                          onClick={() => setIsCalculatorOpen(true)}
+                          className="px-2.5 py-1 rounded-lg sm:rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-[11px] sm:text-xs font-bold text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-600 shadow-xs flex items-center gap-1 transition shrink-0 cursor-pointer"
                         >
-                          {lt === 'lend' && '借出款项'}
-                          {lt === 'borrow' && '借入款项'}
-                          {lt === 'repay' && '归还借款'}
-                          {lt === 'collect' && '收回借款'}
+                          <span>🧮</span>
+                          <span>计算器</span>
                         </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* 记账表单与自定义触控数字键盘 */}
-                  <div className="space-y-4">
-                    {/* 金额输入与展示框 (移动端防软键盘，PC/Web 端支持实体键盘输入并按 Enter 快速保存) */}
-                    <div className="flex items-center justify-between p-3.5 sm:p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent transition shadow-xs">
-                      <div className="flex items-center gap-2 flex-1 min-w-0">
-                        <span className="text-xl sm:text-2xl font-bold text-slate-400 shrink-0">
-                          {curSymbol}
-                        </span>
-                        <input
-                          type="text"
-                          inputMode={isMobile ? 'none' : 'decimal'}
-                          readOnly={isMobile}
-                          placeholder="0.00"
-                          value={recordAmountStr}
-                          onChange={handleAmountInputChange}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleRecordSubmit(undefined, e.shiftKey || e.ctrlKey);
-                            }
-                          }}
-                          className="w-full bg-transparent border-none p-0 text-3xl sm:text-4xl font-black tracking-tight font-mono text-slate-900 dark:text-white placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:outline-none focus:ring-0"
-                          autoFocus={!isMobile}
-                        />
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setIsCalculatorOpen(true)}
-                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 text-xs font-bold text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-600 shadow-xs flex items-center gap-1.5 transition shrink-0 cursor-pointer"
-                      >
-                        <span>🧮</span>
-                        <span>计算器</span>
-                      </button>
-                    </div>
-
-                    {/* 分类选择 */}
-                    {(recordType === 'expense' || recordType === 'income') && (
-                      <CategoryPicker
-                        type={recordType}
-                        categories={categories}
-                        selectedCategoryId={recordCategoryId}
-                        onSelectCategory={(id) => setRecordCategoryId(id)}
-                        onOpenManage={() => setIsCategoryModalOpen(true)}
-                      />
-                    )}
-
-                    {/* 账户选择 */}
-                    {(recordType === 'transfer' || recordType === 'loan') && (
-                      <AccountPicker
-                        fromAccount={recordFromAccount}
-                        toAccount={recordToAccount}
-                        onChangeFrom={setRecordFromAccount}
-                        onChangeTo={setRecordToAccount}
-                        fromLabel={recordType === 'transfer' ? '转出账户' : recordLoanType === 'lend' || recordLoanType === 'repay' ? '出资账户' : '债务人/对象'}
-                        toLabel={recordType === 'transfer' ? '转入账户' : recordLoanType === 'borrow' || recordLoanType === 'collect' ? '存入账户' : '债权人/对象'}
-                      />
-                    )}
-
-                    {/* 日期与备注 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          记账时间
-                        </label>
-                        <input
-                          type="datetime-local"
-                          value={recordDate}
-                          onChange={(e) => setRecordDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
                       </div>
 
-                      <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                          备注说明
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="写点什么... (可选)"
-                          value={recordRemark}
-                          onChange={(e) => setRecordRemark(e.target.value)}
-                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      {/* 分类选择 */}
+                      {(recordType === 'expense' || recordType === 'income') && (
+                        <CategoryPicker
+                          type={recordType}
+                          categories={categories}
+                          selectedCategoryId={recordCategoryId}
+                          onSelectCategory={(id) => setRecordCategoryId(id)}
+                          onOpenManage={() => setIsCategoryModalOpen(true)}
                         />
+                      )}
+
+                      {/* 账户选择 */}
+                      {(recordType === 'transfer' || recordType === 'loan') && (
+                        <AccountPicker
+                          fromAccount={recordFromAccount}
+                          toAccount={recordToAccount}
+                          onChangeFrom={setRecordFromAccount}
+                          onChangeTo={setRecordToAccount}
+                          fromLabel={recordType === 'transfer' ? '转出账户' : recordLoanType === 'lend' || recordLoanType === 'repay' ? '出资账户' : '债务人/对象'}
+                          toLabel={recordType === 'transfer' ? '转入账户' : recordLoanType === 'borrow' || recordLoanType === 'collect' ? '存入账户' : '债权人/对象'}
+                        />
+                      )}
+
+                      {/* 日期与备注 (单行紧凑并排) */}
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <div className="w-[136px] sm:w-[170px] shrink-0">
+                          <input
+                            type="datetime-local"
+                            value={recordDate}
+                            onChange={(e) => setRecordDate(e.target.value)}
+                            className="w-full px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] sm:text-xs font-medium text-slate-900 dark:text-white focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <input
+                            type="text"
+                            placeholder="备注说明 (可选)"
+                            value={recordRemark}
+                            onChange={(e) => setRecordRemark(e.target.value)}
+                            className="w-full px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-[11px] sm:text-xs text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none"
+                          />
+                        </div>
                       </div>
                     </div>
 
-                    {/* 自定义触控数字键盘 (含保存再记、保存大按钮与计算器入口) */}
-                    <div className="pt-2">
+                    {/* 右侧区域：触控数字键盘 (桌面端右侧分栏展示，移动端自动排列在下方) */}
+                    <div className="md:col-span-5 flex flex-col justify-center h-full pt-0.5 md:pt-0">
                       <NumericKeypad
                         value={recordAmountStr}
                         onChange={setRecordAmountStr}
@@ -786,7 +784,12 @@ export function App() {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
 
+            {/* 明细流水板块 */}
+            {navTab === 'detail' && (
+              <div className="space-y-4">
                 {/* 月度预算进度概览卡片 */}
                 {budgetOverview.hasAnyBudget && (
                   <BudgetProgressCard
@@ -795,12 +798,6 @@ export function App() {
                     onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
                   />
                 )}
-              </div>
-            )}
-
-            {/* 明细流水板块 */}
-            {navTab === 'detail' && (
-              <div className="space-y-4">
                 {/* 检索与筛选栏 */}
                 <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-3">
                   <div className="flex items-center gap-2">

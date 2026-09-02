@@ -195,6 +195,56 @@ export function CalculatorModal({
     onClose();
   };
 
+  // 实体键盘输入监听支持 (0-9, ., +, -, *, /, =, Enter, Backspace, Esc, C)
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const targetTag = (e.target as HTMLElement)?.tagName;
+      if (targetTag === 'INPUT' || targetTag === 'TEXTAREA') {
+        return;
+      }
+
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault();
+        handleDigit(e.key);
+      } else if (e.key === '.') {
+        e.preventDefault();
+        handleDot();
+      } else if (e.key === '+') {
+        e.preventDefault();
+        handleOperator('+');
+      } else if (e.key === '-') {
+        e.preventDefault();
+        handleOperator('-');
+      } else if (e.key === '*' || e.key === 'x' || e.key === 'X') {
+        e.preventDefault();
+        handleOperator('×');
+      } else if (e.key === '/') {
+        e.preventDefault();
+        handleOperator('÷');
+      } else if (e.key === '=' || (e.key === 'Enter' && tokens.length > 0 && !isCalculated)) {
+        e.preventDefault();
+        handleEquals();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        handleConfirm();
+      } else if (e.key === 'Backspace') {
+        e.preventDefault();
+        handleBackspace();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'c' || e.key === 'C') {
+        e.preventDefault();
+        handleClear();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, currentNum, tokens, isCalculated, initialValue]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-fade-in">
       <div
