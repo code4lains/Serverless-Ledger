@@ -271,6 +271,15 @@ export function ProfileView({
     }
   };
 
+  const requireUnlockWrapper = (action?: () => void) => {
+    if (!action) return;
+    if (isVaultActive && !isVaultCached) {
+      if (onOpenVaultModal) onOpenVaultModal('unlock');
+      return;
+    }
+    action();
+  };
+
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       {/* 顶部个人与架构概览卡片 */}
@@ -286,9 +295,9 @@ export function ProfileView({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold">纯本地记账系统</h2>
+                <h2 className="text-xl font-bold">帐盾 · 纯本地记账系统</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  数据安全保障
+                  安全
                 </span>
               </div>
               <p className="text-xs text-indigo-100/80 mt-1">
@@ -339,23 +348,33 @@ export function ProfileView({
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 pt-6 mt-6 border-t border-white/10 text-center">
           <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
             <div className="text-[11px] text-indigo-200">账单流水</div>
-            <div className="text-base font-bold mt-0.5">{storageStats?.transactions || transactions.length}</div>
+            <div className="text-base font-bold mt-0.5">
+              {isVaultActive && !isVaultCached ? '***' : storageStats?.transactions || transactions.length}
+            </div>
           </div>
           <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
             <div className="text-[11px] text-indigo-200">账本数量</div>
-            <div className="text-base font-bold mt-0.5">{storageStats?.ledgers || ledgers.length}</div>
+            <div className="text-base font-bold mt-0.5">
+              {isVaultActive && !isVaultCached ? '***' : storageStats?.ledgers || ledgers.length}
+            </div>
           </div>
           <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
             <div className="text-[11px] text-indigo-200">分类标签</div>
-            <div className="text-base font-bold mt-0.5">{storageStats?.categories || 0}</div>
+            <div className="text-base font-bold mt-0.5">
+              {isVaultActive && !isVaultCached ? '***' : storageStats?.categories || 0}
+            </div>
           </div>
           <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm">
             <div className="text-[11px] text-indigo-200">月度预算</div>
-            <div className="text-base font-bold mt-0.5">{storageStats?.budgets || 0}</div>
+            <div className="text-base font-bold mt-0.5">
+              {isVaultActive && !isVaultCached ? '***' : storageStats?.budgets || 0}
+            </div>
           </div>
           <div className="p-2 rounded-xl bg-white/5 backdrop-blur-sm col-span-3 sm:col-span-1">
             <div className="text-[11px] text-indigo-200">周期规则</div>
-            <div className="text-base font-bold mt-0.5">{storageStats?.recurringRules || 0}</div>
+            <div className="text-base font-bold mt-0.5">
+              {isVaultActive && !isVaultCached ? '***' : storageStats?.recurringRules || 0}
+            </div>
           </div>
         </div>
       </div>
@@ -661,7 +680,7 @@ export function ProfileView({
           {/* 账本管理 */}
           <button
             type="button"
-            onClick={onOpenLedgerModal}
+            onClick={() => requireUnlockWrapper(onOpenLedgerModal)}
             className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-left"
           >
             <div className="flex items-center gap-3">
@@ -673,7 +692,7 @@ export function ProfileView({
                   多账本独立核算管理
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  当前拥有 {ledgers.length} 个独立账本
+                  当前拥有 {isVaultActive && !isVaultCached ? '***' : ledgers.length} 个独立账本
                 </div>
               </div>
             </div>
@@ -684,7 +703,7 @@ export function ProfileView({
           {onOpenBudgetModal && (
             <button
               type="button"
-              onClick={onOpenBudgetModal}
+              onClick={() => requireUnlockWrapper(onOpenBudgetModal)}
               className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-left"
             >
               <div className="flex items-center gap-3">
@@ -708,7 +727,7 @@ export function ProfileView({
           {onOpenRecurringModal && (
             <button
               type="button"
-              onClick={onOpenRecurringModal}
+              onClick={() => requireUnlockWrapper(onOpenRecurringModal)}
               className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-left"
             >
               <div className="flex items-center gap-3">
@@ -732,7 +751,7 @@ export function ProfileView({
           {onOpenDataModal && (
             <button
               type="button"
-              onClick={() => onOpenDataModal('export')}
+              onClick={() => requireUnlockWrapper(() => onOpenDataModal('export'))}
               className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-left"
             >
               <div className="flex items-center gap-3">

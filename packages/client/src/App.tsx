@@ -474,18 +474,29 @@ export function App() {
           {/* 账本选择器 */}
           {ledgers.length > 0 && (
             <div className="flex items-center gap-1">
-              <select
-                value={activeLedgerId}
-                onChange={(e) => setActiveLedgerId(e.target.value)}
-                className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-              >
-                <option value="all">全部账本</option>
-                {ledgers.map((l) => (
-                  <option key={l.ledger_id} value={l.ledger_id}>
-                    {l.name} ({l.currency})
-                  </option>
-                ))}
-              </select>
+              {vaultStatus === 'locked' ? (
+                <button
+                  type="button"
+                  onClick={() => handleOpenVaultModal('unlock')}
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1.5 transition"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>账本已锁定</span>
+                </button>
+              ) : (
+                <select
+                  value={activeLedgerId}
+                  onChange={(e) => setActiveLedgerId(e.target.value)}
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                >
+                  <option value="all">全部账本</option>
+                  {ledgers.map((l) => (
+                    <option key={l.ledger_id} value={l.ledger_id}>
+                      {l.name} ({l.currency})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
 
@@ -543,311 +554,354 @@ export function App() {
 
       {/* 主体视口容器 */}
       <main className="flex-1 max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-6">
-        {/* 视口内容切换 */}
-        {navTab === 'record' && (
-          <div className="space-y-6">
-            {/* 记账卡片 */}
-            <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-5">
-              {/* 收支类型切换 */}
-              <div className="grid grid-cols-4 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/60">
-                {(['expense', 'income', 'transfer', 'loan'] as TransactionType[]).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => {
-                      setRecordType(t);
-                      if (t === 'loan') {
-                        handleLoanTypeChange(recordLoanType);
-                      }
-                    }}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                      recordType === t
-                        ? t === 'expense'
-                          ? 'bg-rose-500 text-white shadow-sm'
-                          : t === 'income'
-                          ? 'bg-emerald-500 text-white shadow-sm'
-                          : t === 'transfer'
-                          ? 'bg-blue-500 text-white shadow-sm'
-                          : 'bg-purple-500 text-white shadow-sm'
-                        : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    {t === 'expense' && '支出'}
-                    {t === 'income' && '收入'}
-                    {t === 'transfer' && '转账'}
-                    {t === 'loan' && '借贷'}
-                  </button>
-                ))}
-              </div>
-
-              {/* 借贷子类型切换 */}
-              {recordType === 'loan' && (
-                <div className="grid grid-cols-4 gap-2 p-1 rounded-xl bg-purple-50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-300">
-                  {(['lend', 'borrow', 'repay', 'collect'] as LoanType[]).map((lt) => (
-                    <button
-                      key={lt}
-                      type="button"
-                      onClick={() => handleLoanTypeChange(lt)}
-                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
-                        recordLoanType === lt
-                          ? 'bg-purple-600 text-white shadow-xs'
-                          : 'text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40'
-                      }`}
-                    >
-                      {lt === 'lend' && '借出款项'}
-                      {lt === 'borrow' && '借入款项'}
-                      {lt === 'repay' && '归还借款'}
-                      {lt === 'collect' && '收回借款'}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* 记账表单 */}
-              <form onSubmit={handleRecordSubmit} className="space-y-4">
-                {/* 金额输入框 */}
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-slate-400">
-                    {curSymbol}
-                  </span>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={recordAmountStr}
-                    onChange={(e) => setRecordAmountStr(e.target.value)}
-                    className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-3xl font-black tracking-tight text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    autoFocus
-                  />
-                </div>
-
-                {/* 分类选择 */}
-                {(recordType === 'expense' || recordType === 'income') && (
-                  <CategoryPicker
-                    type={recordType}
-                    categories={categories}
-                    selectedCategoryId={recordCategoryId}
-                    onSelectCategory={(id) => setRecordCategoryId(id)}
-                    onOpenManage={() => setIsCategoryModalOpen(true)}
-                  />
-                )}
-
-                {/* 账户选择 */}
-                {(recordType === 'transfer' || recordType === 'loan') && (
-                  <AccountPicker
-                    fromAccount={recordFromAccount}
-                    toAccount={recordToAccount}
-                    onChangeFrom={setRecordFromAccount}
-                    onChangeTo={setRecordToAccount}
-                    fromLabel={recordType === 'transfer' ? '转出账户' : recordLoanType === 'lend' || recordLoanType === 'repay' ? '出资账户' : '债务人/对象'}
-                    toLabel={recordType === 'transfer' ? '转入账户' : recordLoanType === 'borrow' || recordLoanType === 'collect' ? '存入账户' : '债权人/对象'}
-                  />
-                )}
-
-                {/* 日期与备注 */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      记账时间
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={recordDate}
-                      onChange={(e) => setRecordDate(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                      备注说明
-                    </label>
-                    <input
-                      type="text"
-                      placeholder="写点什么... (可选)"
-                      value={recordRemark}
-                      onChange={(e) => setRecordRemark(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                </div>
-
-                {/* 记账提交按钮 */}
-                <button
-                  type="submit"
-                  disabled={isSubmittingRecord}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-98 transition flex items-center justify-center gap-2"
-                >
-                  <PlusCircle className="w-5 h-5" />
-                  <span>{isSubmittingRecord ? '保存中...' : '立即记一笔'}</span>
-                </button>
-              </form>
+        {/* 当保险库处于锁定状态且不在设置页时，展示全局数据遮蔽与快速解锁面板 */}
+        {vaultStatus === 'locked' && navTab !== 'profile' ? (
+          <div className="py-14 px-4 max-w-md mx-auto space-y-6 text-center animate-fade-in">
+            <div className="w-24 h-24 mx-auto rounded-3xl bg-amber-500/10 dark:bg-amber-400/10 border border-amber-500/20 flex items-center justify-center text-amber-500 dark:text-amber-400 shadow-xl shadow-amber-500/5">
+              <Lock className="w-12 h-12" />
             </div>
 
-            {/* 月度预算进度概览卡片 */}
-            {budgetOverview.hasAnyBudget && (
-              <BudgetProgressCard
-                overview={budgetOverview}
-                currencySymbol={curSymbol}
-                onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
-              />
-            )}
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>数据保险库已锁定</span>
+              </div>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
+                财务数据已加密保护
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                系统已将系统锁定与数据锁定全面绑定。当前账单流水、统计分析与分类数据均已安全遮蔽。请输入主密码解锁后查看与记账。
+              </p>
+            </div>
+
+            <div className="pt-2 space-y-3">
+              <button
+                type="button"
+                onClick={() => handleOpenVaultModal('unlock')}
+                className="w-full py-3.5 px-6 rounded-2xl bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold text-sm shadow-lg shadow-amber-500/25 active:scale-98 transition flex items-center justify-center gap-2"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>输入主密码立即解锁</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setNavTab('profile')}
+                className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+              >
+                前往「设置」管理保险库与 WebDAV 同步
+              </button>
+            </div>
           </div>
-        )}
-
-        {/* 明细流水板块 */}
-        {navTab === 'detail' && (
-          <div className="space-y-4">
-            {/* 检索与筛选栏 */}
-            <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="按备注搜索账单..."
-                    value={filterSearch}
-                    onChange={(e) => setFilterSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* 汇总统计条 */}
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
-                <div className="p-2 rounded-xl bg-rose-50/50 dark:bg-rose-950/20">
-                  <div className="text-[11px] text-rose-600 dark:text-rose-400">总支出</div>
-                  <div className="text-sm font-bold text-rose-700 dark:text-rose-300 mt-0.5">
-                    {formatMoney(totals.totalExpense, curSymbol)}
+        ) : (
+          <>
+            {/* 视口内容切换 */}
+            {navTab === 'record' && (
+              <div className="space-y-6">
+                {/* 记账卡片 */}
+                <div className="p-6 rounded-3xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-5">
+                  {/* 收支类型切换 */}
+                  <div className="grid grid-cols-4 gap-2 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/60">
+                    {(['expense', 'income', 'transfer', 'loan'] as TransactionType[]).map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => {
+                          setRecordType(t);
+                          if (t === 'loan') {
+                            handleLoanTypeChange(recordLoanType);
+                          }
+                        }}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                          recordType === t
+                            ? t === 'expense'
+                              ? 'bg-rose-500 text-white shadow-sm'
+                              : t === 'income'
+                              ? 'bg-emerald-500 text-white shadow-sm'
+                              : t === 'transfer'
+                              ? 'bg-blue-500 text-white shadow-sm'
+                              : 'bg-purple-500 text-white shadow-sm'
+                            : 'text-slate-500 hover:text-slate-900 dark:hover:text-white'
+                        }`}
+                      >
+                        {t === 'expense' && '支出'}
+                        {t === 'income' && '收入'}
+                        {t === 'transfer' && '转账'}
+                        {t === 'loan' && '借贷'}
+                      </button>
+                    ))}
                   </div>
-                </div>
-                <div className="p-2 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20">
-                  <div className="text-[11px] text-emerald-600 dark:text-emerald-400">总收入</div>
-                  <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
-                    {formatMoney(totals.totalIncome, curSymbol)}
-                  </div>
-                </div>
-                <div className="p-2 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20">
-                  <div className="text-[11px] text-indigo-600 dark:text-indigo-400">收支结余</div>
-                  <div className="text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-0.5">
-                    {formatMoney(totals.balance, curSymbol)}
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* 流水列表 */}
-            {loadingTransactions ? (
-              <div className="text-center py-12 text-slate-400 text-xs">加载中...</div>
-            ) : groupedTransactions.length === 0 ? (
-              <div className="text-center py-16 text-slate-400 space-y-2">
-                <Inbox className="w-12 h-12 mx-auto stroke-1" />
-                <p className="text-xs">暂无账单记录</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {groupedTransactions.map((group) => (
-                  <div key={group.date} className="space-y-2">
-                    <div className="flex items-center justify-between px-2 text-xs text-slate-500 font-semibold">
-                      <span>{group.displayDate}</span>
-                      <div className="flex items-center gap-2 text-[11px]">
-                        {group.totalExpense > 0 && <span className="text-rose-500">支 {formatMoney(group.totalExpense, curSymbol)}</span>}
-                        {group.totalIncome > 0 && <span className="text-emerald-500">收 {formatMoney(group.totalIncome, curSymbol)}</span>}
+                  {/* 借贷子类型切换 */}
+                  {recordType === 'loan' && (
+                    <div className="grid grid-cols-4 gap-2 p-1 rounded-xl bg-purple-50 dark:bg-purple-950/30 text-purple-900 dark:text-purple-300">
+                      {(['lend', 'borrow', 'repay', 'collect'] as LoanType[]).map((lt) => (
+                        <button
+                          key={lt}
+                          type="button"
+                          onClick={() => handleLoanTypeChange(lt)}
+                          className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${
+                            recordLoanType === lt
+                              ? 'bg-purple-600 text-white shadow-xs'
+                              : 'text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/40'
+                          }`}
+                        >
+                          {lt === 'lend' && '借出款项'}
+                          {lt === 'borrow' && '借入款项'}
+                          {lt === 'repay' && '归还借款'}
+                          {lt === 'collect' && '收回借款'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 记账表单 */}
+                  <form onSubmit={handleRecordSubmit} className="space-y-4">
+                    {/* 金额输入框 */}
+                    <div className="relative">
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-2xl font-bold text-slate-400">
+                        {curSymbol}
+                      </span>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={recordAmountStr}
+                        onChange={(e) => setRecordAmountStr(e.target.value)}
+                        className="w-full pl-12 pr-4 py-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-3xl font-black tracking-tight text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* 分类选择 */}
+                    {(recordType === 'expense' || recordType === 'income') && (
+                      <CategoryPicker
+                        type={recordType}
+                        categories={categories}
+                        selectedCategoryId={recordCategoryId}
+                        onSelectCategory={(id) => setRecordCategoryId(id)}
+                        onOpenManage={() => setIsCategoryModalOpen(true)}
+                      />
+                    )}
+
+                    {/* 账户选择 */}
+                    {(recordType === 'transfer' || recordType === 'loan') && (
+                      <AccountPicker
+                        fromAccount={recordFromAccount}
+                        toAccount={recordToAccount}
+                        onChangeFrom={setRecordFromAccount}
+                        onChangeTo={setRecordToAccount}
+                        fromLabel={recordType === 'transfer' ? '转出账户' : recordLoanType === 'lend' || recordLoanType === 'repay' ? '出资账户' : '债务人/对象'}
+                        toLabel={recordType === 'transfer' ? '转入账户' : recordLoanType === 'borrow' || recordLoanType === 'collect' ? '存入账户' : '债权人/对象'}
+                      />
+                    )}
+
+                    {/* 日期与备注 */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          记账时间
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={recordDate}
+                          onChange={(e) => setRecordDate(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          备注说明
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="写点什么... (可选)"
+                          value={recordRemark}
+                          onChange={(e) => setRecordRemark(e.target.value)}
+                          className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
                       </div>
                     </div>
 
-                    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden shadow-sm">
-                      {group.transactions.map((tx) => {
-                        const catMeta = getCategoryMeta(tx.category_id, categories, tx.type);
-                        return (
-                          <div
-                            key={tx.transaction_id}
-                            onClick={() => setSelectedTxForDetail(tx)}
-                            className="p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer"
-                          >
-                            <div className="flex items-center gap-3">
-                              <CategoryIcon
-                                icon={catMeta.icon || 'Tag'}
-                                className="w-9 h-9 rounded-xl p-2 bg-slate-100 dark:bg-slate-800"
-                              />
-                              <div>
-                                <div className="text-xs font-bold text-slate-900 dark:text-white">
-                                  {catMeta.fullPath || catMeta.name}
-                                </div>
-                                <div className="text-[11px] text-slate-400 mt-0.5">
-                                  {formatTime(tx.transaction_date)}
-                                  {tx.remark ? ` · ${tx.remark}` : ''}
-                                </div>
-                              </div>
-                            </div>
+                    {/* 记账提交按钮 */}
+                    <button
+                      type="submit"
+                      disabled={isSubmittingRecord}
+                      className="w-full py-3.5 px-4 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 active:scale-98 transition flex items-center justify-center gap-2"
+                    >
+                      <PlusCircle className="w-5 h-5" />
+                      <span>{isSubmittingRecord ? '保存中...' : '立即记一笔'}</span>
+                    </button>
+                  </form>
+                </div>
 
-                            <div
-                              className={`text-sm font-black tracking-tight ${
-                                tx.type === 'expense'
-                                  ? 'text-rose-600 dark:text-rose-400'
-                                  : tx.type === 'income'
-                                  ? 'text-emerald-600 dark:text-emerald-400'
-                                  : 'text-slate-800 dark:text-slate-200'
-                              }`}
-                            >
-                              {tx.type === 'expense' ? '-' : tx.type === 'income' ? '+' : ''}
-                              {formatMoney(tx.amount, curSymbol)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+                {/* 月度预算进度概览卡片 */}
+                {budgetOverview.hasAnyBudget && (
+                  <BudgetProgressCard
+                    overview={budgetOverview}
+                    currencySymbol={curSymbol}
+                    onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+                  />
+                )}
               </div>
             )}
-          </div>
-        )}
 
-        {/* 统计报表板块 */}
-        {navTab === 'stats' && (
-          <StatisticsView
-            transactions={transactions}
-            categories={categories}
-            ledgers={ledgers}
-            activeLedgerId={activeLedgerId}
-            onSelectLedger={(id) => setActiveLedgerId(id)}
-          />
-        )}
+            {/* 明细流水板块 */}
+            {navTab === 'detail' && (
+              <div className="space-y-4">
+                {/* 检索与筛选栏 */}
+                <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="按备注搜索账单..."
+                        value={filterSearch}
+                        onChange={(e) => setFilterSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                    </div>
+                  </div>
 
-        {/* 分类管理板块 */}
-        {navTab === 'category' && (
-          <CategoriesView
-            categories={categories}
-            initialType="expense"
-            onCategoriesChanged={refreshCategories}
-          />
-        )}
+                  {/* 汇总统计条 */}
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 text-center">
+                    <div className="p-2 rounded-xl bg-rose-50/50 dark:bg-rose-950/20">
+                      <div className="text-[11px] text-rose-600 dark:text-rose-400">总支出</div>
+                      <div className="text-sm font-bold text-rose-700 dark:text-rose-300 mt-0.5">
+                        {formatMoney(totals.totalExpense, curSymbol)}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/20">
+                      <div className="text-[11px] text-emerald-600 dark:text-emerald-400">总收入</div>
+                      <div className="text-sm font-bold text-emerald-700 dark:text-emerald-300 mt-0.5">
+                        {formatMoney(totals.totalIncome, curSymbol)}
+                      </div>
+                    </div>
+                    <div className="p-2 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/20">
+                      <div className="text-[11px] text-indigo-600 dark:text-indigo-400">收支结余</div>
+                      <div className="text-sm font-bold text-indigo-700 dark:text-indigo-300 mt-0.5">
+                        {formatMoney(totals.balance, curSymbol)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
 
-        {/* 我的设置板块 */}
-        {navTab === 'profile' && (
-          <ProfileView
-            ledgers={ledgers}
-            transactions={transactions}
-            darkMode={darkMode}
-            vaultStatus={vaultStatus}
-            onToggleDarkMode={() => setDarkMode(!darkMode)}
-            onSync={handleSync}
-            onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
-            onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
-            onOpenDataModal={(mode) => {
-              setDataModalMode(mode || 'export');
-              setIsDataModalOpen(true);
-            }}
-            onOpenVaultModal={handleOpenVaultModal}
-            onLockVault={handleLockVault}
-            onOpenRecoveryCodeModal={(code) => {
-              setActiveRecoveryCode(code);
-              setIsRecoveryCodeModalOpen(true);
-            }}
-            onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
-            onRefreshData={loadAllData}
-          />
+                {/* 流水列表 */}
+                {loadingTransactions ? (
+                  <div className="text-center py-12 text-slate-400 text-xs">加载中...</div>
+                ) : groupedTransactions.length === 0 ? (
+                  <div className="text-center py-16 text-slate-400 space-y-2">
+                    <Inbox className="w-12 h-12 mx-auto stroke-1" />
+                    <p className="text-xs">暂无账单记录</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {groupedTransactions.map((group) => (
+                      <div key={group.date} className="space-y-2">
+                        <div className="flex items-center justify-between px-2 text-xs text-slate-500 font-semibold">
+                          <span>{group.displayDate}</span>
+                          <div className="flex items-center gap-2 text-[11px]">
+                            {group.totalExpense > 0 && <span className="text-rose-500">支 {formatMoney(group.totalExpense, curSymbol)}</span>}
+                            {group.totalIncome > 0 && <span className="text-emerald-500">收 {formatMoney(group.totalIncome, curSymbol)}</span>}
+                          </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden shadow-sm">
+                          {group.transactions.map((tx) => {
+                            const catMeta = getCategoryMeta(tx.category_id, categories, tx.type);
+                            return (
+                              <div
+                                key={tx.transaction_id}
+                                onClick={() => setSelectedTxForDetail(tx)}
+                                className="p-3.5 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition cursor-pointer"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <CategoryIcon
+                                    icon={catMeta.icon || 'Tag'}
+                                    className="w-9 h-9 rounded-xl p-2 bg-slate-100 dark:bg-slate-800"
+                                  />
+                                  <div>
+                                    <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                      {catMeta.fullPath || catMeta.name}
+                                    </div>
+                                    <div className="text-[11px] text-slate-400 mt-0.5">
+                                      {formatTime(tx.transaction_date)}
+                                      {tx.remark ? ` · ${tx.remark}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div
+                                  className={`text-sm font-black tracking-tight ${
+                                    tx.type === 'expense'
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : tx.type === 'income'
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-slate-800 dark:text-slate-200'
+                                  }`}
+                                >
+                                  {tx.type === 'expense' ? '-' : tx.type === 'income' ? '+' : ''}
+                                  {formatMoney(tx.amount, curSymbol)}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 统计报表板块 */}
+            {navTab === 'stats' && (
+              <StatisticsView
+                transactions={transactions}
+                categories={categories}
+                ledgers={ledgers}
+                activeLedgerId={activeLedgerId}
+                onSelectLedger={(id) => setActiveLedgerId(id)}
+              />
+            )}
+
+            {/* 分类管理板块 */}
+            {navTab === 'category' && (
+              <CategoriesView
+                categories={categories}
+                initialType="expense"
+                onCategoriesChanged={refreshCategories}
+              />
+            )}
+
+            {/* 我的设置板块 */}
+            {navTab === 'profile' && (
+              <ProfileView
+                ledgers={ledgers}
+                transactions={transactions}
+                darkMode={darkMode}
+                vaultStatus={vaultStatus}
+                onToggleDarkMode={() => setDarkMode(!darkMode)}
+                onSync={handleSync}
+                onOpenLedgerModal={() => setIsLedgerModalOpen(true)}
+                onOpenBudgetModal={() => setIsBudgetModalOpen(true)}
+                onOpenDataModal={(mode) => {
+                  setDataModalMode(mode || 'export');
+                  setIsDataModalOpen(true);
+                }}
+                onOpenVaultModal={handleOpenVaultModal}
+                onLockVault={handleLockVault}
+                onOpenRecoveryCodeModal={(code) => {
+                  setActiveRecoveryCode(code);
+                  setIsRecoveryCodeModalOpen(true);
+                }}
+                onOpenRecurringModal={() => setIsRecurringModalOpen(true)}
+                onRefreshData={loadAllData}
+              />
+            )}
+          </>
         )}
       </main>
 
