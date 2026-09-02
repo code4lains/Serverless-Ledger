@@ -132,14 +132,20 @@ export function ProfileView({
       setAutoSyncEnabled(cfg.autoSyncEnabled !== false);
     };
 
+    const handleVaultChange = () => {
+      refreshStorageAndVault();
+    };
+
     if (typeof window !== 'undefined') {
       window.addEventListener('sync:config_changed', handleConfigChange);
+      window.addEventListener('vault:status_changed', handleVaultChange);
     }
 
     return () => {
       unsubSync();
       if (typeof window !== 'undefined') {
         window.removeEventListener('sync:config_changed', handleConfigChange);
+        window.removeEventListener('vault:status_changed', handleVaultChange);
       }
     };
   }, []);
@@ -232,6 +238,18 @@ export function ProfileView({
 
   // 手动快照上传/恢复
   const handleManualSync = async (direction: 'push' | 'pull') => {
+    if (!isVaultActive) {
+      if (onOpenVaultModal) onOpenVaultModal('setup');
+      setSyncFeedback({ type: 'error', message: '尚未初始化本地安全保险库，请先设置主密码以加密保护快照数据' });
+      return;
+    }
+
+    if (!isVaultUnlocked()) {
+      if (onOpenVaultModal) onOpenVaultModal('unlock');
+      setSyncFeedback({ type: 'error', message: '本地保险库当前处于锁定状态，请先输入主密码解锁后再执行 WebDAV 同步' });
+      return;
+    }
+
     setManualSyncing(direction);
     setSyncFeedback(null);
 
@@ -268,9 +286,9 @@ export function ProfileView({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold">本地优先安全保险库 (v3)</h2>
+                <h2 className="text-xl font-bold">纯本地记账系统</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                  0ms 极速
+                  数据安全保障
                 </span>
               </div>
               <p className="text-xs text-indigo-100/80 mt-1">

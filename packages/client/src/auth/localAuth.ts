@@ -142,6 +142,7 @@ export async function setupMasterPassword(
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
   }
+  notifyVaultStatusChanged();
 
   return {
     vaultMeta,
@@ -181,6 +182,7 @@ export async function unlockVault(
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
     }
+    notifyVaultStatusChanged();
     return true;
   } catch {
     // 密码学解密失败 (AES-GCM Auth Tag 鉴权失败，表明密码错误或数据被篡改)
@@ -238,6 +240,7 @@ export async function changeMasterPassword(
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
   }
+  notifyVaultStatusChanged();
   return true;
 }
 
@@ -320,12 +323,26 @@ export async function resetPasswordWithRecoveryCode(
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
   }
+  notifyVaultStatusChanged();
 
   return {
     success: true,
     newRecoveryCode,
     key: newMasterKey,
   };
+}
+
+/**
+ * 广播保险库状态变更事件 (通知 App, ProfileView, DataManagementModal 等同步 UI 状态)
+ */
+export function notifyVaultStatusChanged(): void {
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    try {
+      window.dispatchEvent(new CustomEvent('vault:status_changed'));
+    } catch {
+      // 容错处理
+    }
+  }
 }
 
 /**
@@ -345,10 +362,10 @@ export function isVaultManuallyLocked(vaultId: string = 'default_vault'): boolea
 }
 
 /**
- * 7. 检查本地保险库当前是否已解锁 (未被手动锁定即默认解锁)
+ * 7. 检查本地保险库当前是否已在内存中解锁 (即内存中持有有效解密密钥)
  */
 export function isVaultUnlocked(vaultId: string = 'default_vault'): boolean {
-  return !isVaultManuallyLocked(vaultId);
+  return isKeyCached(vaultId);
 }
 
 /**
@@ -372,6 +389,7 @@ export function lockVault(vaultId: string = 'default_vault'): void {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem(`ledger_vault_locked_${vaultId}`, 'true');
   }
+  notifyVaultStatusChanged();
 }
 
 /**
@@ -382,6 +400,7 @@ export function lockAllVaults(): void {
   if (typeof localStorage !== 'undefined') {
     localStorage.setItem('ledger_vault_locked_default_vault', 'true');
   }
+  notifyVaultStatusChanged();
 }
 
 /**

@@ -254,6 +254,14 @@ export function App() {
       }
     });
 
+    const handleVaultChange = () => {
+      checkVaultStatus();
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('vault:status_changed', handleVaultChange);
+    }
+
     const init = async () => {
       await checkVaultStatus();
       await loadAllData();
@@ -264,6 +272,9 @@ export function App() {
     return () => {
       unsubSync();
       syncManager.stop();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('vault:status_changed', handleVaultChange);
+      }
     };
   }, []);
 
@@ -295,6 +306,17 @@ export function App() {
 
   // 手动触发快照同步
   const handleSync = async () => {
+    if (vaultStatus === 'uninitialized') {
+      handleOpenVaultModal('setup');
+      showToast('请先初始化本地保险库主密码以保护同步数据', 'warning');
+      return;
+    }
+    if (vaultStatus === 'locked' || !isVaultUnlocked()) {
+      handleOpenVaultModal('unlock');
+      showToast('请先输入主密码解锁保险库，然后再执行同步', 'warning');
+      return;
+    }
+
     const res = await syncManager.sync();
     if (res.success) {
       showToast(res.message, 'success');
