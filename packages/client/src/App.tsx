@@ -310,12 +310,12 @@ export function App() {
   const handleSync = async () => {
     if (vaultStatus === 'uninitialized') {
       handleOpenVaultModal('setup');
-      showToast('请先初始化本地保险库主密码以保护同步数据', 'warning');
+      showToast('请先设置主密码', 'warning');
       return;
     }
     if (vaultStatus === 'locked' || !isVaultUnlocked()) {
       handleOpenVaultModal('unlock');
-      showToast('请先输入主密码解锁保险库，然后再执行同步', 'warning');
+      showToast('请先解锁保险库', 'warning');
       return;
     }
 
@@ -399,7 +399,7 @@ export function App() {
   const handleLockVault = () => {
     lockVault();
     setVaultStatus('locked');
-    showToast('🔒 本地安全保险库已锁定', 'info');
+    showToast('🔒 账本已锁定', 'info');
   };
 
   const handleOpenVaultModal = (action?: VaultModalAction) => {
@@ -411,9 +411,9 @@ export function App() {
     await checkVaultStatus();
     await loadAllData();
     if (action === 'setup') {
-      showToast('🛡️ 本地安全保险库初始化完成', 'success');
+      showToast('🛡️ 主密码设置完成', 'success');
     } else if (action === 'unlock') {
-      showToast('🔓 保险库已解锁', 'success');
+      showToast('🔓 账本已解锁', 'success');
     } else if (action === 'change') {
       showToast('主密码已修改', 'success');
     } else if (action === 'reset') {
@@ -510,7 +510,7 @@ export function App() {
                 type="button"
                 onClick={handleSync}
                 disabled={syncStats.isSyncing}
-                title="点击触发 WebDAV 快照同步"
+                title="WebDAV 同步"
                 className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition"
               >
                 <RefreshCw className={`w-4 h-4 ${syncStats.isSyncing ? 'animate-spin text-indigo-500' : ''}`} />
@@ -522,7 +522,7 @@ export function App() {
               <button
                 type="button"
                 onClick={handleLockVault}
-                title="保险库已解锁，点击立即锁定"
+                title="已解锁，点击锁定"
                 className="p-2 rounded-xl bg-slate-100 hover:bg-amber-50 dark:bg-slate-800 dark:hover:bg-amber-950/40 text-emerald-600 dark:text-emerald-400 hover:text-amber-600 transition"
               >
                 <ShieldCheck className="w-4 h-4" />
@@ -533,7 +533,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => handleOpenVaultModal('unlock')}
-                title="保险库已锁定，点击输入密码解锁"
+                title="已锁定，点击输入密码解锁"
                 className="p-2 rounded-xl bg-amber-500 text-slate-900 font-bold hover:bg-amber-600 transition shadow"
               >
                 <Lock className="w-4 h-4" />
@@ -544,7 +544,7 @@ export function App() {
               <button
                 type="button"
                 onClick={() => handleOpenVaultModal('setup')}
-                title="点击初始化本地安全保险库"
+                title="设置主密码"
                 className="p-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition shadow"
               >
                 <Sparkles className="w-4 h-4" />
@@ -566,13 +566,13 @@ export function App() {
             <div className="space-y-2">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>数据保险库已锁定</span>
+                <span>账本已锁定</span>
               </div>
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                财务数据已加密保护
+                财务数据已锁定保护
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
-                系统已将系统锁定与数据锁定全面绑定。当前账单流水、统计分析与分类数据均已安全遮蔽。请输入主密码解锁后查看与记账。
+                财务数据已锁定保护。请输入主密码解锁后查看与记账。
               </p>
             </div>
 
@@ -591,7 +591,7 @@ export function App() {
                 onClick={() => setNavTab('profile')}
                 className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
               >
-                前往「设置」管理保险库与 WebDAV 同步
+                前往「设置」
               </button>
             </div>
           </div>
@@ -963,7 +963,7 @@ export function App() {
           setIsOnboardingOpen(false);
           await checkVaultStatus();
           await loadAllData();
-          showToast('🛡️ 本地安全保险库初始化完成', 'success');
+          showToast('🛡️ 主密码设置完成', 'success');
         }}
         onOpenCloudSync={() => setNavTab('profile')}
       />

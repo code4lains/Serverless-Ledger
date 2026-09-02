@@ -195,7 +195,7 @@ export function StatisticsView({
             onChange={(e) => onSelectLedger(e.target.value)}
             className="bg-transparent text-gray-800 dark:text-gray-200 outline-none cursor-pointer font-semibold"
           >
-            <option value="all">全部账本透视</option>
+            <option value="all">全部账本</option>
             {ledgers.map((l) => (
               <option key={l.ledger_id} value={l.ledger_id}>
                 {l.name} ({l.currency})

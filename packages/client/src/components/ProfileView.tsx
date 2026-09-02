@@ -380,13 +380,13 @@ export function ProfileView({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-bold">帐盾 · 纯本地记账系统</h2>
+                <h2 className="text-xl font-bold">账盾</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
                   安全
                 </span>
               </div>
               <p className="text-xs text-indigo-100/80 mt-1">
-                数据 100% 留存在本机 IndexedDB · 支持端到端 WebDAV 快照同步
+                本地安全存储 · 支持多端同步
               </p>
             </div>
           </div>
@@ -473,10 +473,10 @@ export function ProfileView({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                WebDAV 私有云快照同步
+                WebDAV 数据同步
               </h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                支持群晖 NAS、坚果云、Nextcloud 等标准 WebDAV 服务端
+                支持坚果云、NAS 等 WebDAV 服务
               </p>
             </div>
           </div>
@@ -508,7 +508,7 @@ export function ProfileView({
             }`}
           >
             <HardDrive className="w-4 h-4" />
-            <span>纯离线单机模式</span>
+            <span>不启用同步</span>
           </button>
           <button
             type="button"
@@ -520,7 +520,7 @@ export function ProfileView({
             }`}
           >
             <Server className="w-4 h-4" />
-            <span>WebDAV 快照同步</span>
+            <span>WebDAV 同步</span>
           </button>
         </div>
 
@@ -528,7 +528,7 @@ export function ProfileView({
           <form onSubmit={handleSaveWebDavConfig} className="space-y-4 pt-2">
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                WebDAV 服务器 URL
+                服务器地址
               </label>
               <input
                 type="text"
@@ -569,7 +569,7 @@ export function ProfileView({
 
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                远端快照存储路径
+                云端保存路径
               </label>
               <input
                 type="text"
@@ -584,10 +584,10 @@ export function ProfileView({
             <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
               <div className="text-xs">
                 <div className="font-semibold text-slate-800 dark:text-slate-200">
-                  定时自动全量加密快照同步
+                  自动同步
                 </div>
                 <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                  开启后在后台定时检查并自动同步多端快照变更
+                  记账或数据变动时自动同步至云端
                 </div>
               </div>
               <input
@@ -598,30 +598,18 @@ export function ProfileView({
               />
             </div>
 
-            {/* 原生 App 运行状态提示 vs 网页版 CORS 跨域代理选项 */}
-            {isNative ? (
-              <div className="p-3.5 rounded-2xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 flex items-start gap-2.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
-                <div className="text-xs">
-                  <div className="font-semibold text-slate-800 dark:text-slate-200">
-                    📱 移动端原生直连模式
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-                    当前运行于 Android / iOS 原生客户端，底层网络引擎直连 WebDAV 服务端，免除浏览器跨域限制，无需开启代理。
-                  </div>
-                </div>
-              </div>
-            ) : (
+            {/* 网页版跨域中继选项 (原生 App 环境不显示) */}
+            {!isNative && (
               <div className="p-3.5 rounded-2xl bg-sky-50/60 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/40 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <Globe className="w-4 h-4 text-sky-600 dark:text-sky-400" />
                     <div>
                       <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                        CORS 跨域中继转发
+                        跨域代理
                       </div>
                       <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                        网页版连接未开启跨域的坚果云/NAS 时启用
+                        网页端直连 WebDAV 失败时可开启
                       </div>
                     </div>
                   </div>
@@ -637,10 +625,10 @@ export function ProfileView({
                   <div className="space-y-1.5 pt-1 border-t border-sky-100 dark:border-sky-900/30">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                        跨域中继代理 URL
+                        代理服务地址
                       </label>
                       <span className="text-[10px] text-slate-400">
-                        留空默认使用内置中继 (`/api/webdav-proxy`)
+                        留空使用默认代理
                       </span>
                     </div>
                     <input
@@ -752,7 +740,7 @@ export function ProfileView({
                 className="py-2.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 transition flex items-center justify-center gap-2"
               >
                 <Upload className={`w-3.5 h-3.5 text-indigo-500 ${manualSyncing === 'push' ? 'animate-bounce' : ''}`} />
-                <span>{manualSyncing === 'push' ? '上传中...' : '推送到 WebDAV'}</span>
+                <span>{manualSyncing === 'push' ? '上传中...' : '上传备份'}</span>
               </button>
 
               <button
@@ -762,7 +750,7 @@ export function ProfileView({
                 className="py-2.5 px-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-800 dark:text-slate-200 transition flex items-center justify-center gap-2"
               >
                 <Download className={`w-3.5 h-3.5 text-emerald-500 ${manualSyncing === 'pull' ? 'animate-bounce' : ''}`} />
-                <span>{manualSyncing === 'pull' ? '拉取中...' : '从 WebDAV 恢复'}</span>
+                <span>{manualSyncing === 'pull' ? '拉取中...' : '恢复数据'}</span>
               </button>
             </div>
           </div>
@@ -788,10 +776,10 @@ export function ProfileView({
               </div>
               <div>
                 <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                  多账本独立核算管理
+                  账本管理
                 </div>
                 <div className="text-xs text-slate-500 dark:text-slate-400">
-                  当前拥有 {isVaultActive && !isVaultCached ? '***' : ledgers.length} 个独立账本
+                  共 {isVaultActive && !isVaultCached ? '***' : ledgers.length} 个账本
                 </div>
               </div>
             </div>
@@ -811,10 +799,10 @@ export function ProfileView({
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                    月度预算与分类限额
+                    预算管理
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    设定总预算与各大类消费限额
+                    设定每月总预算与分类限额
                   </div>
                 </div>
               </div>
@@ -835,10 +823,10 @@ export function ProfileView({
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                    周期自动记账规则
+                    周期记账
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    固定房租、工资、会员订阅定时自动入账
+                    房租、工资、订阅等定期记账
                   </div>
                 </div>
               </div>
@@ -859,10 +847,10 @@ export function ProfileView({
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                    离线账单导入与备份导出
+                    数据导入与导出
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    支持微信/支付宝 CSV 账单导入与 `.enc.json` 加密备份包
+                    支持微信/支付宝账单导入与数据备份
                   </div>
                 </div>
               </div>
@@ -892,10 +880,10 @@ export function ProfileView({
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                    修改保险库主密码
+                    修改主密码
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                    重设 Web Crypto 派生密钥
+                    更改本地安全主密码
                   </div>
                 </div>
               </div>
@@ -941,7 +929,7 @@ export function ProfileView({
                 await clearLocalDatabase();
                 if (onRefreshData) await onRefreshData();
                 refreshStorageAndVault();
-                alert('本地数据库已重置为初始状态');
+                alert('本地数据已全部清空');
               }
             }}
             className="w-full p-4 flex items-center justify-between hover:bg-red-50 dark:hover:bg-red-950/20 transition text-left text-red-600 dark:text-red-400"
@@ -952,10 +940,10 @@ export function ProfileView({
               </div>
               <div>
                 <div className="text-sm font-semibold">
-                  清空本地全部数据
+                  清空全部数据
                 </div>
                 <div className="text-xs text-red-500/80 dark:text-red-400/70">
-                  重置 IndexedDB 数据库并恢复默认预置分类
+                  清除所有账单并恢复默认设置
                 </div>
               </div>
             </div>
@@ -967,9 +955,9 @@ export function ProfileView({
       {/* 底部应用信息 */}
       <div className="text-center pt-4 text-xs text-slate-400 dark:text-slate-500 space-y-1">
         <p className="font-semibold text-slate-500 dark:text-slate-400">
-          账盾 (Serverless Ledger) v3.0.0
+          账盾 v3.0.0
         </p>
-        <p>100% 本地优先 · 零知识安全保险库 · WebDAV 快照同步</p>
+        <p>本地安全存储 · 支持多端同步</p>
       </div>
 
       {/* WebDAV 跨设备恢复主密码解密弹窗 */}
@@ -986,7 +974,7 @@ export function ProfileView({
                     从 WebDAV 恢复数据
                   </h3>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    跨设备快照解密与密钥同步
+                    输入密码解密数据
                   </p>
                 </div>
               </div>
@@ -1004,7 +992,7 @@ export function ProfileView({
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/60 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
-              🔒 <strong>零知识端到端保护</strong>：云端仅存储经 AES-256 强加密的密文快照。请输入您在主设备（电脑端）上设置的<strong>保险库主密码</strong>，系统将自动派生密钥完成解密，并自动对齐多端加密凭证。
+              云端数据已加密保护。请输入您在主设备上设置的<strong>保险库主密码</strong>以解密并恢复数据。
             </p>
 
             {pullPasswordError && (

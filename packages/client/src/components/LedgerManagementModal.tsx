@@ -330,10 +330,10 @@ export function LedgerManagementModal({
             </div>
             <div>
               <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                账本管理中心
+                账本管理
               </h3>
               <p className="text-[11px] text-gray-400">
-                共 {ledgers.length} 个独立核算账本
+                共 {ledgers.length} 个账本
               </p>
             </div>
           </div>
@@ -432,13 +432,13 @@ export function LedgerManagementModal({
                   </div>
                   <div>
                     <div className="text-xs font-bold text-gray-800 dark:text-gray-100 flex items-center gap-1.5">
-                      <span>全部账本透视</span>
+                      <span>全部账本</span>
                       {activeLedgerId === 'all' && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-medium">当前视图</span>
                       )}
                     </div>
                     <div className="text-[10px] text-gray-400">
-                      汇总统揽所有账本的收支、结余与明细
+                      查看所有账本的收支与明细
                     </div>
                   </div>
                 </div>
@@ -451,7 +451,7 @@ export function LedgerManagementModal({
 
               {/* 账本列表 */}
               <div className="text-[11px] font-semibold text-gray-400 px-0.5 pt-1">
-                独立核算账本列表
+                账本列表
               </div>
 
               {ledgers.map((ledger) => {

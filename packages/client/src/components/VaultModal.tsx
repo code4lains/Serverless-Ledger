@@ -195,16 +195,16 @@ export function VaultModal({
           </div>
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-              {action === 'unlock' && '解锁本地安全保险库'}
-              {action === 'setup' && '初始化本地保险库主密码'}
-              {action === 'change' && '修改保险库主密码'}
-              {action === 'reset' && '通过恢复凭证重置主密码'}
+              {action === 'unlock' && '解锁账本'}
+              {action === 'setup' && '设置主密码'}
+              {action === 'change' && '修改主密码'}
+              {action === 'reset' && '重置主密码'}
             </h3>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {action === 'unlock' && '输入主密码以解密内存会话密钥'}
-              {action === 'setup' && 'PBKDF2 100,000 轮 + AES-256 硬件加密'}
-              {action === 'change' && '重新派生加密密钥'}
-              {action === 'reset' && '使用 16 位应急凭证直接解密并设置新密码'}
+              {action === 'unlock' && '请输入主密码以解锁数据'}
+              {action === 'setup' && '设置本地数据保护密码'}
+              {action === 'change' && '设置新的主密码'}
+              {action === 'reset' && '使用 16 位应急凭证重置密码'}
             </p>
           </div>
         </div>
@@ -253,7 +253,7 @@ export function VaultModal({
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-              {action === 'unlock' ? '保险库主密码' : '设置新主密码 (至少 6 位)'}
+              {action === 'unlock' ? '主密码' : '设置新主密码 (至少 6 位)'}
             </label>
             <input
               type="password"
@@ -293,7 +293,7 @@ export function VaultModal({
                   : action === 'unlock'
                   ? '立即解锁'
                   : action === 'setup'
-                  ? '创建并派生密钥'
+                  ? '完成设置'
                   : action === 'change'
                   ? '确认修改密码'
                   : '重置并解锁'}

@@ -239,7 +239,7 @@ export function TransactionDetailModal({
                 <span>确认删除此流水吗？</span>
               </div>
               <p className="text-[11px] text-red-700/80 dark:text-red-300/80 leading-relaxed">
-                删除后本地与 Cloudflare D1 数据库中该笔账单将不可恢复。
+                删除后该笔账单记录将无法恢复。
               </p>
               <div className="flex gap-2 justify-end pt-1">
                 <button
@@ -542,16 +542,6 @@ export function TransactionDetailModal({
                   </span>
                   <span className="font-medium text-gray-800 dark:text-gray-200 max-w-[180px] truncate">
                     {transaction.remark || '无备注'}
-                  </span>
-                </div>
-
-                <div className="flex justify-between items-center text-gray-500 dark:text-gray-400">
-                  <span className="flex items-center gap-1.5">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                    数据存储
-                  </span>
-                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                    本地安全保险库 (离线优先)
                   </span>
                 </div>
               </div>

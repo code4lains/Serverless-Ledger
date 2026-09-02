@@ -80,7 +80,7 @@ export function OnboardingModal({
   // 下载恢复码文本文件
   const handleDownloadRecoveryCode = () => {
     if (!generatedRecoveryCode) return;
-    const content = `【账盾 - 本地安全保险库 16 位应急恢复凭证】\n\n恢复凭证: ${generatedRecoveryCode}\n生成时间: ${new Date().toLocaleString()}\n\n重要提醒：\n1. 本凭证基于 Web Crypto 端到端密码学技术生成，仅保存在您的本机，系统云端无任何备份。\n2. 若您遗忘了本地主密码，可凭此 16 位恢复凭证直接解密重置主密码。\n3. 请将此文件保存在受信任的安全位置或密码管理器中，切勿泄露给他人。`;
+    const content = `【账盾 - 本地安全保险库 16 位应急恢复凭证】\n\n恢复凭证: ${generatedRecoveryCode}\n生成时间: ${new Date().toLocaleString()}\n\n重要提醒：\n1. 本凭证仅保存在您的本机设备中，请妥善保管。\n2. 若您遗忘了本地主密码，可凭此 16 位恢复凭证重置主密码。\n3. 请将此文件保存在受信任的安全位置或密码管理器中，切勿泄露给他人。`;
 
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -122,7 +122,7 @@ export function OnboardingModal({
                   欢迎使用 账盾
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  本地优先架构，为您提供绝对私密、极速响应的财务记账体验。
+                  本地存储与安全加密，为您提供私密、流畅的财务记账体验。
                 </p>
               </div>
 
@@ -131,10 +131,10 @@ export function OnboardingModal({
                   <HardDrive className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      100% 本地优先
+                      本地优先存储
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      所有数据完整存储于本机 IndexedDB，无网络、无服务器依然秒开且功能全备。
+                      数据保存在您的设备本地，无网络也能流畅记账。
                     </p>
                   </div>
                 </div>
@@ -143,10 +143,10 @@ export function OnboardingModal({
                   <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      零知识安全保险库
+                      安全隐私保护
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      PBKDF2 100,000 轮 + AES-GCM-256 硬件加速加密，落盘数据无人可窥视。
+                      高强度安全加密，全面守护您的财务隐私。
                     </p>
                   </div>
                 </div>
@@ -155,10 +155,10 @@ export function OnboardingModal({
                   <Cloud className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      WebDAV / NAS 私有云同步
+                      支持 WebDAV 同步
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      支持将全量端到端加密快照安全同步至群晖、坚果云等任意私有 WebDAV 服务。
+                      支持同步至坚果云、群晖 NAS 等私有 WebDAV 服务。
                     </p>
                   </div>
                 </div>
@@ -170,7 +170,7 @@ export function OnboardingModal({
                   onClick={onClose}
                   className="w-1/3 py-3 px-4 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
                 >
-                  暂不加密进入
+                  暂不设置进入
                 </button>
                 <button
                   type="button"
@@ -195,7 +195,7 @@ export function OnboardingModal({
                   设置本地保险库主密码
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  主密码用于派生 AES-256 密钥以加密本地数据，仅保存在您的设备内存中。
+                  主密码用于加密保护您的本地财务数据，请妥善保管。
                 </p>
               </div>
 
@@ -257,10 +257,10 @@ export function OnboardingModal({
                   className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 transition"
                 >
                   {isSubmitting ? (
-                    <span>正在生成加密密钥...</span>
+                    <span>正在保存...</span>
                   ) : (
                     <>
-                      <span>生成安全保险库</span>
+                      <span>设置密码</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
@@ -342,10 +342,10 @@ export function OnboardingModal({
 
               <div className="space-y-2">
                 <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
-                  本地保险库已创建完毕！
+                  主密码设置完毕！
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  您现在可以直接开始记账。后续若需要跨手机、电脑多端同步，可在「设置」页面随时配置 WebDAV 私有云同步。
+                  您现在可以直接开始记账。后续若需要跨设备多端同步，可在「设置」页面配置 WebDAV 同步。
                 </p>
               </div>
 
@@ -354,10 +354,10 @@ export function OnboardingModal({
                   <Cloud className="w-5 h-5 text-sky-500" />
                   <div>
                     <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                      连接 WebDAV / NAS 私有云同步
+                      WebDAV 同步
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                      支持将加密快照安全同步至群晖或坚果云
+                      支持同步至坚果云或群晖 NAS
                     </div>
                   </div>
                 </div>

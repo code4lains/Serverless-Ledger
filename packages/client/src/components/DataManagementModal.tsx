@@ -251,7 +251,7 @@ export function DataManagementModal({
       URL.revokeObjectURL(url);
 
       if (exportFormat === 'enc_json') {
-        setExportSuccessMessage(`已成功生成端到端加密备份文件：${filename}（AES-GCM-256 密码学保护）`);
+        setExportSuccessMessage(`已成功生成加密备份文件：${filename}`);
       } else {
         setExportSuccessMessage(`已成功导出 ${exportPreviewList.length} 笔流水至文件：${filename}`);
       }
@@ -525,12 +525,9 @@ export function DataManagementModal({
             </div>
             <div>
               <h3 className="font-bold text-sm text-gray-900 dark:text-white flex items-center gap-1.5">
-                <span>数据与资产管理</span>
-                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 font-medium">
-                  离线优先
-                </span>
+                <span>数据管理</span>
               </h3>
-              <p className="text-[11px] text-gray-400">CSV/Excel 账单导入 · 端到端加密备份导出与还原</p>
+              <p className="text-[11px] text-gray-400">CSV/Excel 账单导入 · 数据备份与恢复</p>
             </div>
           </div>
           <button
@@ -583,7 +580,7 @@ export function DataManagementModal({
           {/* ================= 导出面板 (Export Panel) ================= */}
           {activeTab === 'export' && (
             <div className="flex flex-col gap-4 animate-fadeIn">
-              {/* 导出文件格式选择 (3 种格式：CSV / JSON / 端到端加密备份包 .enc.json) */}
+              {/* 导出文件格式选择 */}
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
                   选择导出格式
@@ -598,8 +595,8 @@ export function DataManagementModal({
                     }`}
                   >
                     <FileSpreadsheet className={`w-4 h-4 ${exportFormat === 'csv' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`} />
-                    <span className="text-xs font-bold text-gray-800 dark:text-gray-200">CSV 电子表格</span>
-                    <span className="text-[9px] text-gray-400 leading-tight">Excel 防乱码</span>
+                    <span className="text-xs font-bold text-gray-800 dark:text-gray-200">CSV 表格</span>
+                    <span className="text-[9px] text-gray-400 leading-tight">Excel 兼容</span>
                   </div>
 
                   <div
@@ -612,7 +609,7 @@ export function DataManagementModal({
                   >
                     <FileJson className={`w-4 h-4 ${exportFormat === 'json' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`} />
                     <span className="text-xs font-bold text-gray-800 dark:text-gray-200">JSON 备份</span>
-                    <span className="text-[9px] text-gray-400 leading-tight">标准明文结构</span>
+                    <span className="text-[9px] text-gray-400 leading-tight">明文格式</span>
                   </div>
 
                   <div
@@ -624,19 +621,19 @@ export function DataManagementModal({
                     }`}
                   >
                     <Lock className={`w-4 h-4 ${exportFormat === 'enc_json' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`} />
-                    <span className="text-xs font-bold text-gray-800 dark:text-gray-200">🔒 加密备份包</span>
-                    <span className="text-[9px] text-indigo-600 dark:text-indigo-400 leading-tight font-semibold">.enc.json 强加密</span>
+                    <span className="text-xs font-bold text-gray-800 dark:text-gray-200">加密备份</span>
+                    <span className="text-[9px] text-indigo-600 dark:text-indigo-400 leading-tight font-semibold">.enc.json</span>
                   </div>
                 </div>
               </div>
 
-              {/* 加密备份包高级安全参数 */}
+              {/* 加密备份包安全参数 */}
               {exportFormat === 'enc_json' && (
                 <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 flex flex-col gap-2.5 text-xs animate-fadeIn">
                   <div className="flex items-center justify-between">
                     <span className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-1.5">
                       <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                      <span>AES-GCM-256 端到端加密选项</span>
+                      <span>备份加密设置</span>
                     </span>
                     <label className="flex items-center gap-1.5 cursor-pointer text-[11px] text-gray-600 dark:text-gray-300">
                       <input
@@ -674,7 +671,7 @@ export function DataManagementModal({
                     </div>
                   ) : (
                     <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-relaxed">
-                      将直接使用当前已解锁本地安全保险库的主密钥进行加密。若未来导入，仅需输入保险库主密码即可一键还原。
+                      使用当前保险库主密码加密保护，导入时输入密码即可恢复。
                     </p>
                   )}
                 </div>
@@ -692,7 +689,7 @@ export function DataManagementModal({
                       onChange={(e) => setExportLedgerId(e.target.value)}
                       className="w-full px-3 py-2 text-xs rounded-xl bg-gray-50 dark:bg-neutral-900 border border-gray-200 dark:border-neutral-700 text-gray-800 dark:text-gray-200 focus:outline-none"
                     >
-                      <option value="all">全部账本透视 (全量数据汇总)</option>
+                      <option value="all">全部账本</option>
                       {ledgers.map((l) => (
                         <option key={l.ledger_id} value={l.ledger_id}>
                           {l.name} ({l.currency}) {l.is_default === 1 ? '★ 默认' : ''}
@@ -793,9 +790,9 @@ export function DataManagementModal({
                   <Download className={`w-4 h-4 ${isExporting ? 'animate-bounce' : ''}`} />
                   <span>
                     {isExporting
-                      ? '正在进行加密打包导出...'
+                      ? '正在导出...'
                       : exportFormat === 'enc_json'
-                      ? '立即生成并下载加密备份包 (.enc.json)'
+                      ? '立即导出加密备份 (.enc.json)'
                       : `立即导出并下载 (${exportPreviewList.length} 笔)`}
                   </span>
                 </button>
@@ -826,7 +823,7 @@ export function DataManagementModal({
                   </div>
                   <div>
                     <h4 className="text-base font-bold text-emerald-900 dark:text-emerald-200">
-                      数据批量还原成功！
+                      数据导入成功！
                     </h4>
                     <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
                       从【{importDoneStats.format}】成功恢复了 <strong>{importDoneStats.count} 笔</strong> 流水及关联配置。
@@ -834,7 +831,7 @@ export function DataManagementModal({
                   </div>
                   <div className="w-full p-3 rounded-2xl bg-white/80 dark:bg-neutral-900/60 text-[11px] text-gray-600 dark:text-gray-300 flex items-center justify-center gap-1.5">
                     <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>已即时写入本地 IndexedDB 权威存储，免网络阻断</span>
+                    <span>已保存至本地存储</span>
                   </div>
                   <div className="flex gap-2 w-full pt-1">
                     <button
@@ -933,16 +930,16 @@ export function DataManagementModal({
                       </div>
                     </div>
                   ) : isEncryptedPackage && !decryptedBackupData ? (
-                    /* Step 2-A: 端到端加密备份包解密输入 */
+                    /* Step 2-A: 加密备份包解密输入 */
                     <div className="flex flex-col gap-3.5 animate-fadeIn">
                       <div className="p-3.5 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900/50 flex items-start gap-2.5">
                         <Lock className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
                         <div>
                           <h4 className="text-xs font-bold text-indigo-900 dark:text-indigo-200">
-                            已检测到端到端加密备份包 (v2)
+                            已检测到加密备份文件
                           </h4>
                           <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80 mt-0.5">
-                            文件【{importedFile?.name}】已由 AES-GCM-256 加密保护，请输入解密密码以还原全量数据。
+                            文件【{importedFile?.name}】已加密保护，请输入密码以还原数据。
                           </p>
                         </div>
                       </div>
@@ -957,12 +954,12 @@ export function DataManagementModal({
                               className="rounded accent-indigo-600"
                             />
                             <span className="text-gray-800 dark:text-gray-200 font-semibold">
-                              尝试使用本机当前保险库主密钥 (仅适用于在本机导出的备份)
+                              使用当前主密码解密 (适用于本机导出的备份)
                             </span>
                           </label>
                           {useVaultKeyForDecrypt && (
                             <p className="text-[10px] text-gray-500 dark:text-gray-400 px-1">
-                              💡 提示：如果备份文件来自其他设备（如电脑端），两端初始随机盐值不同，请取消勾选并直接在下方输入主密码解密。
+                              💡 提示：若备份来自其他设备，请取消勾选并在下方输入密码。
                             </p>
                           )}
                         </div>
@@ -1250,7 +1247,7 @@ export function DataManagementModal({
                       {isImporting && (
                         <div className="flex flex-col gap-1 pt-1">
                           <div className="flex justify-between text-[11px] text-gray-500">
-                            <span>正在批量写入本地 IndexedDB...</span>
+                            <span>正在导入数据...</span>
                             <span className="font-bold">{importProgress}%</span>
                           </div>
                           <div className="w-full h-2 rounded-full bg-gray-100 dark:bg-neutral-700 overflow-hidden">

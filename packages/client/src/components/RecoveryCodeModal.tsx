@@ -27,7 +27,7 @@ export function RecoveryCodeModal({
 
   const isLocalVault = isVaultCode !== undefined ? isVaultCode : recoveryCode.length >= 16;
   const modalTitle = title || (isLocalVault ? '本地保险库密码恢复凭证' : '账号密码恢复码已生成');
-  const modalSubtitle = subtitle || (isLocalVault ? '本地端到端安全保险库重置凭证 · 请妥善保存' : '云端账号唯一密码重置凭证 · 请妥善保存');
+  const modalSubtitle = subtitle || (isLocalVault ? '本地保险库重置凭证 · 请妥善保存' : '账号密码重置凭证 · 请妥善保存');
 
   const handleCopy = () => {
     navigator.clipboard.writeText(recoveryCode);
@@ -48,7 +48,7 @@ export function RecoveryCodeModal({
 
 【安全须知】
 1. 当您遗忘本地保险库主密码时，可在保险库解锁界面点击“使用恢复码重置”，输入此 16 位凭证重置主密码。
-2. 该恢复凭证直接派生 AES-GCM-256 解密密钥，请妥善保存在安全的离线位置，切勿泄露给他人。
+2. 该恢复凭证用于重置主密码，请妥善保存在安全位置，切勿泄露给他人。
 ================================================
 `
       : `================================================
@@ -107,7 +107,7 @@ export function RecoveryCodeModal({
         {/* 恢复码展示卡片 */}
         <div className="p-4 rounded-2xl bg-gray-50 dark:bg-neutral-900/80 border border-gray-200 dark:border-neutral-700 flex flex-col items-center justify-center gap-2">
           <span className="text-[11px] font-medium text-gray-400 dark:text-gray-500 tracking-wider">
-            {isLocalVault ? '16 位保险库高熵恢复凭证' : '8 位密码恢复码（不区分大小写）'}
+            {isLocalVault ? '16 位应急恢复凭证' : '8 位密码恢复码（不区分大小写）'}
           </span>
           <div className="font-mono font-black text-xl sm:text-2xl tracking-widest text-indigo-600 dark:text-indigo-400 select-all py-1 text-center break-all">
             {recoveryCode}
