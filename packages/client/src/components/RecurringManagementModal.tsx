@@ -26,7 +26,6 @@ import {
   TransactionType,
   Category,
   Ledger,
-  AuthUser,
   formatMoney,
   toCents,
   toYuan,
@@ -40,33 +39,28 @@ import {
   createRecurringRule,
   updateRecurringRule,
   deleteRecurringRule,
-  executeDueRecurringRules,
 } from '../api/client';
 import { CategoryIcon } from './CategoryIcon';
 import { recurringEngine } from '../api/recurringEngine';
 
 interface RecurringManagementModalProps {
   isOpen: boolean;
-  currentUser: AuthUser | null;
   ledgers: Ledger[];
   categories: Category[];
   activeLedgerId: string;
   onClose: () => void;
   onRulesChanged?: () => void;
   onTriggerAutoProcess?: () => Promise<void>;
-  onRequireAuth?: () => void;
 }
 
 export function RecurringManagementModal({
   isOpen,
-  currentUser,
   ledgers,
   categories,
   activeLedgerId,
   onClose,
   onRulesChanged,
   onTriggerAutoProcess,
-  onRequireAuth,
 }: RecurringManagementModalProps) {
   const [rules, setRules] = useState<RecurringRule[]>([]);
   const [loading, setLoading] = useState(false);

@@ -1,10 +1,10 @@
 /**
- * 账盾 - 本地权威存储层 (localStore) 离线功能测试套件
+ * 账盾 - 本地权威存储层 (localStore) 离线功能测试套件 (v3)
  */
 import assert from 'node:assert';
 import { getDefaultCategories, LEDGER_TEMPLATES, toCents, formatMoney } from '../packages/shared/dist/index.js';
 
-console.log('Testing pure offline localStore business logic & data modeling...');
+console.log('Testing pure offline localStore business logic & data modeling for v3...');
 
 // 1. 测试默认分类离线初始化
 const defaultCats = getDefaultCategories();
@@ -26,22 +26,21 @@ assert.strictEqual(toCents(100), 10000, '100 Yuan should convert to 10000 Cents'
 assert.strictEqual(formatMoney(1234), '¥12.34', '1234 Cents should format to ¥12.34');
 assert.strictEqual(formatMoney(0), '¥0.00', '0 Cents should format to ¥0.00');
 
-// 4. 测试本地流水操作数据校验
+// 4. 测试本地流水操作数据校验 (v3: 无 sync_status 字段)
 const sampleTx = {
   transaction_id: 'tx_local_123',
-  user_id: 'local_user',
+  user_id: 'default_vault',
   ledger_id: 'default_ledger',
   type: 'expense',
   amount: 2550,
   transaction_date: '2026-09-01',
   remark: '离线咖啡测试',
-  sync_status: 'synced',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
 };
 
 assert.strictEqual(sampleTx.amount, 2550);
 assert.strictEqual(sampleTx.type, 'expense');
-assert.strictEqual(sampleTx.sync_status, 'synced');
+assert.strictEqual(sampleTx.user_id, 'default_vault');
 
 console.log('✅ LocalStore business logic & data modeling tests passed!');

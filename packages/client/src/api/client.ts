@@ -1,48 +1,14 @@
 /**
- * 账盾 - 统一 API 门面入口 (Unified API Facade)
- * 遵循《白皮书 2.0 & 6.1 离线优先 Offline-First》规范：
- * - 导出 httpClient: 基础网络通信、安全解析、地址构造、连通性探测
- * - 导出 cloudAuth: 云端用户认证、Token/会话管理、邀请码、重置密码
+ * 账盾 - 统一客户端 API 门面入口 (Unified API Facade)
+ * 遵循《账盾 v3 架构设计》与 Local-First 规范：
  * - 导出 localStore: 纯本地 0ms Dexie CRUD 权威操作引擎
- * - 保持完整向下兼容性
+ * - 导出 syncConfig: WebDAV 配置管理与存储
+ * - 导出 webdavAdapter: WebDAV 协议层适配器与连通性测试
+ * - 导出 snapshotSync: 全量端到端加密快照导出、导入与同步流转
+ * - 导出 localAuth: 本地零知识安全保险库主密码与恢复码认证
  */
 
-import { networkMonitor } from './network';
-import { getEffectiveSyncAdapter } from '../sync/syncAdapter';
-
-// 1. HTTP 客户端模块
-export {
-  getCustomApiUrl,
-  setCustomApiUrl,
-  getApiBase,
-  apiUrl,
-  getDisplayApiHost,
-  safeParseApiResponse,
-  testApiConnection,
-  handleUnauthorizedResponse,
-  apiFetch,
-  getAuthHeaders,
-} from './httpClient';
-
-// 2. 云端身份认证模块
-export {
-  getStoredToken,
-  getStoredUser,
-  setSession,
-  saveSession,
-  clearSession,
-  registerUser,
-  loginUser,
-  fetchCurrentUser,
-  getAuthConfig,
-  getInviteCodes,
-  claimInviteCode,
-  resetPassword,
-  deleteAccount,
-  executeDueRecurringRules,
-} from './cloudAuth';
-
-// 3. 本地优先存储 CRUD 模块 (纯本地 0ms 操作，严禁网络调用)
+// 1. 本地优先存储 CRUD 模块 (纯本地 0ms 操作，严禁网络调用)
 export {
   getCategories,
   createCategory,
@@ -69,30 +35,51 @@ export {
   deleteRecurringRule,
 } from './localStore';
 
-// 4. 同步配置及状态工具
+// 2. WebDAV 同步配置与协议适配器
 export {
   getSyncConfig,
   saveSyncConfig,
-  isCloudSyncEnabled,
-} from '../sync/syncAdapter';
+  isWebdavSyncConfigured,
+  isAutoSyncEnabled,
+  DEFAULT_REMOTE_PATH,
+  SYNC_CONFIG_STORAGE_KEY,
+} from '../sync/syncConfig';
+
+export {
+  WebDavAdapter,
+  getWebDavAdapter,
+} from '../sync/webdavAdapter';
+
+// 3. 端到端加密快照同步引擎
+export {
+  exportSnapshot,
+  importSnapshot,
+  syncWithRemoteWebDAV,
+} from '../sync/snapshotSync';
+
+// 4. 同步管理器单例
+export {
+  syncManager,
+  type SyncStats,
+} from './syncManager';
+
+// 5. 本地零知识安全保险库
+export {
+  setupMasterPassword,
+  unlockVaultWithPassword,
+  unlockVaultWithRecoveryCode,
+  changeMasterPassword,
+  lockVault,
+  isVaultInitialized,
+  isVaultUnlocked,
+  getVaultMetadata,
+} from '../auth/localAuth';
 
 /**
- * 测试当前生效的云同步适配器连通性
+ * 测试 WebDAV 连通性
  */
-export async function testSyncConnection() {
-  const adapter = getEffectiveSyncAdapter();
-  if (!adapter) {
-    return {
-      success: false,
-      message: '未配置或已禁用云同步',
-    };
-  }
+export async function testWebDavConnection() {
+  const { getWebDavAdapter } = await import('../sync/webdavAdapter');
+  const adapter = getWebDavAdapter();
   return await adapter.testConnection();
-}
-
-/**
- * 检查后端服务连通性与健康状态
- */
-export async function checkServerHealth() {
-  return await networkMonitor.checkHealth();
 }

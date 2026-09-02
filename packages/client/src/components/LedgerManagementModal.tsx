@@ -41,23 +41,16 @@ import {
   setDefaultLedger,
   deleteLedger,
   mergeLedgers,
-  apiFetch,
-  apiUrl,
-  getAuthHeaders,
-  safeParseApiResponse,
 } from '../api/client';
-import { AuthUser } from '@ledger/shared';
 
 interface LedgerManagementModalProps {
   isOpen: boolean;
   ledgers: Ledger[];
   transactions: Transaction[];
   activeLedgerId: string; // 'all' or specific ledger_id
-  currentUser?: AuthUser | null;
   onClose: () => void;
   onSelectLedger: (ledgerId: string) => void;
   onLedgersChanged: () => Promise<void>;
-  onRequireAuth?: () => void;
 }
 
 // 模板图标映射
@@ -75,11 +68,9 @@ export function LedgerManagementModal({
   ledgers,
   transactions,
   activeLedgerId,
-  currentUser,
   onClose,
   onSelectLedger,
   onLedgersChanged,
-  onRequireAuth,
 }: LedgerManagementModalProps) {
   const [activeTab, setActiveTab] = useState<'list' | 'create' | 'merge'>('list');
   const [editingLedgerId, setEditingLedgerId] = useState<string | null>(null);
@@ -124,23 +115,8 @@ export function LedgerManagementModal({
         setMergeSourceId(ledgers[0].ledger_id);
         setMergeTargetId(ledgers[1].ledger_id);
       }
-
-      // 如果已登录，从服务端拉取各账本的高效 SQL COUNT(*) 与收支统计
-      if (currentUser) {
-        apiFetch(apiUrl('/ledgers?withSummary=true'), {
-          headers: getAuthHeaders(),
-          signal: AbortSignal.timeout(5000),
-        })
-          .then((res) => (res.ok ? safeParseApiResponse<LedgerSummary[]>(res) : null))
-          .then((parsed) => {
-            if (parsed?.success && Array.isArray(parsed.data)) {
-              setServerSummaries(parsed.data);
-            }
-          })
-          .catch(() => {});
-      }
     }
-  }, [isOpen, ledgers, currentUser]);
+  }, [isOpen, ledgers]);
 
   // 计算每个账本的统计数据 (优先使用服务端 SQL COUNT(*) 聚合统计，离线时优雅回退至本地缓存)
   const ledgerStatsMap = useMemo(() => {
@@ -292,10 +268,6 @@ export function LedgerManagementModal({
 
   // 开启合并模式 (指定源账本)
   const handleStartMerge = (sourceId?: string) => {
-    if (!currentUser) {
-      onRequireAuth?.();
-      return;
-    }
     const sId = sourceId || (ledgers[0]?.ledger_id || '');
     const tId = ledgers.find((l) => l.ledger_id !== sId)?.ledger_id || '';
     setMergeSourceId(sId);
@@ -410,10 +382,6 @@ export function LedgerManagementModal({
             <button
               type="button"
               onClick={() => {
-                if (!currentUser) {
-                  onRequireAuth?.();
-                  return;
-                }
                 setActiveTab('create');
                 setEditingLedgerId(null);
                 setDeletingLedgerId(null);

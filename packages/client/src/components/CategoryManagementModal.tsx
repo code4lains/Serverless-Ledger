@@ -32,26 +32,20 @@ import {
   reorderCategories,
 } from '../api/client';
 
-import { AuthUser } from '@ledger/shared';
-
 interface CategoryManagementModalProps {
   isOpen: boolean;
   categories: Category[];
   initialType?: CategoryType;
-  currentUser?: AuthUser | null;
   onClose: () => void;
   onCategoriesChanged: () => Promise<void>;
-  onRequireAuth?: () => void;
 }
 
 export function CategoryManagementModal({
   isOpen,
   categories,
   initialType = 'expense',
-  currentUser,
   onClose,
   onCategoriesChanged,
-  onRequireAuth,
 }: CategoryManagementModalProps) {
   const [activeTab, setActiveTab] = useState<CategoryType>(initialType);
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});

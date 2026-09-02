@@ -1,3 +1,8 @@
+/**
+ * 账盾 - 本地 IndexedDB 数据库引擎 (基于 Dexie.js)
+ * 遵循《账盾 v3 架构设计》与 Local-First 规范
+ */
+
 import Dexie, { type Table } from 'dexie';
 import {
   Transaction,
@@ -9,27 +14,8 @@ import {
   VaultMetadata,
 } from '@ledger/shared';
 
-export type SyncEntityType = 'transaction' | 'category' | 'ledger' | 'budget' | 'recurring';
-export type SyncActionType = 'create' | 'update' | 'delete' | 'reorder' | 'set_default' | 'batch_set' | 'merge';
-
 /**
- * 离线变更队列项模型 (用于离线操作记录与时序重放，防止离线删除复活)
- */
-export interface SyncQueueItem {
-  id: string; // 唯一 UUID
-  user_id?: string;
-  entity_type: SyncEntityType;
-  entity_id: string;
-  action: SyncActionType;
-  payload?: any;
-  created_at: string;
-  attempts: number;
-  last_error?: string;
-}
-
-/**
- * 账盾 - 本地 IndexedDB 数据库 (基于 Dexie.js v5 架构)
- * 践行《白皮书 6.1 离线优先 Offline-First》与《7.3 本地安全保险库与端到端加密》规范
+ * 账盾 - 本地权威 IndexedDB 数据库
  */
 export class LedgerLocalDatabase extends Dexie {
   transactions!: Table<Transaction, string>;
@@ -37,191 +23,24 @@ export class LedgerLocalDatabase extends Dexie {
   ledgers!: Table<Ledger, string>;
   budgets!: Table<Budget, string>;
   recurring_rules!: Table<RecurringRule, string>;
-  syncQueue!: Table<SyncQueueItem, string>;
   vault_meta!: Table<VaultMetadata, string>;
 
   constructor() {
     super('ServerlessLedgerDB');
-    this.version(1).stores({
-      transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at',
-      categories: 'category_id, user_id, type, parent_id, sort_order',
-      ledgers: 'ledger_id, user_id, is_default',
-      budgets: 'budget_id, user_id, ledger_id, category_id, period',
-    });
 
-    this.version(2).stores({
-      transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at',
+    // 纯净版 v3 Schema: 移除 syncQueue 与 transactions.sync_status 索引
+    this.version(6).stores({
+      transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, updated_at, [user_id+transaction_date], [user_id+ledger_id]',
       categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
       ledgers: 'ledger_id, user_id, is_default, updated_at',
-      budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at',
-      syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
-    });
-
-    this.version(3).stores({
-      transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at',
-      categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
-      ledgers: 'ledger_id, user_id, is_default, updated_at',
-      budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at',
+      budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at, [user_id+ledger_id+period]',
       recurring_rules: 'rule_id, user_id, ledger_id, frequency, status, next_run_date, updated_at',
-      syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
+      vault_meta: 'id, created_at, updated_at',
     });
-
-    this.version(4)
-      .stores({
-        transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at, [user_id+transaction_date], [user_id+ledger_id]',
-        categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
-        ledgers: 'ledger_id, user_id, is_default, updated_at',
-        budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at, [user_id+ledger_id+period]',
-        recurring_rules: 'rule_id, user_id, ledger_id, frequency, status, next_run_date, updated_at',
-        syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
-      })
-      .upgrade(async (tx) => {
-        // 标准化流水状态与字段类型
-        await tx
-          .table('transactions')
-          .toCollection()
-          .modify((t: any) => {
-            if (!t.sync_status || (t.sync_status !== 'pending' && t.sync_status !== 'conflict')) {
-              t.sync_status = 'synced';
-            }
-            if (typeof t.amount !== 'number') {
-              t.amount = Number(t.amount) || 0;
-            }
-          });
-        // 标准化账本 is_default 标识为 0/1 整型
-        await tx
-          .table('ledgers')
-          .toCollection()
-          .modify((l: any) => {
-            l.is_default = l.is_default ? 1 : 0;
-          });
-        // 标准化周期规则 auto_record 为 0/1 整型
-        await tx
-          .table('recurring_rules')
-          .toCollection()
-          .modify((r: any) => {
-            r.auto_record = r.auto_record !== 0 ? 1 : 0;
-          });
-      });
-
-    // Dexie Schema Version 5: 升级本地安全保险库与端到端加密元数据表
-    this.version(5)
-      .stores({
-        transactions: 'transaction_id, user_id, ledger_id, type, category_id, transaction_date, sync_status, updated_at, [user_id+transaction_date], [user_id+ledger_id]',
-        categories: 'category_id, user_id, type, parent_id, sort_order, updated_at',
-        ledgers: 'ledger_id, user_id, is_default, updated_at',
-        budgets: 'budget_id, user_id, ledger_id, category_id, period, updated_at, [user_id+ledger_id+period]',
-        recurring_rules: 'rule_id, user_id, ledger_id, frequency, status, next_run_date, updated_at',
-        syncQueue: 'id, user_id, entity_type, entity_id, action, created_at, attempts',
-        vault_meta: 'id, created_at, updated_at',
-      })
-      .upgrade(async (tx) => {
-        // 确保旧版本升级后数据的默认用户归属与一致性
-        await tx
-          .table('transactions')
-          .toCollection()
-          .modify((t: any) => {
-            if (!t.user_id) {
-              t.user_id = 'default_user';
-            }
-          });
-      });
   }
 }
 
 export const localDb = new LedgerLocalDatabase();
-
-/**
- * 将离线操作加入同步队列 (包含防重复与操作压缩合并逻辑)
- */
-export async function enqueueSyncAction(
-  action: Omit<SyncQueueItem, 'id' | 'created_at' | 'attempts'>
-): Promise<SyncQueueItem> {
-  const now = new Date().toISOString();
-  const id = `sq_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-  // 检查是否已有针对该实体的待处理队列项
-  const existingItems = await localDb.syncQueue
-    .where('entity_id')
-    .equals(action.entity_id)
-    .toArray();
-
-  if (existingItems.length > 0) {
-    if (action.action === 'delete') {
-      // 若是删除操作，先清除之前所有的 create/update 操作
-      for (const item of existingItems) {
-        await localDb.syncQueue.delete(item.id);
-      }
-    } else if (action.action === 'update') {
-      // 若之前已有 create，则保留 create 并更新 payload
-      const prevCreate = existingItems.find((i) => i.action === 'create');
-      if (prevCreate) {
-        prevCreate.payload = { ...prevCreate.payload, ...action.payload };
-        prevCreate.created_at = now;
-        await localDb.syncQueue.put(prevCreate);
-        return prevCreate;
-      }
-    }
-  }
-
-  const queueItem: SyncQueueItem = {
-    id,
-    user_id: action.user_id,
-    entity_type: action.entity_type,
-    entity_id: action.entity_id,
-    action: action.action,
-    payload: action.payload,
-    created_at: now,
-    attempts: 0,
-  };
-
-  await localDb.syncQueue.put(queueItem);
-  return queueItem;
-}
-
-/**
- * 获取待同步的离线变更队列列表 (按发生时间升序排列，保证操作时序)
- */
-export async function getPendingSyncQueue(userId?: string): Promise<SyncQueueItem[]> {
-  let list = await localDb.syncQueue.orderBy('created_at').toArray();
-  if (userId) {
-    list = list.filter((item) => !item.user_id || item.user_id === userId || item.user_id === 'default_user');
-  }
-  return list;
-}
-
-/**
- * 移除已成功同步的队列项
- */
-export async function removeSyncQueueItem(id: string): Promise<void> {
-  await localDb.syncQueue.delete(id);
-}
-
-/**
- * 更新失败重试次数与错误信息
- */
-export async function incrementSyncQueueAttempts(id: string, error?: string): Promise<void> {
-  const item = await localDb.syncQueue.get(id);
-  if (item) {
-    item.attempts += 1;
-    item.last_error = error;
-    await localDb.syncQueue.put(item);
-  }
-}
-
-/**
- * 清空队列
- */
-export async function clearSyncQueue(userId?: string): Promise<void> {
-  if (userId) {
-    const items = await localDb.syncQueue.where('user_id').equals(userId).toArray();
-    for (const item of items) {
-      await localDb.syncQueue.delete(item.id);
-    }
-  } else {
-    await localDb.syncQueue.clear();
-  }
-}
 
 /**
  * 本地存储统计分析
@@ -232,8 +51,6 @@ export async function getLocalStorageStats() {
   const ledgerCount = await localDb.ledgers.count();
   const budgetCount = await localDb.budgets.count();
   const recurringCount = await localDb.recurring_rules.count();
-  const queueCount = await localDb.syncQueue.count();
-  const pendingTxCount = await localDb.transactions.where('sync_status').equals('pending').count();
   const vaultCount = await localDb.vault_meta.count().catch(() => 0);
 
   return {
@@ -242,9 +59,6 @@ export async function getLocalStorageStats() {
     ledgers: ledgerCount,
     budgets: budgetCount,
     recurringRules: recurringCount,
-    queueItems: queueCount,
-    pendingTransactions: pendingTxCount,
-    totalPending: queueCount + pendingTxCount,
     vaultMetaCount: vaultCount,
   };
 }
@@ -275,7 +89,7 @@ export async function seedLocalCategories() {
 export const DEFAULT_LOCAL_LEDGER_ID = 'default_ledger';
 
 /**
- * 预置本地默认日常账本 (确保未登录或离线首次冷启动时拥有可用账本)
+ * 预置本地默认日常账本 (确保首次冷启动时拥有可用账本)
  */
 export async function seedLocalLedgers(userId?: string) {
   const effectiveUserId = userId || 'default_user';
@@ -320,7 +134,7 @@ export async function deleteVaultMeta(vaultId: string = 'default_vault'): Promis
 }
 
 /**
- * 导出全量本地数据 (用于加密备份)
+ * 导出全量本地数据 (用于快照与加密备份)
  */
 export async function exportAllLocalData(userId?: string): Promise<{
   transactions: Transaction[];
@@ -356,7 +170,7 @@ export async function exportAllLocalData(userId?: string): Promise<{
 }
 
 /**
- * 全量导入/恢复本地数据 (来自解密后的备份数据)
+ * 全量导入/恢复本地数据 (来自解密后的快照备份数据)
  */
 export async function importAllLocalData(
   data: any,
@@ -372,7 +186,7 @@ export async function importAllLocalData(
     throw new Error('无效的本地数据格式');
   }
 
-  const { transactions = [], categories = [], ledgers = [], budgets = [], recurringRules = [] } = data;
+  const { transactions = [], categories = [], ledgers = [], budgets = [], recurringRules = [], vaultMeta } = data;
   const targetUser = options?.targetUserId || 'default_user';
 
   let importedTxCount = 0;
@@ -389,6 +203,7 @@ export async function importAllLocalData(
       localDb.ledgers,
       localDb.budgets,
       localDb.recurring_rules,
+      localDb.vault_meta,
     ],
     async () => {
       if (options?.overwrite) {
@@ -447,8 +262,15 @@ export async function importAllLocalData(
         await localDb.transactions.bulkPut(normalizedTxs);
         importedTxCount = normalizedTxs.length;
       }
+
+      if (vaultMeta && typeof vaultMeta === 'object' && vaultMeta.id) {
+        await localDb.vault_meta.put(vaultMeta);
+      }
     }
   );
+
+  await seedLocalCategories();
+  await seedLocalLedgers();
 
   return {
     importedTransactions: importedTxCount,
@@ -475,7 +297,6 @@ export async function migrateLocalDataToVault(vaultId: string = 'default_vault')
     'rw',
     [localDb.transactions, localDb.ledgers, localDb.categories],
     async () => {
-      // 迁移未归属或默认访客的流水至目标保险库 ID
       const txs = await localDb.transactions
         .filter((t) => !t.user_id || t.user_id === 'default_user')
         .toArray();
@@ -513,109 +334,7 @@ export async function migrateLocalDataToVault(vaultId: string = 'default_vault')
 }
 
 /**
- * 将离线/访客模式下的本地记账与导入数据自动归属迁移至登录账号 (并标记待同步)
- */
-export async function migrateGuestDataToUser(userId: string): Promise<{
-  migratedTransactions: number;
-  migratedLedgers: number;
-  migratedCategories: number;
-  migratedBudgets: number;
-  migratedRecurring: number;
-}> {
-  if (!userId || userId === 'default_user' || userId === 'default_vault') {
-    return { migratedTransactions: 0, migratedLedgers: 0, migratedCategories: 0, migratedBudgets: 0, migratedRecurring: 0 };
-  }
-
-  let txCount = 0;
-  let ledCount = 0;
-  let catCount = 0;
-  let bdCount = 0;
-  let rrCount = 0;
-
-  await localDb.transaction(
-    'rw',
-    [
-      localDb.transactions,
-      localDb.ledgers,
-      localDb.categories,
-      localDb.budgets,
-      localDb.recurring_rules,
-      localDb.syncQueue,
-    ],
-    async () => {
-      // 1. 迁移未归属或默认访客的流水至该用户，并标记为 pending 以便触发云端同步
-      const txs = await localDb.transactions
-        .filter((t) => !t.user_id || t.user_id === 'default_user' || t.user_id === 'default_vault')
-        .toArray();
-      for (const t of txs) {
-        t.user_id = userId;
-        t.sync_status = 'pending';
-        await localDb.transactions.put(t);
-        txCount++;
-      }
-
-      // 2. 迁移账本
-      const leds = await localDb.ledgers
-        .filter((l) => !l.user_id || l.user_id === 'default_user' || l.user_id === 'default_vault')
-        .toArray();
-      for (const l of leds) {
-        l.user_id = userId;
-        await localDb.ledgers.put(l);
-        ledCount++;
-      }
-
-      // 3. 迁移自定义分类
-      const cats = await localDb.categories
-        .filter((c) => c.user_id === 'default_user' || c.user_id === 'default_vault')
-        .toArray();
-      for (const c of cats) {
-        c.user_id = userId;
-        await localDb.categories.put(c);
-        catCount++;
-      }
-
-      // 4. 迁移预算
-      const bds = await localDb.budgets
-        .filter((b) => !b.user_id || b.user_id === 'default_user' || b.user_id === 'default_vault')
-        .toArray();
-      for (const b of bds) {
-        b.user_id = userId;
-        await localDb.budgets.put(b);
-        bdCount++;
-      }
-
-      // 5. 迁移周期规则
-      const rrs = await localDb.recurring_rules
-        .filter((r) => !r.user_id || r.user_id === 'default_user' || r.user_id === 'default_vault')
-        .toArray();
-      for (const r of rrs) {
-        r.user_id = userId;
-        await localDb.recurring_rules.put(r);
-        rrCount++;
-      }
-
-      // 6. 迁移同步队列中的待重放项
-      const queue = await localDb.syncQueue
-        .filter((q) => !q.user_id || q.user_id === 'default_user' || q.user_id === 'default_vault')
-        .toArray();
-      for (const q of queue) {
-        q.user_id = userId;
-        await localDb.syncQueue.put(q);
-      }
-    }
-  );
-
-  return {
-    migratedTransactions: txCount,
-    migratedLedgers: ledCount,
-    migratedCategories: catCount,
-    migratedBudgets: bdCount,
-    migratedRecurring: rrCount,
-  };
-}
-
-/**
- * 清除指定用户的本地私有数据，并在需要时重置基础访客数据 (BUG-C04)
+ * 清除指定用户的本地私有数据
  */
 export async function clearUserData(userId?: string): Promise<void> {
   if (!userId || userId === 'all') {
@@ -631,7 +350,6 @@ export async function clearUserData(userId?: string): Promise<void> {
       localDb.ledgers,
       localDb.budgets,
       localDb.recurring_rules,
-      localDb.syncQueue,
       localDb.vault_meta,
     ],
     async () => {
@@ -640,7 +358,6 @@ export async function clearUserData(userId?: string): Promise<void> {
       await localDb.ledgers.where('user_id').equals(userId).delete();
       await localDb.budgets.where('user_id').equals(userId).delete();
       await localDb.recurring_rules.where('user_id').equals(userId).delete();
-      await localDb.syncQueue.where('user_id').equals(userId).delete();
       await localDb.vault_meta.where('id').equals(userId).delete();
     }
   );
@@ -650,7 +367,7 @@ export async function clearUserData(userId?: string): Promise<void> {
 }
 
 /**
- * 清空本地数据库所有关联数据 (用户注销账户时彻底清除本地缓存并重置为初始状态)
+ * 清空本地数据库所有关联数据并重置为初始状态
  */
 export async function clearLocalDatabase() {
   await localDb.transactions.clear();
@@ -658,7 +375,6 @@ export async function clearLocalDatabase() {
   await localDb.ledgers.clear();
   await localDb.budgets.clear();
   await localDb.recurring_rules.clear();
-  await localDb.syncQueue.clear();
   await localDb.vault_meta.clear();
   await seedLocalCategories();
   await seedLocalLedgers();

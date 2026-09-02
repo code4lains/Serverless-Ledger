@@ -474,3 +474,8 @@ export async function importVaultEncryptedBackup(
     targetUserId: targetVaultId,
   });
 }
+
+// 别名导出 (保持 API 规范一致性)
+export const unlockVaultWithPassword = unlockVault;
+export const unlockVaultWithRecoveryCode = resetPasswordWithRecoveryCode;
+

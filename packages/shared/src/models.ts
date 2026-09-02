@@ -1,60 +1,15 @@
 /**
- * 账盾 - 数据模型与类型定义
- * 遵循《项目技术白皮书》规范
+ * 账盾 - 数据模型与类型定义 (Data Models & Type Definitions)
+ * 遵循《账盾 v3 架构设计》与 Local-First 去中心化规范
  */
 
 export type TransactionType = 'expense' | 'income' | 'transfer' | 'loan';
 export type BudgetPeriod = 'monthly' | 'yearly';
-export type SyncStatus = 'synced' | 'pending' | 'conflict';
-
 export type CategoryType = 'expense' | 'income' | 'transfer' | 'loan';
 export type LoanType = 'lend' | 'borrow' | 'repay' | 'collect';
 
 /**
- * JWT Token 载荷接口定义
- */
-export interface JwtPayload {
-  userId: string;
-  email: string;
-  exp?: number;
-  iat?: number;
-}
-
-/**
- * 将 SQLite 整数 (0/1) 或布尔值安全转换为布尔值 (boolean)
- */
-export function toBoolean(val: boolean | number | string | null | undefined): boolean {
-  if (typeof val === 'boolean') return val;
-  if (typeof val === 'number') return val === 1;
-  if (typeof val === 'string') {
-    const s = val.trim().toLowerCase();
-    return s === '1' || s === 'true' || s === 'yes';
-  }
-  return false;
-}
-
-/**
- * 将布尔值或数字安全转换为 SQLite 存储用整型 (0/1)
- */
-export function toSqliteBoolean(val: boolean | number | string | null | undefined): number {
-  return toBoolean(val) ? 1 : 0;
-}
-
-/**
- * 1. 用户表模型
- */
-export interface User {
-  user_id: string;
-  email: string;
-  password_hash?: string;
-  invited_by?: string | null;
-  recovery_code?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
- * 2. 账本表模型
+ * 1. 账本表模型
  */
 export interface Ledger {
   ledger_id: string;
@@ -131,7 +86,7 @@ export const LEDGER_TEMPLATES: LedgerTemplate[] = [
 ];
 
 /**
- * 3. 分类表模型 (支持大类/小类二级结构)
+ * 2. 分类表模型 (支持大类/小类二级结构)
  */
 export interface Category {
   category_id: string;
@@ -174,7 +129,7 @@ export interface ReorderCategoriesRequest {
 }
 
 /**
- * 4. 账单流水表模型 (核心表)
+ * 3. 账单流水表模型 (核心表)
  * 注意：金额 amount 必须以“分”为单位以整数 Integer 存储，避免浮点数精度丢失
  */
 export interface Transaction {
@@ -188,13 +143,12 @@ export interface Transaction {
   to_account?: string | null;
   transaction_date: string; // ISO 8601 格式或 YYYY-MM-DD
   remark?: string | null;
-  sync_status: SyncStatus;
   created_at: string;
   updated_at: string;
 }
 
 /**
- * 5. 预算表模型
+ * 4. 预算表模型
  */
 export interface Budget {
   budget_id: string;
@@ -241,7 +195,7 @@ export interface BudgetProgressItem {
   category_color?: string | null;
   is_total: boolean;
   budget_amount: number; // 预算金额 (分)
-  spent_amount: number;  // 已花费金额 (分)
+  spent_amount: number; // 已花费金额 (分)
   remaining_amount: number; // 剩余金额 (分, 超支时为负)
   percentage: number; // 百分比 (0 ~ 100+%)
   status: BudgetStatus; // normal: <80%, warning: 80%~100%, exceeded: >100%
@@ -263,87 +217,6 @@ export interface ApiResponse<T = any> {
   data?: T;
   error?: string;
   message?: string;
-}
-
-/**
- * 离线批量同步请求与响应 Payload
- */
-export interface SyncBatchRequest {
-  transactions: Transaction[];
-  last_synced_at?: string;
-}
-
-export interface SyncBatchResponse {
-  synced_ids: string[];
-  server_transactions: Transaction[];
-  server_time: string;
-}
-
-/**
- * 认证相关数据结构
- */
-export interface AuthUser {
-  user_id: string;
-  email: string;
-  created_at: string;
-  default_ledger_id?: string;
-  invited_by?: string | null;
-  recovery_code?: string | null;
-}
-
-export interface AuthConfig {
-  reg_mode: number; // 0: 关闭注册, 1: 邀请注册模式 (默认), 2: 自由注册模式
-  turnstile_site_key?: string | null; // 服务端配置的 Cloudflare Turnstile 前端站点公钥
-  turnstile_enabled?: boolean; // 服务端是否启用了人机验证 (即已配置 TURNSTILE_SECRET_KEY)
-}
-
-export type InviteCodeStatus = 'unused' | 'used' | 'expired';
-
-export interface InviteCode {
-  code: string;
-  creator_id: string;
-  used_by?: string | null;
-  status: InviteCodeStatus;
-  created_at: string;
-  used_at?: string | null;
-}
-
-export interface InviteEligibilityInfo {
-  total_eligible: number; // 当前已解锁可获取的总配额 (0 ~ 3)
-  claimed_count: number; // 当前已生成的邀请码数量
-  can_generate: boolean; // 是否可立即生成/领取新的邀请码 (claimed_count < total_eligible && claimed_count < 3)
-  max_limit: number; // 最大上限 (3)
-  has_recorded_transaction: boolean; // 是否已写入过记账数据
-  next_unlock_date: string | null; // 下一个邀请码解锁时间 (ISO 格式，若已达上限或未记账则为 null)
-  invite_codes: InviteCode[];
-}
-
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  name?: string;
-  turnstile_token?: string;
-  invite_code?: string;
-}
-
-export interface LoginRequest {
-  email: string;
-  password: string;
-  turnstile_token?: string;
-}
-
-export interface ResetPasswordRequest {
-  email: string;
-  recovery_code: string;
-  new_password: string;
-  turnstile_token?: string;
-}
-
-export interface AuthResponse {
-  user: AuthUser;
-  token: string;
-  expires_in: number;
-  new_recovery_code?: string | null; // 若本次登录或注册时新生成了密码恢复码，则在此返回给客户端展示
 }
 
 export interface TransactionFilter {
@@ -376,7 +249,7 @@ export interface TotalsSummary {
 }
 
 /**
- * 6. 周期记账规则模型
+ * 5. 周期记账规则模型
  */
 export type RecurringFrequency = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export type RecurringStatus = 'active' | 'paused';

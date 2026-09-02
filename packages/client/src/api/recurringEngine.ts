@@ -1,9 +1,9 @@
 /**
  * 账盾 - 本地周期记账自动执行引擎 (Recurring Transaction Local Engine)
- * 遵循《白皮书 6.1 离线优先 Offline-First》规范：
- * - 在应用启动、用户登录、离线同步或进入记账视图时自动判定到期规则
+ * 遵循《账盾 v3 架构设计》与 Local-First 规范：
+ * - 在应用启动或进入记账视图时自动判定到期规则
  * - 智能防重与跨期漏记批量补齐
- * - 本地即时入库并自动加入待同步队列
+ * - 本地即时入库 Dexie
  */
 
 import {
@@ -14,9 +14,9 @@ import {
   formatMoney,
   formatDateOnly,
 } from '@ledger/shared';
-import { localDb, enqueueSyncAction } from '../db';
-import { getStoredUser } from './cloudAuth';
+import { localDb } from '../db';
 import { syncManager } from './syncManager';
+import { isAutoSyncEnabled } from '../sync/syncConfig';
 
 export interface ProcessDueResult {
   executedRulesCount: number;
@@ -30,7 +30,7 @@ class RecurringEngine {
   private lastProcessedTimestamp = 0;
 
   /**
-   * 扫描并执行所有到期的周期记账规则 (BUG-C02: 支持内存互斥锁与幂等防重键)
+   * 扫描并执行所有到期的周期记账规则 (支持内存互斥锁与幂等防重键)
    * @param force 是否强制执行（忽略 5 秒防抖）
    */
   public async processDueRules(force = false): Promise<ProcessDueResult> {
@@ -48,19 +48,8 @@ class RecurringEngine {
     this.lastProcessedTimestamp = nowTs;
 
     try {
-      const user = getStoredUser();
-      const userId = user?.user_id || 'default_user';
-
       // 1. 读取本地所有周期规则
-      let allRules: RecurringRule[] = [];
-      if (user) {
-        allRules = await localDb.recurring_rules
-          .where('user_id')
-          .equals(userId)
-          .toArray();
-      } else {
-        allRules = await localDb.recurring_rules.toArray();
-      }
+      const allRules = await localDb.recurring_rules.toArray();
 
       // 2. 筛选生效中的规则
       const activeRules = allRules.filter((r) => r.status === 'active' && r.auto_record === 1);
@@ -82,10 +71,9 @@ class RecurringEngine {
 
         for (const dDate of dueDates) {
           const occurrenceTimestamp = new Date(`${dDate}T12:00:00.000Z`).getTime();
-          // BUG-C02 修复：基于规则 ID 与执行日期的幂等唯一键，杜绝切换 Tab 或重连时并发生成重复流水
           const txId = `tx_rec_${rule.rule_id}_${occurrenceTimestamp}`;
 
-          // 幂等防重检查：若本地或队列已存在同规则同周期的流水，则跳过生成
+          // 幂等防重检查：若本地已存在同规则同周期的流水，则跳过生成
           const existingTx = await localDb.transactions.get(txId);
           if (existingTx) {
             continue;
@@ -96,7 +84,7 @@ class RecurringEngine {
 
           const newTx: Transaction = {
             transaction_id: txId,
-            user_id: userId,
+            user_id: rule.user_id || 'default_user',
             ledger_id: rule.ledger_id,
             type: rule.type,
             amount: rule.amount,
@@ -105,7 +93,6 @@ class RecurringEngine {
             to_account: rule.to_account || undefined,
             transaction_date: txDateIso,
             remark: txRemark,
-            sync_status: user ? 'pending' : 'synced',
             created_at: nowIso,
             updated_at: nowIso,
           };
@@ -114,17 +101,6 @@ class RecurringEngine {
           await localDb.transactions.put(newTx);
           createdTransactions.push(newTx);
           ruleExecuted = true;
-
-          // 加入离线同步队列
-          if (user) {
-            await enqueueSyncAction({
-              user_id: userId,
-              entity_type: 'transaction',
-              entity_id: txId,
-              action: 'create',
-              payload: newTx,
-            });
-          }
         }
 
         if (ruleExecuted && !executedRuleNames.includes(rule.name)) {
@@ -141,24 +117,14 @@ class RecurringEngine {
         };
 
         await localDb.recurring_rules.put(updatedRule);
-
-        if (user) {
-          await enqueueSyncAction({
-            user_id: userId,
-            entity_type: 'recurring',
-            entity_id: rule.rule_id,
-            action: 'update',
-            payload: updatedRule,
-          });
-        }
       }
 
       if (createdTransactions.length > 0) {
         console.log(`[RecurringEngine] 成功自动记录 ${createdTransactions.length} 笔到期周期账单:`, executedRuleNames);
 
-        // 如果用户已登录，触发后台静默同步
-        if (user) {
-          syncManager.syncAll(true).catch(() => {});
+        // 若开启了自动快照同步，触发后台静默同步
+        if (isAutoSyncEnabled()) {
+          syncManager.triggerAutoSync().catch(() => {});
         }
 
         let summaryText = '';

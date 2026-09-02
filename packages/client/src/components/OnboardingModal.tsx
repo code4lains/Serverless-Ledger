@@ -155,10 +155,10 @@ export function OnboardingModal({
                   <Cloud className="w-5 h-5 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
                   <div>
                     <h4 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      可选 Cloudflare 边缘同步
+                      WebDAV / NAS 私有云同步
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                      服务端仅作为可选的加密数据中继，按需在多设备间增量对账。
+                      支持将全量端到端加密快照安全同步至群晖、坚果云等任意私有 WebDAV 服务。
                     </p>
                   </div>
                 </div>
@@ -345,7 +345,7 @@ export function OnboardingModal({
                   本地保险库已创建完毕！
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-                  您现在可以直接开始记账。后续若需要跨手机、电脑多端同步，可在「我的」页面随时开启 Cloudflare 云端同步。
+                  您现在可以直接开始记账。后续若需要跨手机、电脑多端同步，可在「设置」页面随时配置 WebDAV 私有云同步。
                 </p>
               </div>
 
@@ -354,10 +354,10 @@ export function OnboardingModal({
                   <Cloud className="w-5 h-5 text-sky-500" />
                   <div>
                     <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                      连接 Cloudflare 边缘云同步
+                      连接 WebDAV / NAS 私有云同步
                     </div>
                     <div className="text-xs text-slate-500 dark:text-slate-400">
-                      支持全球边缘低延迟多端实时对账
+                      支持将加密快照安全同步至群晖或坚果云
                     </div>
                   </div>
                 </div>

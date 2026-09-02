@@ -19,7 +19,6 @@ import {
   Budget,
   BudgetPeriod,
   SetBudgetItem,
-  AuthUser,
   formatMoney,
   toCents,
   fromCents,
@@ -36,8 +35,6 @@ interface BudgetManagementModalProps {
   categories: Category[];
   budgets: Budget[];
   onBudgetsChanged: () => Promise<void>;
-  onRequireAuth: () => void;
-  currentUser: AuthUser | null;
 }
 
 export function BudgetManagementModal({
@@ -48,8 +45,6 @@ export function BudgetManagementModal({
   categories,
   budgets,
   onBudgetsChanged,
-  onRequireAuth,
-  currentUser,
 }: BudgetManagementModalProps) {
   const [selectedLedgerId, setSelectedLedgerId] = useState<string>(() => {
     if (activeLedgerId && activeLedgerId !== 'all') return activeLedgerId;

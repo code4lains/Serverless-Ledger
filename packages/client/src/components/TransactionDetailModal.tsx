@@ -36,33 +36,26 @@ import {
 import { CategoryIcon } from './CategoryIcon';
 import { CategoryPicker } from './CategoryPicker';
 import { AccountPicker } from './AccountPicker';
-import { Layers } from 'lucide-react';
-
-import { AuthUser } from '@ledger/shared';
-import { isCloudSyncEnabled } from '../api/client';
+import { Layers, ShieldCheck } from 'lucide-react';
 
 interface TransactionDetailModalProps {
   transaction: Transaction | null;
   categories: Category[];
   ledgers?: Ledger[];
-  currentUser?: AuthUser | null;
   isOpen: boolean;
   onClose: () => void;
   onUpdate: (updatedTx: Transaction) => Promise<void>;
   onDelete: (transactionId: string) => Promise<void>;
-  onRequireAuth?: () => void;
 }
 
 export function TransactionDetailModal({
   transaction,
   categories,
   ledgers = [],
-  currentUser,
   isOpen,
   onClose,
   onUpdate,
   onDelete,
-  onRequireAuth,
 }: TransactionDetailModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -554,25 +547,11 @@ export function TransactionDetailModal({
 
                 <div className="flex justify-between items-center text-gray-500 dark:text-gray-400">
                   <span className="flex items-center gap-1.5">
-                    {transaction.sync_status === 'synced' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                    ) : (
-                      <Clock className="w-3.5 h-3.5 text-amber-500" />
-                    )}
-                    {isCloudSyncEnabled() && currentUser ? '同步状态' : '数据状态'}
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                    数据存储
                   </span>
-                  <span
-                    className={`font-medium ${
-                      transaction.sync_status === 'synced'
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-amber-500'
-                    }`}
-                  >
-                    {isCloudSyncEnabled() && currentUser
-                      ? transaction.sync_status === 'synced'
-                        ? '已同步至 Cloudflare D1'
-                        : '本地暂存 (离线优先)'
-                      : '仅保存至本地保险库'}
+                  <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                    本地安全保险库 (离线优先)
                   </span>
                 </div>
               </div>

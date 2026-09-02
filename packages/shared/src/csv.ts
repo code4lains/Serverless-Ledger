@@ -541,7 +541,6 @@ export function exportTransactionsToCsv(
     '转出账户/付款方',
     '转入账户/收款方',
     '备注信息',
-    '同步状态',
     '创建时间',
   ];
 
@@ -572,7 +571,6 @@ export function exportTransactionsToCsv(
       tx.from_account || '',
       tx.to_account || '',
       tx.remark || '',
-      tx.sync_status === 'synced' ? '已同步' : '待同步',
       tx.created_at,
     ]);
   }

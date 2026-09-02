@@ -1,22 +1,18 @@
 {
   "name": "serverless-ledger-monorepo",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "账盾 - 基于 React + Capacitor/Tauri + Cloudflare Workers + D1 的跨端开发管线",
+  "description": "账盾 - 基于 React + Capacitor/Tauri + WebDAV 加密快照同步的去中心化纯本地优先个人财务应用",
   "workspaces": [
-    "packages/*"
+    "packages/shared",
+    "packages/client"
   ],
   "scripts": {
-    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "npm -w @ledger/client run dev",
     "dev:client": "npm -w @ledger/client run dev",
-    "dev:server": "npm -w @ledger/server run dev",
-    "build": "npm -w @ledger/shared run build && npm -w @ledger/server run build && npm -w @ledger/client run build",
-    "build:all": "npm -w @ledger/shared run build && npm -w @ledger/server run build && npm -w @ledger/client run build",
+    "build": "npm -w @ledger/shared run build && npm -w @ledger/client run build",
     "build:client": "npm -w @ledger/shared run build && npm -w @ledger/client run build",
-    "build:server": "npm -w @ledger/server run build",
     "build:shared": "npm -w @ledger/shared run build",
-    "db:migrate:local": "npm -w @ledger/server run db:migrate:local",
-    "db:migrate:remote": "npm -w @ledger/server run db:migrate:remote",
     "generate:icons": "node scripts/generate-icons.mjs",
     "verify:pipeline": "node scripts/verify-build-pipeline.mjs",
     "cap:sync": "npm -w @ledger/client run cap:sync",
@@ -27,11 +23,9 @@
     "test": "npm -w @ledger/shared test && node scripts/verify-crypto.mjs && node scripts/test-client-sync-adapter.mjs && node scripts/test-local-store.mjs && node scripts/verify-build-pipeline.mjs",
     "test:crypto": "node scripts/verify-crypto.mjs",
     "test:local": "node scripts/test-local-store.mjs",
-    "test:pipeline": "node scripts/verify-build-pipeline.mjs",
-    "test:server": "npm -w @ledger/server run test"
+    "test:pipeline": "node scripts/verify-build-pipeline.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2",
     "typescript": "^5.7.3"
   },
   "dependencies": {

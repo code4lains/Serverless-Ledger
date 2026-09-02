@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 
-console.log('Testing Client SyncAdapter and Local-First Engine Contracts...');
+console.log('Testing Client WebDAV Snapshot Sync Engine Contracts (v3)...');
 
 // Mock localStorage for Node test environment
 const storage = new Map();
@@ -24,68 +24,97 @@ globalThis.CustomEvent = class {
   }
 };
 
-// Test 1: CloudflareSyncAdapter contract
-class MockCloudflareSyncAdapter {
+// Test 1: WebDavAdapter snapshot contract
+class MockWebDavAdapter {
   constructor(config) {
-    this.provider = 'cloudflare_d1';
     this.config = config;
+    this.remoteFiles = new Map();
   }
 
   async testConnection() {
-    return { success: true, message: '连接成功 (延迟 20ms)', latencyMs: 20 };
+    if (!this.config.webdavUrl) {
+      return { success: false, message: 'WebDAV URL 为空' };
+    }
+    return { success: true, message: 'WebDAV 连接成功 (延迟 25ms)', latencyMs: 25 };
   }
 
-  async getServerTime() {
-    return new Date().toISOString();
-  }
-
-  async pushChanges(changes) {
-    const syncedTransactionIds = (changes.transactions || []).map((t) => t.transaction_id);
+  async getRemoteMetadata(remotePath) {
+    const file = this.remoteFiles.get(remotePath);
+    if (!file) {
+      return { exists: false };
+    }
     return {
-      syncedTransactionIds,
-      serverTime: new Date().toISOString(),
+      exists: true,
+      lastModified: file.lastModified,
+      etag: file.etag,
+      contentLength: file.content.length,
     };
   }
 
-  async pullChanges(lastSyncedAt) {
+  async uploadSnapshot(remotePath, content) {
+    const now = new Date().toISOString();
+    const etag = `"${Date.now()}"`;
+    this.remoteFiles.set(remotePath, { content, lastModified: now, etag });
+    return { success: true, etag, lastModified: now };
+  }
+
+  async downloadSnapshot(remotePath) {
+    const file = this.remoteFiles.get(remotePath);
+    if (!file) {
+      return { success: false, error: '文件不存在' };
+    }
     return {
-      transactions: [],
-      ledgers: [],
-      categories: [],
-      budgets: [],
-      recurringRules: [],
-      serverTime: new Date().toISOString(),
+      success: true,
+      content: file.content,
+      lastModified: file.lastModified,
+      etag: file.etag,
     };
   }
 }
 
-const adapter = new MockCloudflareSyncAdapter({ provider: 'cloudflare_d1' });
-assert.strictEqual(adapter.provider, 'cloudflare_d1');
+const adapter = new MockWebDavAdapter({
+  provider: 'webdav',
+  webdavUrl: 'https://dav.jianguoyun.com/dav/',
+  webdavUsername: 'user@example.com',
+  webdavPassword: 'password123',
+  remotePath: '/ServerlessLedger/ledger-vault.enc.json',
+});
 
+// Test Connection
 const connRes = await adapter.testConnection();
 assert.strictEqual(connRes.success, true);
 assert.strictEqual(typeof connRes.latencyMs, 'number');
 
-const serverTime = await adapter.getServerTime();
-assert.ok(typeof serverTime === 'string');
+// Remote Metadata before upload
+let meta = await adapter.getRemoteMetadata('/ServerlessLedger/ledger-vault.enc.json');
+assert.strictEqual(meta.exists, false);
 
-const pushRes = await adapter.pushChanges({
-  transactions: [{ transaction_id: 'tx_123' }],
-  mutations: [{ entity_type: 'category', entity_id: 'cat_1', action: 'create' }],
+// Upload encrypted snapshot
+const mockSnapshotPayload = JSON.stringify({
+  app: 'ServerlessLedger',
+  version: 2,
+  encrypted: true,
+  payload: { ciphertext: 'base64ciphertext', iv: 'base64iv', salt: 'base64salt' },
 });
-assert.deepStrictEqual(pushRes.syncedTransactionIds, ['tx_123']);
 
-const pullRes = await adapter.pullChanges(null);
-assert.ok(Array.isArray(pullRes.transactions));
-assert.ok(Array.isArray(pullRes.ledgers));
-assert.ok(Array.isArray(pullRes.categories));
-assert.ok(Array.isArray(pullRes.budgets));
-assert.ok(Array.isArray(pullRes.recurringRules));
-assert.ok(typeof pullRes.serverTime === 'string');
+const uploadRes = await adapter.uploadSnapshot('/ServerlessLedger/ledger-vault.enc.json', mockSnapshotPayload);
+assert.strictEqual(uploadRes.success, true);
+assert.ok(typeof uploadRes.etag === 'string');
 
-console.log('✅ SyncAdapter contract tests passed!');
+// Remote Metadata after upload
+meta = await adapter.getRemoteMetadata('/ServerlessLedger/ledger-vault.enc.json');
+assert.strictEqual(meta.exists, true);
+assert.ok(meta.lastModified);
+assert.strictEqual(meta.contentLength, mockSnapshotPayload.length);
 
-// Test 2: Sync Config persistence
+// Download snapshot
+const downloadRes = await adapter.downloadSnapshot('/ServerlessLedger/ledger-vault.enc.json');
+assert.strictEqual(downloadRes.success, true);
+assert.strictEqual(downloadRes.content, mockSnapshotPayload);
+
+console.log('✅ WebDavAdapter snapshot contracts passed!');
+
+// Test 2: WebDAV Sync Config persistence & change event
 const SYNC_CONFIG_KEY = 'serverless_ledger_sync_config';
 
 function getSyncConfig() {
@@ -93,11 +122,12 @@ function getSyncConfig() {
   if (raw) {
     return JSON.parse(raw);
   }
-  const token = localStorage.getItem('serverless_ledger_jwt');
   return {
-    provider: token ? 'cloudflare_d1' : 'none',
-    serverUrl: '',
-    authToken: token || undefined,
+    provider: 'none',
+    webdavUrl: '',
+    webdavUsername: '',
+    webdavPassword: '',
+    remotePath: '/ServerlessLedger/ledger-vault.enc.json',
     autoSyncEnabled: true,
     syncIntervalSeconds: 60,
     lastSyncedAt: null,
@@ -111,43 +141,35 @@ function saveSyncConfig(config) {
   return merged;
 }
 
-function isCloudSyncEnabled() {
+function isWebdavSyncConfigured() {
   const cfg = getSyncConfig();
-  return cfg.provider !== 'none' && cfg.autoSyncEnabled !== false;
+  return cfg.provider === 'webdav' && !!cfg.webdavUrl?.trim();
 }
 
-function getEffectiveSyncAdapter() {
-  const cfg = getSyncConfig();
-  if (cfg.provider === 'none') return null;
-  if (cfg.provider === 'cloudflare_d1') return new MockCloudflareSyncAdapter(cfg);
-  return null;
-}
-
-// Initial state (no token, no config)
+// Initial state (no config)
 localStorage.clear();
 let cfg = getSyncConfig();
 assert.strictEqual(cfg.provider, 'none');
-assert.strictEqual(isCloudSyncEnabled(), false);
-assert.strictEqual(getEffectiveSyncAdapter(), null);
+assert.strictEqual(isWebdavSyncConfigured(), false);
 
-// Enable cloud sync
-saveSyncConfig({ provider: 'cloudflare_d1', authToken: 'jwt_token_123', serverUrl: 'https://example.com' });
+// Save WebDAV config
+saveSyncConfig({
+  provider: 'webdav',
+  webdavUrl: 'https://nas.local:5006/dav/',
+  webdavUsername: 'admin',
+  webdavPassword: 'naspassword',
+  remotePath: '/ServerlessLedger/my-vault.enc.json',
+});
+
 cfg = getSyncConfig();
-assert.strictEqual(cfg.provider, 'cloudflare_d1');
-assert.strictEqual(cfg.authToken, 'jwt_token_123');
-assert.strictEqual(cfg.serverUrl, 'https://example.com');
-assert.strictEqual(isCloudSyncEnabled(), true);
-assert.ok(getEffectiveSyncAdapter() !== null);
-assert.strictEqual(getEffectiveSyncAdapter().provider, 'cloudflare_d1');
+assert.strictEqual(cfg.provider, 'webdav');
+assert.strictEqual(cfg.webdavUrl, 'https://nas.local:5006/dav/');
+assert.strictEqual(cfg.remotePath, '/ServerlessLedger/my-vault.enc.json');
+assert.strictEqual(isWebdavSyncConfigured(), true);
 
-// Disable auto sync
-saveSyncConfig({ autoSyncEnabled: false });
-assert.strictEqual(isCloudSyncEnabled(), false);
+// Switch back to none
+saveSyncConfig({ provider: 'none' });
+assert.strictEqual(isWebdavSyncConfigured(), false);
 
-// Disable cloud sync (set provider to none)
-saveSyncConfig({ provider: 'none', autoSyncEnabled: true });
-assert.strictEqual(isCloudSyncEnabled(), false);
-assert.strictEqual(getEffectiveSyncAdapter(), null);
-
-console.log('✅ Sync config & dormancy tests passed!');
-console.log('🎉 ALL CLIENT SYNC ADAPTER CONTRACT TESTS COMPLETED SUCCESSFULLY!');
+console.log('✅ WebDAV Sync config tests passed!');
+console.log('🎉 ALL CLIENT WEBDAV SNAPSHOT SYNC TESTS COMPLETED SUCCESSFULLY!');

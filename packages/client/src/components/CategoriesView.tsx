@@ -33,22 +33,16 @@ import {
   reorderCategories,
 } from '../api/client';
 
-import { AuthUser } from '@ledger/shared';
-
 interface CategoriesViewProps {
   categories: Category[];
   initialType?: CategoryType;
-  currentUser?: AuthUser | null;
   onCategoriesChanged: () => Promise<void>;
-  onRequireAuth?: () => void;
 }
 
 export function CategoriesView({
   categories,
   initialType = 'expense',
-  currentUser,
   onCategoriesChanged,
-  onRequireAuth,
 }: CategoriesViewProps) {
   const [activeTab, setActiveTab] = useState<CategoryType>(initialType);
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});

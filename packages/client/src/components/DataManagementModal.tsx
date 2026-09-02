@@ -34,7 +34,6 @@ import {
   Category,
   Ledger,
   TransactionType,
-  AuthUser,
   formatMoney,
   toYuan,
   getCurrencySymbol,
@@ -64,27 +63,23 @@ import { CategoryIcon } from './CategoryIcon';
 interface DataManagementModalProps {
   isOpen: boolean;
   initialTab?: 'export' | 'import';
-  currentUser: AuthUser | null;
   ledgers: Ledger[];
   categories: Category[];
   transactions: Transaction[];
   activeLedgerId: string;
   onClose: () => void;
   onImportSuccess: () => Promise<void>;
-  onRequireAuth?: () => void;
 }
 
 export function DataManagementModal({
   isOpen,
   initialTab = 'export',
-  currentUser,
   ledgers,
   categories,
   transactions,
   activeLedgerId,
   onClose,
   onImportSuccess,
-  onRequireAuth,
 }: DataManagementModalProps) {
   const [activeTab, setActiveTab] = useState<'export' | 'import'>(initialTab);
 
@@ -219,7 +214,7 @@ export function DataManagementModal({
         mimeType = 'application/json;charset=utf-8;';
       } else if (exportFormat === 'enc_json') {
         // 端到端加密备份包 (.enc.json)
-        const userId = currentUser ? currentUser.user_id : 'default_vault';
+        const userId = 'default_vault';
         let customPw: string | undefined = undefined;
 
         if (useCustomExportPassword) {
@@ -406,7 +401,7 @@ export function DataManagementModal({
     setImportError(null);
 
     try {
-      const targetUserId = currentUser ? currentUser.user_id : 'default_vault';
+      const targetUserId = 'default_vault';
       const result = await importAllLocalData(decryptedBackupData, {
         overwrite: overwriteOnRestore,
         targetUserId,
@@ -462,11 +457,9 @@ export function DataManagementModal({
     try {
       const targetLedger = ledgers.find((l) => l.ledger_id === importTargetLedgerId) || ledgers[0];
       const effectiveLedgerId = targetLedger ? targetLedger.ledger_id : 'default_ledger';
-      const effectiveUserId = currentUser ? currentUser.user_id : 'default_user';
-
       const validTxs: Transaction[] = parseResult.items.map((item, idx) => ({
         transaction_id: item.id || `tx_imp_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
-        user_id: effectiveUserId,
+        user_id: 'default_user',
         ledger_id: effectiveLedgerId,
         type: item.type,
         amount: item.amount,
@@ -475,7 +468,6 @@ export function DataManagementModal({
         to_account: item.to_account || null,
         transaction_date: item.transaction_date,
         remark: item.remark || null,
-        sync_status: 'pending',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }));
