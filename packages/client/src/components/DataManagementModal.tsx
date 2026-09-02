@@ -901,7 +901,7 @@ export function DataManagementModal({
                             点击上传 或 拖拽备份/账单文件至此处
                           </p>
                           <p className="text-[11px] text-gray-400 mt-1">
-                            支持：加密备份包 (.enc.json)、JSON 备份、小星记账、微信支付、支付宝明细、标准 CSV/Excel
+                            支持：导出的备份包、填写的模板、小星记账导出的表格
                           </p>
                         </div>
                       </div>
