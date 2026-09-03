@@ -42,3 +42,8 @@ backup
 
 # Docs
 docs
+
+# Release archives
+release/
+release-*/
+release*

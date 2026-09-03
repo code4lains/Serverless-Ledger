@@ -35,6 +35,12 @@ jobs:
       - name: Run Unit Tests
         run: npm -w @ledger/shared test
 
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client
+        run: npm run build:client
+
       - name: Verify Build Configurations
         run: node scripts/verify-build-pipeline.mjs
 
@@ -82,11 +88,11 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Java JDK 17
+      - name: Setup Java JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '17'
+          java-version: '21'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -114,22 +120,64 @@ jobs:
           fi
           npx cap sync android
 
+      - name: Make Gradlew Executable
+        run: chmod +x packages/client/android/gradlew
+
+      # 添加签名配置（若存在 Secrets 则解码，否则正常打包未签名版）
+      - name: Decode Keystore
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 -d > android-release-key.jks
+          fi
+
       - name: Build APKs
         working-directory: packages/client/android
         run: |
-          chmod +x gradlew
           ./gradlew assembleDebug
           ./gradlew assembleRelease
+        env:
+          ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android-release-key.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
 
-      - name: Collect Android Artifacts
+      - name: Sign & Collect Android Artifacts
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           mkdir -p release-android
+          BUILD_TOOLS_PATH="$ANDROID_HOME/build-tools/$(ls -1 $ANDROID_HOME/build-tools | sort -V | tail -n 1)"
+
           if [ -f packages/client/android/app/build/outputs/apk/debug/app-debug.apk ]; then
             cp packages/client/android/app/build/outputs/apk/debug/app-debug.apk release-android/ServerlessLedger-Android-Debug.apk
           fi
-          if [ -f packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk release-android/ServerlessLedger-Android-Release-Unsigned.apk
+
+          UNSIGNED_APK="packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk"
+          SIGNED_APK="release-android/ServerlessLedger-Android-Release.apk"
+
+          if [ -f "$UNSIGNED_APK" ] && [ -f android-release-key.jks ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ]; then
+            echo "--- 对齐 APK (zipalign) ---"
+            $BUILD_TOOLS_PATH/zipalign -v -p 4 "$UNSIGNED_APK" "$SIGNED_APK"
+
+            echo "--- 签名 APK (apksigner) ---"
+            $BUILD_TOOLS_PATH/apksigner sign \
+              --ks android-release-key.jks \
+              --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+              --ks-key-alias "$ANDROID_KEY_ALIAS" \
+              --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+              "$SIGNED_APK"
+
+            echo "--- 验证签名 ---"
+            $BUILD_TOOLS_PATH/apksigner verify --verbose "$SIGNED_APK"
+          elif [ -f "$UNSIGNED_APK" ]; then
+            cp "$UNSIGNED_APK" release-android/ServerlessLedger-Android-Release-Unsigned.apk
           fi
+
+          ls -la release-android/
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
@@ -198,16 +246,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: packages/client
-          tagName: ${{ github.ref_name || inputs.release_tag }}
-          releaseDraft: false
-          prerelease: false
           args: --target ${{ matrix.platform.target }}
 
       - name: Collect Desktop Binaries
         shell: bash
         run: |
           mkdir -p release-desktop-${{ matrix.platform.name }}
-          find packages/client/src-tauri/target/${{ matrix.platform.target }}/release/bundle/ -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -exec cp {} release-desktop-${{ matrix.platform.name }}/ \; || true
+          find packages/client/src-tauri/target/${{ matrix.platform.target }}/release/bundle/ -type f \( -iname "*.msi" -o -iname "*.exe" -o -iname "*.dmg" -o -iname "*.deb" -o -iname "*.appimage" \) -exec cp {} release-desktop-${{ matrix.platform.name }}/ \; || true
           ls -la release-desktop-${{ matrix.platform.name }}/ || true
 
       - name: Upload Desktop Artifact

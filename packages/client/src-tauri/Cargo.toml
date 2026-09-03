@@ -1,6 +1,6 @@
 [package]
 name = "serverless-ledger"
-version = "1.0.0"
+version = "3.0.0"
 description = "账盾 - 极简记账应用 (Serverless Ledger)"
 authors = ["Serverless Ledger Team"]
 edition = "2021"
