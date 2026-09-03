@@ -35,8 +35,9 @@ npm -w @ledger/client run widget:sync
 2. 递归拷贝 `res/` 与 `widget/*.kt` (覆盖同名文件)。
 3. `MainActivity.kt` 若存在且未包含 `LedgerWidgetPlugin` → 注入 import + `registerPlugin`。
 4. `AndroidManifest.xml` 若存在且未包含 `LedgerWidgetProvider` → 在 `</application>` 前注入
-   receiver；若未包含 `android:scheme="ledger"` → 在 MainActivity `<activity>` 内注入 deep-link。
+   receiver（必须声明 `android:exported="true"`，否则 Android 12+ 及小米 MIUI/澎湃OS 无法找到组件）；若已存在但为 `exported="false"` 会自动修正为 `true`；若未包含 `android:scheme="ledger"` → 在 MainActivity `<activity>` 内注入 deep-link。
 5. 所有注入均幂等 (已包含则跳过)。
+6. `packages/client/package.json` 已配置 `"capacitor:sync:after"` 钩子，执行任何 `cap sync` 均自动触发同步。
 
 ## Payload 约定
 

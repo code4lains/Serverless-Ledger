@@ -799,6 +799,32 @@ assert.ok(profileViewContent.includes('lockAllVaults()'), 'ProfileView 清空数
 assert.ok(dbIndexContentForClear.includes('lockAllVaults()'), 'clearLocalDatabase 内部必须调用 lockAllVaults');
 console.log('✅ Bug 7 验证通过：清空本地数据彻底抹除内存凭据并广播锁定状态');
 
+// =========================================================================
+// 35. 安卓小部件规范与自动化流水线验证 (小米及 Android 12+ 兼容)
+// =========================================================================
+console.log('\n[35] 验证安卓小部件规范与自动化流水线 (exported="true", previewLayout, CI/Capacitor 同步)...');
+const widgetSnippetContent = fs.readFileSync('packages/client/android-widget/AndroidManifest.widget.snippet.xml', 'utf-8');
+assert.ok(widgetSnippetContent.includes('android:exported="true"'), '小部件 receiver 必须声明 android:exported="true"');
+assert.ok(!widgetSnippetContent.includes('android:exported="false"'), '小部件 receiver 不得声明 android:exported="false"');
+
+const widgetInfoContent = fs.readFileSync('packages/client/android-widget/res/xml/ledger_widget_info.xml', 'utf-8');
+assert.ok(widgetInfoContent.includes('android:previewLayout="@layout/widget_ledger_card"'), 'ledger_widget_info 必须声明 previewLayout 供桌面预览');
+assert.ok(widgetInfoContent.includes('android:description="@string/widget_description"'), 'ledger_widget_info 必须声明 description 满足 Android 12+ 规范');
+
+const clientPkgContent = fs.readFileSync('packages/client/package.json', 'utf-8');
+const clientPkgJson = JSON.parse(clientPkgContent);
+assert.strictEqual(clientPkgJson.scripts['capacitor:sync:after'], 'node ../../scripts/sync-android-widget.mjs', 'package.json 必须配置 capacitor:sync:after 自动化同步钩子');
+
+const syncScriptContent = fs.readFileSync('scripts/sync-android-widget.mjs', 'utf-8');
+assert.ok(syncScriptContent.includes('android:exported="true"'), 'sync-android-widget.mjs 中 RECEIVER_SNIPPET 必须为 exported="true"');
+
+const buildAndroidWorkflow = fs.readFileSync('.github/workflows/build-android.yml', 'utf-8');
+assert.ok(buildAndroidWorkflow.includes('sync-android-widget.mjs'), 'build-android.yml 必须包含 sync-android-widget.mjs 调用');
+
+const releaseWorkflow = fs.readFileSync('.github/workflows/release.yml', 'utf-8');
+assert.ok(releaseWorkflow.includes('sync-android-widget.mjs'), 'release.yml 必须包含 sync-android-widget.mjs 调用');
+console.log('✅ [35] 验证通过：安卓桌面小组件已满足小米/Android 12+ 导出规范与 CI/CD 自动同步');
+
 console.log('\n🎉 ALL BUG FIX VERIFICATIONS COMPLETED SUCCESSFULLY!');
 
 

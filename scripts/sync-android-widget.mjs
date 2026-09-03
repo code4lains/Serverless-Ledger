@@ -15,8 +15,8 @@ const androidDir = path.join(clientDir, 'android');
 const destMain = path.join(androidDir, 'app', 'src', 'main');
 
 const RECEIVER_SNIPPET = `        <receiver
-            android:name=".widget.LedgerWidgetProvider"
-            android:exported="false"
+            android:name="com.ledger.serverless.widget.LedgerWidgetProvider"
+            android:exported="true"
             android:label="\\u8d26\\u76fe">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -117,7 +117,20 @@ function injectManifest(manifestPath) {
       console.log('[widget-sync] WARN: </application> not found, skip receiver inject.');
     }
   } else {
-    console.log('[widget-sync] Manifest already contains LedgerWidgetProvider, skip receiver.');
+    // 若此前已注入但为 android:exported="false"，自动修正为 true
+    if (/LedgerWidgetProvider[\s\S]*?android:exported="false"/.test(src) || /android:exported="false"[\s\S]*?LedgerWidgetProvider/.test(src)) {
+      src = src.replace(
+        /(<receiver[^>]*?LedgerWidgetProvider[^>]*?)android:exported="false"/g,
+        '$1android:exported="true"',
+      ).replace(
+        /android:exported="false"([^>]*?LedgerWidgetProvider)/g,
+        'android:exported="true"$1',
+      );
+      changed = true;
+      console.log('[widget-sync] Manifest updated LedgerWidgetProvider android:exported="false" -> "true".');
+    } else {
+      console.log('[widget-sync] Manifest already contains LedgerWidgetProvider, skip receiver.');
+    }
   }
 
   if (!src.includes('android:scheme="ledger"')) {

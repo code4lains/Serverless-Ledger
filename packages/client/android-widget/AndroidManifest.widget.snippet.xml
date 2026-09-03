@@ -9,8 +9,8 @@
 -->
 <!-- 片段 A:小组件 receiver (放入 <application> 内) -->
 <receiver
-    android:name=".widget.LedgerWidgetProvider"
-    android:exported="false"
+    android:name="com.ledger.serverless.widget.LedgerWidgetProvider"
+    android:exported="true"
     android:label="账盾">
     <intent-filter>
         <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />

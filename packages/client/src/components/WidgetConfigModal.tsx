@@ -70,11 +70,12 @@ export const WidgetConfigModal: React.FC<Props> = ({ isOpen, onClose, ledgers, a
         </div>
 
         {showHelp && (
-          <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
-            <p className="font-semibold mb-1">如何使用桌面小部件？</p>
-            <p>1. 点击「保存」保存当前配置（账本、指标、点击跳转）。</p>
-            <p>2. 回到手机桌面，长按空白处 → 添加小部件 → 找到「账盾」拖放到桌面。</p>
-            <p>3. 记账 / 修改 / 删除 / 同步后桌面数字会自动刷新；点击卡片可按「点击后」配置直达记账 / 明细 / 统计页。</p>
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 text-xs text-blue-800 dark:text-blue-200 leading-relaxed space-y-1.5">
+            <p className="font-semibold text-blue-900 dark:text-blue-100">如何添加到手机桌面？</p>
+            <p>1. 点击下方「保存」先保存当前显示指标与账本。</p>
+            <p>2. <strong>小米 / 澎湃OS (HyperOS) 快捷添加：</strong>在手机桌面长按「账盾」App 图标，在弹出的菜单中点击<strong>「小部件」</strong>即可直接添加；或双指捏合桌面 →「添加小部件」→ 滑到最下方点击<strong>「安卓小部件 / 经典小部件」</strong>（或顶部搜索栏直接搜「账盾」）。</p>
+            <p>3. <strong>其他原生/品牌安卓：</strong>长按桌面空白处 → 选择「小部件」或「微件」→ 找到「账盾」拖放至桌面。</p>
+            <p>4. 记账 / 修改 / 删除 / 同步后桌面卡片金额会自动实时刷新；点击卡片可按「点击后」配置直达记账页或明细。</p>
           </div>
         )}
 

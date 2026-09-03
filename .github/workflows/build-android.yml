@@ -58,6 +58,7 @@ jobs:
             npx cap add android
           fi
           npx cap sync android
+          node ../../scripts/sync-android-widget.mjs
 
       - name: Make Gradlew Executable
         run: chmod +x packages/client/android/gradlew

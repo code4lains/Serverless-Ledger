@@ -11,6 +11,7 @@
     "cap:add:android": "cap add android",
     "cap:add:ios": "cap add ios",
     "cap:sync": "cap sync && node ../../scripts/sync-android-widget.mjs",
+    "capacitor:sync:after": "node ../../scripts/sync-android-widget.mjs",
     "widget:sync": "node ../../scripts/sync-android-widget.mjs",
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
