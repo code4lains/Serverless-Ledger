@@ -13,6 +13,7 @@
     "cap:sync": "cap sync",
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },

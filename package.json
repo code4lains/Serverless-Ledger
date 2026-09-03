@@ -18,6 +18,7 @@
     "cap:sync": "npm -w @ledger/client run cap:sync",
     "cap:add:android": "npm -w @ledger/client run cap:add:android",
     "cap:add:ios": "npm -w @ledger/client run cap:add:ios",
+    "tauri": "npm -w @ledger/client run tauri",
     "tauri:dev": "npm -w @ledger/client run tauri:dev",
     "tauri:build": "npm -w @ledger/client run tauri:build",
     "test": "npm -w @ledger/shared test && node scripts/verify-crypto.mjs && node scripts/test-client-sync-adapter.mjs && node scripts/test-local-store.mjs && node scripts/verify-bugfixes.mjs && node scripts/verify-build-pipeline.mjs",
