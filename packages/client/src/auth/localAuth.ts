@@ -390,14 +390,22 @@ export function setVaultRememberSessionEnabled(enabled: boolean): void {
 }
 
 /**
- * 7. 持久化保存当前解锁的会话密钥 (保存到 sessionStorage，标签页关闭即销毁)
+ * 7. 持久化保存当前解锁的会话密钥 (用于下次打开 App 自动保持解锁状态)
  */
 export async function persistVaultSession(vaultId: string, key: CryptoKey): Promise<void> {
-  if (typeof sessionStorage === 'undefined') return;
-  if (!isVaultRememberSessionEnabled()) return;
+  const remember = isVaultRememberSessionEnabled();
   try {
     const base64 = await exportKeyToBase64(key);
-    sessionStorage.setItem(`ledger_vault_session_${vaultId}`, base64);
+    // 写入 sessionStorage (满足单会话快速恢复与会话隔离)
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(`ledger_vault_session_${vaultId}`, base64);
+    }
+    // 若开启了「保持解锁状态 (记住会话)」，写入 localStorage，保证下次重新打开 App / 重启进程后自动保持解锁
+    if (remember && typeof localStorage !== 'undefined') {
+      localStorage.setItem(`ledger_vault_session_${vaultId}`, base64);
+    } else if (!remember && typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`ledger_vault_session_${vaultId}`);
+    }
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
     }
@@ -407,7 +415,7 @@ export async function persistVaultSession(vaultId: string, key: CryptoKey): Prom
 }
 
 /**
- * 清除已持久化的会话密钥 (用户手动锁定时调用，同时清除 sessionStorage 与可能残留的 localStorage)
+ * 清除已持久化的会话密钥 (用户手动锁定时调用，同时清除 sessionStorage 与 localStorage)
  */
 export function clearPersistedVaultSession(vaultId: string = 'default_vault'): void {
   try {
@@ -424,7 +432,7 @@ export function clearPersistedVaultSession(vaultId: string = 'default_vault'): v
 
 /**
  * 8. 尝试自动恢复上次未手动锁定的解锁会话状态
- * 优先读取 sessionStorage，并兼容检查 localStorage (若存在则迁移至 sessionStorage 并从 localStorage 中删除)
+ * 若上次退出前未手动点击锁定，重新打开 App 时将自动恢复解锁状态
  */
 export async function restoreVaultSession(vaultId: string = 'default_vault'): Promise<boolean> {
   // 1. 如果当前内存中已经持有密钥，直接返回 true
@@ -438,19 +446,17 @@ export async function restoreVaultSession(vaultId: string = 'default_vault'): Pr
   }
 
   let sessionKeyBase64: string | null = null;
+  // 优先读取当前会话的 sessionStorage
   if (typeof sessionStorage !== 'undefined') {
     sessionKeyBase64 = sessionStorage.getItem(`ledger_vault_session_${vaultId}`);
   }
 
-  // 兼容检查 localStorage (若存在则迁移至 sessionStorage 并从 localStorage 中删除)
-  if (!sessionKeyBase64 && typeof localStorage !== 'undefined') {
-    const legacyKey = localStorage.getItem(`ledger_vault_session_${vaultId}`);
-    if (legacyKey) {
-      sessionKeyBase64 = legacyKey;
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.setItem(`ledger_vault_session_${vaultId}`, legacyKey);
-      }
-      localStorage.removeItem(`ledger_vault_session_${vaultId}`);
+  // 若 sessionStorage 没有（如重新打开 App、重启应用进程），且启用了「记住会话」，从 localStorage 恢复
+  if (!sessionKeyBase64 && isVaultRememberSessionEnabled() && typeof localStorage !== 'undefined') {
+    sessionKeyBase64 = localStorage.getItem(`ledger_vault_session_${vaultId}`);
+    // 同步写入 sessionStorage 供当前会话缓存
+    if (sessionKeyBase64 && typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(`ledger_vault_session_${vaultId}`, sessionKeyBase64);
     }
   }
 

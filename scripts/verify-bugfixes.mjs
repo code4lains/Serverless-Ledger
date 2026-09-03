@@ -471,12 +471,13 @@ assert.strictEqual(toCents(0.01), 1);
 console.log('✅ Bug 6 验证通过：toCents 直接处理浮点数无 toFixed 截断误差');
 
 // =========================================================================
-// 18. Bug 7 验证: persistVaultSession 改用 sessionStorage 存储密钥
+// 18. Bug 7 验证: persistVaultSession 支持单会话与记住会话持久化 (兼顾零知识与重新打开App保持解锁)
 // =========================================================================
-console.log('\n[18] 验证 Bug 7: persistVaultSession 会话存储安全性加固...');
+console.log('\n[18] 验证 Bug 7: persistVaultSession 会话存储与记住会话持久化...');
 const localAuthTsContent = fs.readFileSync('packages/client/src/auth/localAuth.ts', 'utf-8');
 assert.ok(localAuthTsContent.includes('sessionStorage.setItem'), 'persistVaultSession 必须写入 sessionStorage');
-console.log('✅ Bug 7 验证通过：会话密钥落地于 sessionStorage 保证防取证零知识原则');
+assert.ok(localAuthTsContent.includes('localStorage.setItem'), 'persistVaultSession 在开启记住会话时必须写入 localStorage');
+console.log('✅ Bug 7 验证通过：会话密钥支持单会话隔离与记住会话持久化');
 
 // =========================================================================
 // 19. Bug 8 验证: storage.ts ESM 模块导入包含 .js 后缀
