@@ -427,24 +427,29 @@ export function findHeaderIdx(headerRow: string[], keywords: string[]): number {
 /**
  * 将各类日期形式（ISO字符串、标准文本、时间戳数值、Date对象）统一转换为 ISO 字符串
  */
-export function parseExcelDateValue(val: any): string {
-  if (!val) return new Date().toISOString();
+export function parseExcelDateValue(val: any): string | null {
+  if (!val) return null;
   if (val instanceof Date) {
-    return !isNaN(val.getTime()) ? val.toISOString() : new Date().toISOString();
+    return !isNaN(val.getTime()) ? val.toISOString() : null;
   }
   if (typeof val === 'number') {
-    if (val > 1000000) return new Date(val).toISOString();
+    if (isNaN(val) || !isFinite(val)) return null;
+    if (val > 1000000) {
+      const d = new Date(val);
+      return !isNaN(d.getTime()) ? d.toISOString() : null;
+    }
     // Excel 序列日期数 (以 1900-01-01 为基准)
     const utcMillis = Math.round((val - 25569) * 86400 * 1000);
     const d = new Date(utcMillis);
-    return !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+    return !isNaN(d.getTime()) ? d.toISOString() : null;
   }
   const str = String(val).trim();
+  if (!str) return null;
   let d = new Date(str);
   if (isNaN(d.getTime())) {
     d = new Date(str.replace(/-/g, '/'));
   }
-  return !isNaN(d.getTime()) ? d.toISOString() : new Date().toISOString();
+  return !isNaN(d.getTime()) ? d.toISOString() : null;
 }
 
 /**
@@ -802,6 +807,10 @@ function parseWeChatPayCsv(rows: string[][], categories: Category[], targetLedge
 
     // ISO 时间标准化
     const isoDate = parseExcelDateValue(timeStr);
+    if (!isoDate) {
+      invalidCount++;
+      continue;
+    }
 
     const item: ParsedBillItem = {
       id: orderId || `tx_wx_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -930,6 +939,10 @@ function parseAlipayCsv(rows: string[][], categories: Category[], targetLedgerId
     const finalRemark = customRemark && customRemark !== '/' ? `${remarkParts} (${customRemark})` : remarkParts;
 
     const isoDate = parseExcelDateValue(timeStr);
+    if (!isoDate) {
+      invalidCount++;
+      continue;
+    }
 
     const item: ParsedBillItem = {
       id: orderId || `tx_ali_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1040,6 +1053,10 @@ function parseStandardLedgerCsv(rows: string[][], categories: Category[], target
     const type: TransactionType = typeReverseMap[rawType.trim()] || 'expense';
 
     const isoDate = parseExcelDateValue(rawTime);
+    if (!isoDate) {
+      invalidCount++;
+      continue;
+    }
 
     const matched = matchCategoryByContext(rawCat, type, categories);
 
@@ -1158,6 +1175,10 @@ function parseGenericBillCsv(rows: string[][], categories: Category[], targetLed
 
     const amountInCents = toCents(absAmount);
     const isoDate = parseExcelDateValue(rawTime);
+    if (!isoDate) {
+      invalidCount++;
+      continue;
+    }
     const matched = matchCategoryByContext(`${rawCat} ${rawRemark}`, type, categories);
 
     const item: ParsedBillItem = {
@@ -1241,6 +1262,10 @@ export function parseXiaoxingLedgerWorkbook(
         }
 
         const isoDate = parseExcelDateValue(rawDate);
+        if (!isoDate) {
+          invalidCount++;
+          continue;
+        }
 
         const majorCat = String(row['支出大类'] || row['大类'] || '').trim();
         const minorCat = String(row['支出小类'] || row['小类'] || '').trim();
@@ -1312,6 +1337,10 @@ export function parseXiaoxingLedgerWorkbook(
         }
 
         const isoDate = parseExcelDateValue(rawDate);
+        if (!isoDate) {
+          invalidCount++;
+          continue;
+        }
 
         const majorCat = String(row['收入大类'] || row['大类'] || '').trim();
         const minorCat = String(row['收入小类'] || row['小类'] || '').trim();
@@ -1381,6 +1410,10 @@ export function parseXiaoxingLedgerWorkbook(
         }
 
         const isoDate = parseExcelDateValue(rawDate);
+        if (!isoDate) {
+          invalidCount++;
+          continue;
+        }
         const fromAccount = String(row['转出账户'] || '').trim() || null;
         const toAccount = String(row['转入账户'] || '').trim() || null;
         const rawRemark = String(row['备注'] || '').trim();
@@ -1423,6 +1456,10 @@ export function parseXiaoxingLedgerWorkbook(
         }
 
         const isoDate = parseExcelDateValue(rawDate);
+        if (!isoDate) {
+          invalidCount++;
+          continue;
+        }
         const direction = String(row['借贷类别'] || row['类别'] || '').trim();
         const targetPerson = String(row['借贷对象'] || row['对象'] || '').trim();
         const account = String(row['账户'] || '').trim() || null;
@@ -1484,6 +1521,10 @@ export function parseXiaoxingLedgerWorkbook(
         }
 
         const isoDate = parseExcelDateValue(rawDate);
+        if (!isoDate) {
+          invalidCount++;
+          continue;
+        }
         const rawRemark = String(row['备注'] || row['商家'] || '').trim();
 
         const item: ParsedBillItem = {
@@ -1516,6 +1557,10 @@ export function parseXiaoxingLedgerWorkbook(
         }
 
         const isoDate = parseExcelDateValue(rawDate);
+        if (!isoDate) {
+          invalidCount++;
+          continue;
+        }
         const rawRemark = String(row['备注'] || row['商家'] || '').trim();
 
         const item: ParsedBillItem = {
@@ -1630,6 +1675,10 @@ export function parseXiaoxingLedgerCsv(
 
     const amountInCents = toCents(rawAmount);
     const isoDate = parseExcelDateValue(rawDate);
+    if (!isoDate) {
+      invalidCount++;
+      continue;
+    }
     const majorCat = majorCatIdx >= 0 ? row[majorCatIdx].trim() : '';
     const minorCat = minorCatIdx >= 0 ? row[minorCatIdx].trim() : '';
     const catKey = minorCat ? `${majorCat} > ${minorCat}` : majorCat;

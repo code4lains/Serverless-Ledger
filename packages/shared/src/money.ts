@@ -12,7 +12,7 @@ export function toCents(yuan: number | string | null | undefined): number {
   if (yuan === null || yuan === undefined) return 0;
   if (typeof yuan === 'number') {
     if (!Number.isFinite(yuan) || Math.abs(yuan) > Number.MAX_SAFE_INTEGER) return 0;
-    const rounded = Math.round(Number(yuan.toFixed(2)) * 100);
+    const rounded = Math.round(yuan * 100);
     return rounded === 0 ? 0 : rounded;
   }
   const cleanStr = String(yuan).trim().replace(/,/g, '').replace(/[^0-9.-]/g, '');

@@ -88,7 +88,9 @@ export function isWebdavSyncConfigured(): boolean {
   const cfg = getSyncConfig();
   return (
     cfg.provider === 'webdav' &&
-    Boolean(cfg.webdavUrl && cfg.webdavUrl.trim())
+    Boolean(cfg.webdavUrl && cfg.webdavUrl.trim()) &&
+    Boolean(cfg.webdavUsername && cfg.webdavUsername.trim()) &&
+    Boolean(cfg.webdavPassword && cfg.webdavPassword.trim())
   );
 }
 

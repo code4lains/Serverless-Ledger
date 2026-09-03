@@ -113,6 +113,7 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
     let totalExpense = 0;
     let totalIncome = 0;
     let totalTransfer = 0;
+    let totalLoan = 0;
 
     for (const tx of list) {
       if (tx.type === 'expense') {
@@ -121,6 +122,8 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
         totalIncome += tx.amount;
       } else if (tx.type === 'transfer') {
         totalTransfer += tx.amount;
+      } else if (tx.type === 'loan') {
+        totalLoan += tx.amount;
       }
     }
 
@@ -130,6 +133,7 @@ export function groupTransactionsByDay(transactions: Transaction[]): Transaction
       totalExpense,
       totalIncome,
       totalTransfer,
+      totalLoan,
       transactions: list,
     });
   }
@@ -242,7 +246,7 @@ export function calculateTotals(transactions: Transaction[]): TotalsSummary {
     totalLoanBorrowed,
     totalLoanRepaid,
     totalLoanCollected,
-    balance: totalIncome - totalExpense,
+    balance: totalIncome - totalExpense + totalLoanBorrowed + totalLoanCollected - totalLoanLent - totalLoanRepaid,
   };
 }
 

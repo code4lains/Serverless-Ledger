@@ -10,7 +10,7 @@
  * 5. 加密备份包 (EncryptedBackupPackage) 导出与还原
  */
 
-import { EncryptedPayload, EncryptedBackupPackage } from '@ledger/shared';
+import type { EncryptedPayload, EncryptedBackupPackage } from '@ledger/shared';
 
 export const DEFAULT_PBKDF2_ITERATIONS = 100_000;
 export const SALT_BYTE_LENGTH = 16;
@@ -170,16 +170,22 @@ export async function importKeyFromBase64(base64: string): Promise<CryptoKey> {
 /**
  * 生成 16 位高熵密码恢复码 (格式: XXXX-XXXX-XXXX-XXXX)
  * 采用 32 字符安全字典 (去掉易混淆的 0, O, 1, I)，熵值达到 80 bits
+ * 采用 Rejection Sampling (拒绝采样) 彻底消除取模偏差 (Modulo Bias)
  */
 export function generateRecoveryCode(): string {
-  const randomBytes = new Uint8Array(16);
-  getRandomValues(randomBytes);
-
-  let rawCode = '';
   const charsetLength = RECOVERY_CODE_CHARSET.length;
-  for (let i = 0; i < 16; i++) {
-    const charIndex = randomBytes[i] % charsetLength;
-    rawCode += RECOVERY_CODE_CHARSET[charIndex];
+  const maxValid = 256 - (256 % charsetLength);
+  let rawCode = '';
+  const buffer = new Uint8Array(32);
+
+  while (rawCode.length < 16) {
+    getRandomValues(buffer);
+    for (let i = 0; i < buffer.length && rawCode.length < 16; i++) {
+      const byte = buffer[i];
+      if (byte < maxValid) {
+        rawCode += RECOVERY_CODE_CHARSET[byte % charsetLength];
+      }
+    }
   }
 
   // 格式化为 4x4 可读分段

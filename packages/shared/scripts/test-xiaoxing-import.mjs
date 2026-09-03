@@ -6,10 +6,13 @@ const wechatCsv = `微信支付账单明细
 ------------------------------------------------------------------------------------
 交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注
 2026-08-21 12:00:00,商户消费,星巴克,拿铁,支出,¥32.00,零钱,支付成功,4200000000000001,10000001,/
+,商户消费,星巴克,拿铁,支出,¥32.00,零钱,支付成功,4200000000000002,10000002,/
 `;
 const res = detectAndParseBillFile(wechatCsv, 'wechat.csv');
 assert.equal(res.format_type, 'wechat');
 assert.equal(res.valid_rows, 1);
+assert.equal(res.invalid_rows, 1);
+assert.equal(res.total_rows, 2);
 assert.equal(res.items.length, 1);
 assert.equal(res.items[0].amount, 3200);
 
@@ -26,6 +29,7 @@ const expData = [
   { '支出日期': '2026-09-01 10:00:00', '支出金额': '¥1,234.56', '支出大类': '餐饮', '支出小类': '午餐', '支出账户': '微信' },
   { '支出日期': '2026-09-01 11:00:00', '支出金额': '0', '支出大类': '餐饮', '支出小类': '午餐' }, // should be skipped
   { '支出日期': '2026-09-01 12:00:00', '支出金额': '-100', '支出大类': '餐饮', '支出小类': '午餐' }, // should be skipped
+  { '支出日期': '', '支出金额': '100', '支出大类': '餐饮', '支出小类': '午餐' }, // should be skipped
 ];
 XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(expData), '支出');
 
@@ -66,7 +70,7 @@ XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(recData), '应收款')
 
 const parsedResult = parseXiaoxingLedgerWorkbook(wb, []);
 assert.equal(parsedResult.valid_rows, 6, 'Should have 6 valid rows parsed');
-assert.equal(parsedResult.invalid_rows, 7, 'Should have 7 invalid rows skipped');
+assert.equal(parsedResult.invalid_rows, 8, 'Should have 8 invalid rows skipped');
 assert.equal(parsedResult.total_expense, 123456, 'Expense amount should be 123456');
 assert.equal(parsedResult.total_income, 250000, 'Income amount should be 250000');
 assert.equal(parsedResult.total_transfer, 300000, 'Transfer amount should be 300000');

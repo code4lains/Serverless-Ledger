@@ -390,33 +390,41 @@ export function setVaultRememberSessionEnabled(enabled: boolean): void {
 }
 
 /**
- * 7. 持久化保存当前解锁的会话密钥 (用于下次打开 App 自动保持解锁状态)
+ * 7. 持久化保存当前解锁的会话密钥 (保存到 sessionStorage，标签页关闭即销毁)
  */
 export async function persistVaultSession(vaultId: string, key: CryptoKey): Promise<void> {
-  if (typeof localStorage === 'undefined') return;
+  if (typeof sessionStorage === 'undefined') return;
   if (!isVaultRememberSessionEnabled()) return;
   try {
     const base64 = await exportKeyToBase64(key);
-    localStorage.setItem(`ledger_vault_session_${vaultId}`, base64);
-    localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+    sessionStorage.setItem(`ledger_vault_session_${vaultId}`, base64);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`ledger_vault_locked_${vaultId}`);
+    }
   } catch (err) {
     console.warn('[Vault] Failed to persist vault session key:', err);
   }
 }
 
 /**
- * 清除已持久化的会话密钥 (用户手动锁定时调用)
+ * 清除已持久化的会话密钥 (用户手动锁定时调用，同时清除 sessionStorage 与可能残留的 localStorage)
  */
 export function clearPersistedVaultSession(vaultId: string = 'default_vault'): void {
-  if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.removeItem(`ledger_vault_session_${vaultId}`);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.removeItem(`ledger_vault_session_${vaultId}`);
+    }
+  } catch {}
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(`ledger_vault_session_${vaultId}`);
+    }
   } catch {}
 }
 
 /**
  * 8. 尝试自动恢复上次未手动锁定的解锁会话状态
- * 若上次退出前未手动点击锁定，重新打开 App 时将自动恢复解锁状态
+ * 优先读取 sessionStorage，并兼容检查 localStorage (若存在则迁移至 sessionStorage 并从 localStorage 中删除)
  */
 export async function restoreVaultSession(vaultId: string = 'default_vault'): Promise<boolean> {
   // 1. 如果当前内存中已经持有密钥，直接返回 true
@@ -429,8 +437,23 @@ export async function restoreVaultSession(vaultId: string = 'default_vault'): Pr
     return false;
   }
 
-  if (typeof localStorage === 'undefined') return false;
-  const sessionKeyBase64 = localStorage.getItem(`ledger_vault_session_${vaultId}`);
+  let sessionKeyBase64: string | null = null;
+  if (typeof sessionStorage !== 'undefined') {
+    sessionKeyBase64 = sessionStorage.getItem(`ledger_vault_session_${vaultId}`);
+  }
+
+  // 兼容检查 localStorage (若存在则迁移至 sessionStorage 并从 localStorage 中删除)
+  if (!sessionKeyBase64 && typeof localStorage !== 'undefined') {
+    const legacyKey = localStorage.getItem(`ledger_vault_session_${vaultId}`);
+    if (legacyKey) {
+      sessionKeyBase64 = legacyKey;
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(`ledger_vault_session_${vaultId}`, legacyKey);
+      }
+      localStorage.removeItem(`ledger_vault_session_${vaultId}`);
+    }
+  }
+
   if (!sessionKeyBase64) {
     return false;
   }

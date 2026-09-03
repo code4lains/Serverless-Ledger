@@ -9,8 +9,8 @@ import {
   Transaction,
   Budget,
   RecurringRule,
-} from './models';
-import { VaultMetadata, EncryptedBackupPackage } from './cryptoTypes';
+} from './models.js';
+import { VaultMetadata, EncryptedBackupPackage } from './cryptoTypes.js';
 
 // ======================= 同步适配器接口与类型 =======================
 export type SyncProviderType = 'none' | 'webdav' | 'local_folder';

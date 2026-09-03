@@ -184,9 +184,8 @@ function advanceExecutionDate(
     const currentIsoDay = currentJsDay === 0 ? 7 : currentJsDay;
 
     let diff = desiredDay - currentIsoDay;
-    if (diff <= 0) {
-      diff += 7 * interval;
-    }
+    diff += 7 * interval;
+    if (diff <= 0) diff += 7;
     target.setDate(target.getDate() + diff);
     return formatDateOnly(target);
   }

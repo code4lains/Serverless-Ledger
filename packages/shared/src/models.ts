@@ -234,6 +234,7 @@ export interface TransactionDayGroup {
   totalExpense: number; // 分
   totalIncome: number; // 分
   totalTransfer: number; // 分
+  totalLoan: number; // 分
   transactions: Transaction[];
 }
 

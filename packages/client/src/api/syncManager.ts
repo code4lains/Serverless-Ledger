@@ -25,23 +25,33 @@ class SyncManager {
   private lastSyncedAt: string | null = null;
   private lastAutoSyncTimestamp = 0;
 
+  private handleBeforeUnload = () => {
+    this.stop();
+  };
+
+  private handleConfigChanged = (e: any) => {
+    const detail = e.detail;
+    if (detail?.lastSyncedAt !== undefined) {
+      this.lastSyncedAt = detail.lastSyncedAt;
+    }
+    if (isAutoSyncEnabled()) {
+      this.restartTimer();
+    } else {
+      if (this.autoSyncTimer) {
+        clearInterval(this.autoSyncTimer);
+        this.autoSyncTimer = null;
+      }
+    }
+    this.notifyStats();
+  };
+
   constructor() {
     const cfg = getSyncConfig();
     this.lastSyncedAt = cfg.lastSyncedAt || null;
 
     if (typeof window !== 'undefined') {
-      window.addEventListener('sync:config_changed', (e: any) => {
-        const detail = e.detail;
-        if (detail?.lastSyncedAt !== undefined) {
-          this.lastSyncedAt = detail.lastSyncedAt;
-        }
-        if (isAutoSyncEnabled()) {
-          this.restartTimer();
-        } else {
-          this.stop();
-        }
-        this.notifyStats();
-      });
+      window.addEventListener('sync:config_changed', this.handleConfigChanged);
+      window.addEventListener('beforeunload', this.handleBeforeUnload);
     }
   }
 
@@ -49,6 +59,12 @@ class SyncManager {
    * 启动同步引擎 (仅在配置了 WebDAV 且启用了 autoSync 时激活后台计时器)
    */
   public start() {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('sync:config_changed', this.handleConfigChanged);
+      window.addEventListener('sync:config_changed', this.handleConfigChanged);
+      window.removeEventListener('beforeunload', this.handleBeforeUnload);
+      window.addEventListener('beforeunload', this.handleBeforeUnload);
+    }
     if (!isAutoSyncEnabled()) {
       return;
     }
@@ -81,6 +97,10 @@ class SyncManager {
     if (this.autoSyncTimer) {
       clearInterval(this.autoSyncTimer);
       this.autoSyncTimer = null;
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('sync:config_changed', this.handleConfigChanged);
+      window.removeEventListener('beforeunload', this.handleBeforeUnload);
     }
   }
 
@@ -189,3 +209,9 @@ class SyncManager {
 }
 
 export const syncManager = new SyncManager();
+
+if (import.meta && (import.meta as any).hot) {
+  (import.meta as any).hot.dispose(() => {
+    syncManager.stop();
+  });
+}
