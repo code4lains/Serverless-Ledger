@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 账盾桌面小组件字符串资源 (Android 12+ 要求 AppWidgetProviderInfo 必须声明 description)。
+     Source of truth: packages/client/android-widget/res/values/ledger_widget_strings.xml
+     同步目标: packages/client/android/app/src/main/res/values/ledger_widget_strings.xml -->
+<resources>
+    <string name="widget_description">账盾桌面小组件：在桌面速览今日与本月收支</string>
+</resources>

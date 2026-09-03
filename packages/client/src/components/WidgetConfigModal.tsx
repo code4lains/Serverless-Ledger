@@ -28,10 +28,12 @@ const METRIC_OPTIONS: { key: WidgetDataMetric; label: string }[] = [
 export const WidgetConfigModal: React.FC<Props> = ({ isOpen, onClose, ledgers, activeLedgerId }) => {
   const [settings, setSettings] = useState<WidgetSettings>(() => getWidgetSettings());
   const [saving, setSaving] = useState<boolean>(false);
+  const [showHelp, setShowHelp] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       setSettings(getWidgetSettings());
+      setShowHelp(false);
     }
   }, [isOpen]);
 
@@ -56,10 +58,25 @@ export const WidgetConfigModal: React.FC<Props> = ({ isOpen, onClose, ledgers, a
             <ArrowLeft className="w-5 h-5" />
           </button>
           <h2 className="text-base font-semibold text-stone-800 dark:text-stone-100">编辑小部件</h2>
-          <button type="button" className="p-2 text-stone-400 hover:text-stone-600">
+          <button
+            type="button"
+            onClick={() => setShowHelp((v) => !v)}
+            title="小部件使用说明"
+            aria-label="小部件使用说明"
+            className="p-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 transition"
+          >
             <HelpCircle className="w-5 h-5" />
           </button>
         </div>
+
+        {showHelp && (
+          <div className="mx-4 mt-3 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/50 text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
+            <p className="font-semibold mb-1">如何使用桌面小部件？</p>
+            <p>1. 点击「保存」保存当前配置（账本、指标、点击跳转）。</p>
+            <p>2. 回到手机桌面，长按空白处 → 添加小部件 → 找到「账盾」拖放到桌面。</p>
+            <p>3. 记账 / 修改 / 删除 / 同步后桌面数字会自动刷新；点击卡片可按「点击后」配置直达记账 / 明细 / 统计页。</p>
+          </div>
+        )}
 
         <div className="p-4 space-y-1 divide-y divide-stone-100 dark:divide-stone-800 text-sm">
           <div className="py-3 flex items-center justify-between">

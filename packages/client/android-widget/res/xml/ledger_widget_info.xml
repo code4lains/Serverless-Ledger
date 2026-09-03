@@ -2,7 +2,9 @@
 <!-- 账盾桌面小组件规格定义 (AppWidgetProviderInfo)
      Source of truth: packages/client/android-widget/res/xml/ledger_widget_info.xml
      同步目标: packages/client/android/app/src/main/res/xml/ledger_widget_info.xml
-     注意: 刻意不引用 previewImage / description 字符串资源，避免 Capacitor 生成工程缺资源导致构建失败。
+     注意: Android 12+ (targetSdk 31+) 要求必须声明 android:description，
+     否则系统会忽略该 provider，小部件不会出现在桌面添加列表。
+     字符串定义见 res/values/ledger_widget_strings.xml。
      如需预览图，后续可添加 res/drawable/widget_preview.xml (vector) 再加回
      android:previewImage="@drawable/widget_preview"。 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
@@ -13,6 +15,7 @@
     android:minResizeWidth="180dp"
     android:minResizeHeight="110dp"
     android:updatePeriodMillis="1800000"
+    android:description="@string/widget_description"
     android:initialLayout="@layout/widget_ledger_card"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen" />

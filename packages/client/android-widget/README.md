@@ -6,6 +6,7 @@
 ## 目录结构 (保持拷贝后相对路径)
 
 - `res/xml/ledger_widget_info.xml` → `android/app/src/main/res/xml/ledger_widget_info.xml`
+- `res/values/ledger_widget_strings.xml` → `android/app/src/main/res/values/ledger_widget_strings.xml`（Android 12+ 必需的 description 字符串，缺失则桌面不显示小部件）
 - `res/layout/widget_ledger_card.xml` → `android/app/src/main/res/layout/widget_ledger_card.xml`
 - `res/drawable/widget_card_bg.xml` → `android/app/src/main/res/drawable/widget_card_bg.xml`
 - `java/com/ledger/serverless/widget/*.kt` → `android/app/src/main/java/com/ledger/serverless/widget/*.kt`
