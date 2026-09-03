@@ -74,10 +74,8 @@ export async function seedLocalCategories() {
     await localDb.categories.bulkPut(defaultCategories);
   } else {
     // 检查并补全系统级默认分类（防止旧版本数据遗漏新增大类/小类）
-    const existingSystemCategories = await localDb.categories
-      .filter((c) => c.user_id === null || c.user_id === undefined)
-      .toArray();
-    const existingIds = new Set(existingSystemCategories.map((c) => c.category_id));
+    const existingCategories = await localDb.categories.toArray();
+    const existingIds = new Set(existingCategories.map((c) => c.category_id));
 
     const missingDefaults = defaultCategories.filter((c) => !existingIds.has(c.category_id));
     if (missingDefaults.length > 0) {

@@ -36,4 +36,14 @@ assert.equal(res.total_rows, 2);
 assert.equal(res.items.length, 1);
 assert.equal(res.items[0].amount, 3850);
 
+// BUG N3: parseCsvString preserves whitespace for quoted fields
+import { parseCsvString } from '../dist/index.js';
+const testCsv = '  unquoted1  ,"  quoted with spaces  ",  unquoted2  \r\n" quoted line 2 ",unquoted3,""\n  hello  ," world "';
+const parsed = parseCsvString(testCsv);
+assert.deepEqual(parsed, [
+  ['unquoted1', '  quoted with spaces  ', 'unquoted2'],
+  [' quoted line 2 ', 'unquoted3', ''],
+  ['hello', ' world '],
+]);
+
 console.log('CSV and Money tests passed!');

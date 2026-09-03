@@ -75,10 +75,12 @@ export async function importSnapshot(
   importedRecurring: number;
 }> {
   let key: CryptoKey | null = null;
+  let wasPasswordDerived = false;
 
   // 1. 如果显式提供了密码，且备份包包含 salt，优先基于该 salt 派生密钥
   if (options.password && encryptedPackage?.payload?.salt) {
     key = await deriveKeyFromPassword(options.password, encryptedPackage.payload.salt);
+    wasPasswordDerived = true;
   } else {
     key = vaultKey || getCachedKey();
   }
@@ -95,7 +97,7 @@ export async function importSnapshot(
     );
   } catch (err: any) {
     // 若使用当前本地 key 解密失败，但提供了密码，则尝试使用密码派生解密
-    if (options.password && encryptedPackage?.payload?.salt) {
+    if (options.password && encryptedPackage?.payload?.salt && !wasPasswordDerived) {
       const derived = await deriveKeyFromPassword(options.password, encryptedPackage.payload.salt);
       decryptedData = await restoreEncryptedBackupPackage<SnapshotData>(
         encryptedPackage,

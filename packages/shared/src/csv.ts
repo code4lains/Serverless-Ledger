@@ -72,6 +72,7 @@ export function parseCsvString(csvText: string): string[][] {
   let currentRow: string[] = [];
   let currentField = '';
   let inQuotes = false;
+  let wasQuoted = false;
   let i = 0;
   const len = text.length;
 
@@ -88,6 +89,7 @@ export function parseCsvString(csvText: string): string[][] {
         } else {
           // 引号结束
           inQuotes = false;
+          wasQuoted = true;
           i++;
           continue;
         }
@@ -102,8 +104,10 @@ export function parseCsvString(csvText: string): string[][] {
         i++;
         continue;
       } else if (char === ',') {
-        currentRow.push(currentField.trim());
+        const fieldToPush = wasQuoted ? currentField : currentField.trim();
+        currentRow.push(fieldToPush);
         currentField = '';
+        wasQuoted = false;
         i++;
         continue;
       } else if (char === '\r') {
@@ -111,21 +115,25 @@ export function parseCsvString(csvText: string): string[][] {
         if (i + 1 < len && text[i + 1] === '\n') {
           i++;
         }
-        currentRow.push(currentField.trim());
+        const fieldToPush = wasQuoted ? currentField : currentField.trim();
+        currentRow.push(fieldToPush);
         if (currentRow.some((f) => f.length > 0)) {
           rows.push(currentRow);
         }
         currentRow = [];
         currentField = '';
+        wasQuoted = false;
         i++;
         continue;
       } else if (char === '\n') {
-        currentRow.push(currentField.trim());
+        const fieldToPush = wasQuoted ? currentField : currentField.trim();
+        currentRow.push(fieldToPush);
         if (currentRow.some((f) => f.length > 0)) {
           rows.push(currentRow);
         }
         currentRow = [];
         currentField = '';
+        wasQuoted = false;
         i++;
         continue;
       } else {
@@ -137,8 +145,9 @@ export function parseCsvString(csvText: string): string[][] {
   }
 
   // 处理最后一行与最后一个字段
-  if (currentField.length > 0 || currentRow.length > 0) {
-    currentRow.push(currentField.trim());
+  if (currentField.length > 0 || currentRow.length > 0 || wasQuoted) {
+    const fieldToPush = wasQuoted ? currentField : currentField.trim();
+    currentRow.push(fieldToPush);
     if (currentRow.some((f) => f.length > 0)) {
       rows.push(currentRow);
     }

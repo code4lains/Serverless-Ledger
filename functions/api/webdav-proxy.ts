@@ -183,6 +183,14 @@ export async function onRequest(context: { request: Request }): Promise<Response
     const forwardHeaders = new Headers(request.headers);
     forwardHeaders.delete('host');
     forwardHeaders.delete('x-target-url');
+    forwardHeaders.delete('cookie');
+    forwardHeaders.delete('cf-connecting-ip');
+    forwardHeaders.delete('cf-ipcountry');
+    forwardHeaders.delete('cf-ray');
+    forwardHeaders.delete('cf-visitor');
+    forwardHeaders.delete('x-forwarded-for');
+    forwardHeaders.delete('x-forwarded-proto');
+    forwardHeaders.delete('x-real-ip');
 
     const response = await fetch(targetUrl.toString(), {
       method: request.method,

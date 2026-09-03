@@ -132,12 +132,14 @@ export async function deleteCategory(categoryId: string): Promise<boolean> {
  */
 export async function reorderCategories(items: ReorderCategoryItem[]): Promise<boolean> {
   const now = new Date().toISOString();
-  for (const item of items) {
-    await localDb.categories.update(item.category_id, {
-      sort_order: item.sort_order,
-      updated_at: now,
-    });
-  }
+  await localDb.transaction('rw', localDb.categories, async () => {
+    for (const item of items) {
+      await localDb.categories.update(item.category_id, {
+        sort_order: item.sort_order,
+        updated_at: now,
+      });
+    }
+  });
   return true;
 }
 
@@ -462,6 +464,9 @@ export async function updateTransaction(
  * 删除账单流水 (纯本地 0ms 删除)
  */
 export async function deleteTransaction(transactionId: string): Promise<boolean> {
+  const existing = await localDb.transactions.get(transactionId);
+  if (!existing) return false;
+
   await localDb.transactions.delete(transactionId);
   return true;
 }
@@ -565,6 +570,9 @@ export async function saveBatchBudgets(
  * 删除预算
  */
 export async function deleteBudget(budgetId: string): Promise<boolean> {
+  const existing = await localDb.budgets.get(budgetId);
+  if (!existing) return false;
+
   await localDb.budgets.delete(budgetId);
   return true;
 }
@@ -665,6 +673,10 @@ export async function updateRecurringRule(
 /**
  * 删除周期记账规则 (纯本地 0ms 删除)
  */
-export async function deleteRecurringRule(ruleId: string): Promise<void> {
+export async function deleteRecurringRule(ruleId: string): Promise<boolean> {
+  const existing = await localDb.recurring_rules.get(ruleId);
+  if (!existing) return false;
+
   await localDb.recurring_rules.delete(ruleId);
+  return true;
 }

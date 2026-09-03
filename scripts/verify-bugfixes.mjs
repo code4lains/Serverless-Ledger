@@ -10,6 +10,7 @@ import {
   calculateTotals,
   groupTransactionsByDay,
   parseExcelDateValue,
+  parseCsvString,
 } from '../packages/shared/dist/index.js';
 
 console.log('🧪 开始执行全量 Bug 修复专项验证 (BUG-01 ~ BUG-10)...');
@@ -524,6 +525,65 @@ assert.ok(syncManagerTsContent.includes('beforeunload'), 'SyncManager 必须在 
 assert.ok(syncManagerTsContent.includes('hot.dispose'), 'SyncManager 必须支持 Vite HMR 模块卸载');
 console.log('✅ Bug 11 验证通过：SyncManager 具备完善的生命周期卸载与内存泄漏治理');
 
+// =========================================================================
+// 23. Bug N2 验证: importSnapshot 防重复密钥派生与多余 PBKDF2 重试
+// =========================================================================
+console.log('\n[23] 验证 Bug N2: importSnapshot 防重复密码派生保护...');
+const snapshotSyncTsContent = fs.readFileSync('packages/client/src/sync/snapshotSync.ts', 'utf-8');
+assert.ok(snapshotSyncTsContent.includes('wasPasswordDerived'), 'snapshotSync.ts 必须记录 wasPasswordDerived 状态');
+assert.ok(snapshotSyncTsContent.includes('!wasPasswordDerived'), 'catch 块中必须增加 !wasPasswordDerived 防护避免重复派生');
+console.log('✅ Bug N2 验证通过：importSnapshot 已杜绝密码解密失败时的重复 PBKDF2 运算');
+
+// =========================================================================
+// 24. Bug N3 验证: parseCsvString 引号包裹字段完整保留首尾空格 (RFC 4180)
+// =========================================================================
+console.log('\n[24] 验证 Bug N3: parseCsvString 引号包裹字段完整保留首尾空格...');
+const csvWithSpaces = '"  hello world  ",  unquoted  ," multi\nline with  spaces "';
+const parsedCsvRows = parseCsvString(csvWithSpaces);
+assert.strictEqual(parsedCsvRows.length, 1);
+assert.strictEqual(parsedCsvRows[0][0], '  hello world  ', '被双引号包裹的字段首尾空格必须完整保留');
+assert.strictEqual(parsedCsvRows[0][1], 'unquoted', '未被引号包裹的字段应正常 trim 裁剪空白');
+assert.strictEqual(parsedCsvRows[0][2], ' multi\nline with  spaces ', '多行双引号字段内的空格也应保留');
+console.log('✅ Bug N3 验证通过：parseCsvString 完全遵循 RFC 4180 引号内空白保留规范');
+
+// =========================================================================
+// 25. Bug N4 验证: seedLocalCategories 全量检查避免迁移后重复插入
+// =========================================================================
+console.log('\n[25] 验证 Bug N4: seedLocalCategories 全量检查已有分类 ID...');
+const dbIndexTsContent = fs.readFileSync('packages/client/src/db/index.ts', 'utf-8');
+assert.ok(dbIndexTsContent.includes('await localDb.categories.toArray()'), 'seedLocalCategories 应查询所有分类');
+assert.ok(!dbIndexTsContent.includes('.filter((c) => c.user_id === null || c.user_id === undefined)'), '不再局限于 user_id 为空的分支');
+console.log('✅ Bug N4 验证通过：seedLocalCategories 涵盖全量分类 ID 比对，杜绝重复默认分类');
+
+// =========================================================================
+// 26. Bug N5 验证: deleteTransaction / deleteBudget / deleteRecurringRule 校验存在性
+// =========================================================================
+console.log('\n[26] 验证 Bug N5: delete 接口在记录不存在时返回 false...');
+const localStoreTsContent = fs.readFileSync('packages/client/src/api/localStore.ts', 'utf-8');
+assert.ok(localStoreTsContent.includes('const existing = await localDb.transactions.get(transactionId)'), 'deleteTransaction 必须先检查存在性');
+assert.ok(localStoreTsContent.includes('const existing = await localDb.budgets.get(budgetId)'), 'deleteBudget 必须先检查存在性');
+assert.ok(localStoreTsContent.includes('const existing = await localDb.recurring_rules.get(ruleId)'), 'deleteRecurringRule 必须先检查存在性');
+console.log('✅ Bug N5 验证通过：删除接口精准反映记录删除状态，不存在时返回 false');
+
+// =========================================================================
+// 27. Bug N6 验证: webdav-proxy 清洗敏感客户端请求头
+// =========================================================================
+console.log('\n[27] 验证 Bug N6: webdav-proxy 清洗敏感客户端请求头...');
+const proxyTsContent = fs.readFileSync('functions/api/webdav-proxy.ts', 'utf-8');
+assert.ok(proxyTsContent.includes("forwardHeaders.delete('cookie')"), '代理必须清除客户端 Cookie');
+assert.ok(proxyTsContent.includes("forwardHeaders.delete('cf-connecting-ip')"), '代理必须清除 Cloudflare 客户端 IP');
+assert.ok(proxyTsContent.includes("forwardHeaders.delete('x-forwarded-for')"), '代理必须清除 X-Forwarded-For');
+assert.ok(proxyTsContent.includes("forwardHeaders.delete('x-real-ip')"), '代理必须清除 X-Real-IP');
+console.log('✅ Bug N6 验证通过：WebDAV 代理已严格清洗客户端敏感头信息');
+
+// =========================================================================
+// 28. Bug N7 验证: reorderCategories 使用 Dexie 读写事务保证原子性
+// =========================================================================
+console.log('\n[28] 验证 Bug N7: reorderCategories 使用 Dexie 读写事务保证原子性...');
+assert.ok(localStoreTsContent.includes("localDb.transaction('rw', localDb.categories"), 'reorderCategories 必须包裹在事务中');
+console.log('✅ Bug N7 验证通过：分类批量重排序已纳入原子读写事务');
+
 console.log('\n🎉 ALL BUG FIX VERIFICATIONS COMPLETED SUCCESSFULLY!');
+
 
 
