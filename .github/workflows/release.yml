@@ -134,9 +134,7 @@ jobs:
 
       - name: Build APKs
         working-directory: packages/client/android
-        run: |
-          ./gradlew assembleDebug
-          ./gradlew assembleRelease
+        run: ./gradlew assembleRelease
         env:
           ANDROID_KEYSTORE_FILE: ${{ github.workspace }}/android-release-key.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -152,12 +150,8 @@ jobs:
           mkdir -p release-android
           BUILD_TOOLS_PATH="$ANDROID_HOME/build-tools/$(ls -1 $ANDROID_HOME/build-tools | sort -V | tail -n 1)"
 
-          if [ -f packages/client/android/app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp packages/client/android/app/build/outputs/apk/debug/app-debug.apk release-android/ServerlessLedger-Android-Debug.apk
-          fi
-
           UNSIGNED_APK="packages/client/android/app/build/outputs/apk/release/app-release-unsigned.apk"
-          SIGNED_APK="release-android/ServerlessLedger-Android-Release.apk"
+          SIGNED_APK="release-android/ServerlessLedger_3.0.0_Android_arm64.apk"
 
           if [ -f "$UNSIGNED_APK" ] && [ -f android-release-key.jks ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ]; then
             echo "--- 对齐 APK (zipalign) ---"
@@ -174,16 +168,18 @@ jobs:
             echo "--- 验证签名 ---"
             $BUILD_TOOLS_PATH/apksigner verify --verbose "$SIGNED_APK"
           elif [ -f "$UNSIGNED_APK" ]; then
-            cp "$UNSIGNED_APK" release-android/ServerlessLedger-Android-Release-Unsigned.apk
+            cp "$UNSIGNED_APK" release-android/ServerlessLedger_3.0.0_Android_arm64.apk
           fi
 
+          # 坚决不输出 idsig 和 debug 文件
+          rm -f release-android/*.idsig release-android/*Debug* release-android/*debug*
           ls -la release-android/
 
       - name: Upload Android Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: release-android-apks
-          path: release-android/*
+          path: release-android/*.apk
 
   package-desktop:
     name: Package PC Desktop (${{ matrix.platform.os }} - ${{ matrix.platform.target }})
@@ -261,9 +257,79 @@ jobs:
           name: release-desktop-${{ matrix.platform.name }}
           path: release-desktop-${{ matrix.platform.name }}/*
 
+  package-ios:
+    name: Package iOS App
+    needs: [pre-release-check]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Generate Multi-Platform Icons
+        run: node scripts/generate-icons.mjs
+
+      - name: Build Web Client Dist
+        run: npm run build:client
+
+      - name: Add & Sync Capacitor iOS
+        working-directory: packages/client
+        run: |
+          if [ ! -d "ios" ]; then
+            npx cap add ios
+          fi
+          npx cap sync ios
+
+      - name: Install CocoaPods Dependencies
+        working-directory: packages/client/ios/App
+        run: |
+          pod install --repo-update
+
+      - name: Build iOS App (Generic Device, No Signing)
+        working-directory: packages/client/ios/App
+        run: |
+          xcodebuild build \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            -derivedDataPath build
+
+      - name: Package iOS Build Artifacts
+        run: |
+          mkdir -p release-ios
+          APP_PATH="packages/client/ios/App/build/Build/Products/Release-iphoneos/App.app"
+          if [ -d "$APP_PATH" ]; then
+            (cd "$(dirname "$APP_PATH")" && zip -r "$GITHUB_WORKSPACE/release-ios/ServerlessLedger_3.0.0_iOS.zip" App.app)
+            PAYLOAD_DIR="$RUNNER_TEMP/Payload"
+            mkdir -p "$PAYLOAD_DIR"
+            cp -r "$APP_PATH" "$PAYLOAD_DIR/"
+            (cd "$RUNNER_TEMP" && zip -r "$GITHUB_WORKSPACE/release-ios/ServerlessLedger_3.0.0_iOS.ipa" Payload)
+          else
+            tar -czvf release-ios/ServerlessLedger_3.0.0_iOS_Project.tar.gz -C packages/client/ios App
+          fi
+          ls -la release-ios/
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ios-bundle
+          path: release-ios/*
+
   publish-full-release:
     name: Publish Full-Client Release & Checksums
-    needs: [package-web, package-android, package-desktop]
+    needs: [package-web, package-android, package-desktop, package-ios]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -277,9 +343,36 @@ jobs:
       - name: Prepare Final Release Directory & Compute Checksums
         run: |
           mkdir -p release-assets
-          find all-dist -type f -exec cp {} release-assets/ \;
+
+          # 1. Android (正式签名包，排查 debug 及 idsig)
+          find all-dist/release-android-apks -type f -name "*.apk" ! -name "*Debug*" ! -name "*debug*" -exec cp {} release-assets/ServerlessLedger_3.0.0_Android_arm64.apk \;
+
+          # 2. Web PWA
+          find all-dist/release-web-bundle -type f -name "*.zip" -exec cp {} release-assets/ServerlessLedger_3.0.0_Web_PWA.zip \;
+
+          # 3. Windows PC (MSI 企业安装包 & EXE 安装程序)
+          find all-dist/release-desktop-Windows-x64 -type f -iname "*.msi" -exec cp {} release-assets/ServerlessLedger_3.0.0_windows_x64.msi \;
+          find all-dist/release-desktop-Windows-x64 -type f -iname "*.exe" -exec cp {} release-assets/ServerlessLedger_3.0.0_windows_x64.exe \;
+
+          # 4. macOS (Apple Silicon arm64 & Intel x64)
+          find all-dist/release-desktop-macOS-AppleSilicon -type f -iname "*.dmg" -exec cp {} release-assets/ServerlessLedger_3.0.0_macos_arm64.dmg \;
+          find all-dist/release-desktop-macOS-Intel -type f -iname "*.dmg" -exec cp {} release-assets/ServerlessLedger_3.0.0_macos_x64.dmg \;
+
+          # 5. Linux PC (AppImage & DEB)
+          find all-dist/release-desktop-Linux-x64 -type f -iname "*.AppImage" -exec cp {} release-assets/ServerlessLedger_3.0.0_linux_x64.AppImage \;
+          find all-dist/release-desktop-Linux-x64 -type f -iname "*.deb" -exec cp {} release-assets/ServerlessLedger_3.0.0_linux_x64.deb \;
+
+          # 6. iOS (IPA 侧载包 & ZIP 归档)
+          find all-dist/release-ios-bundle -type f -iname "*.ipa" -exec cp {} release-assets/ServerlessLedger_3.0.0_iOS.ipa \;
+          find all-dist/release-ios-bundle -type f -iname "*.zip" -exec cp {} release-assets/ServerlessLedger_3.0.0_iOS.zip \;
+          find all-dist/release-ios-bundle -type f -iname "*.tar.gz" -exec cp {} release-assets/ServerlessLedger_3.0.0_iOS_Project.tar.gz \;
+
+          # 7. 严格移除任何潜在残余的 idsig 或 debug 文件
+          rm -f release-assets/*.idsig release-assets/*debug* release-assets/*Debug*
+
+          # 8. 生成统一 SHA-256 校验和
           cd release-assets
-          sha256sum * > SHA256SUMS.txt || shasum -a 256 * > SHA256SUMS.txt
+          sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
           cd -
 
@@ -291,23 +384,28 @@ jobs:
           body: |
             ## 🌟 账盾 (Serverless Ledger) 全端跨平台发布
 
-            本版本包含了 **Web PWA、Android、PC（Windows / macOS / Linux）** 的完整构建产物。
+            本版本包含了 **Web PWA、Android、iOS、PC（Windows / macOS / Linux）** 的全平台官方构建产物。
 
             ### 📦 下载与安装指南
 
-            | 平台 | 格式 | 说明 |
-            | :--- | :--- | :--- |
-            | **Windows PC** | `.msi` / `.exe` | Windows 10/11 64位安装包及绿色安装器 |
-            | **macOS PC** | `.dmg` | 支持 Apple Silicon (M1/M2/M3) 及 Intel x64 架构 |
-            | **Linux PC** | `.AppImage` / `.deb` | 适用于 Ubuntu/Debian 及主流 Linux 发行版 |
-            | **Android App** | `.apk` | Android 8.0+ 移动端安装包 |
-            | **Web PWA** | `.zip` | Web 静态离线资源包，可直接部署在 Cloudflare Pages / Nginx |
+            | 平台 / 系统 | 文件名 | 格式 | 说明 |
+            | :--- | :--- | :--- | :--- |
+            | **Windows PC** | `ServerlessLedger_3.0.0_windows_x64.msi` | `.msi` | Windows 10/11 64位 WiX 中文企业级安装包 |
+            | **Windows PC** | `ServerlessLedger_3.0.0_windows_x64.exe` | `.exe` | Windows 10/11 64位 NSIS 绿色安装程序 |
+            | **macOS (Apple Silicon)** | `ServerlessLedger_3.0.0_macos_arm64.dmg` | `.dmg` | 适用于 M1 / M2 / M3 / M4 芯片架构 |
+            | **macOS (Intel)** | `ServerlessLedger_3.0.0_macos_x64.dmg` | `.dmg` | 适用于 Intel x86_64 芯片架构 |
+            | **Linux PC** | `ServerlessLedger_3.0.0_linux_x64.AppImage` | `.AppImage` | 免安装单文件，赋予执行权限后直接运行 |
+            | **Linux PC** | `ServerlessLedger_3.0.0_linux_x64.deb` | `.deb` | 适用于 Debian / Ubuntu 等 Linux 发行版 |
+            | **Android App** | `ServerlessLedger_3.0.0_Android_arm64.apk` | `.apk` | **正式签名版** Android 8.0+ 安装包 |
+            | **iOS App** | `ServerlessLedger_3.0.0_iOS.ipa` | `.ipa` | iOS 侧载包（支持 TrollStore / AltStore / Sideloadly） |
+            | **iOS App** | `ServerlessLedger_3.0.0_iOS.zip` | `.zip` | iOS App 归档包 |
+            | **Web PWA** | `ServerlessLedger_3.0.0_Web_PWA.zip` | `.zip` | Web 静态离线资源包，可直接部署在 Cloudflare Pages / Nginx |
 
             ### 🔒 校验和 (SHA256)
             所有发布文件的 SHA256 校验和详见附件中的 `SHA256SUMS.txt`。
 
             ---
-            *自动化构建由 GitHub Actions & Cloudflare Pages 提供支持。*
+            *自动化构建由 GitHub Actions 提供支持。*
           files: release-assets/*
           draft: false
           prerelease: false
