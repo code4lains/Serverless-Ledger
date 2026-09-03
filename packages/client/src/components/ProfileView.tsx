@@ -47,6 +47,10 @@ import {
   isVaultInitialized,
   isVaultUnlocked,
   lockVault,
+  isVaultRememberSessionEnabled,
+  setVaultRememberSessionEnabled,
+  getVaultMasterKey,
+  persistVaultSession,
 } from '../auth/localAuth';
 
 interface ProfileViewProps {
@@ -124,6 +128,7 @@ export function ProfileView({
   // 本地保险库状态
   const [isVaultActive, setIsVaultActive] = useState<boolean>(false);
   const [isVaultCached, setIsVaultCached] = useState<boolean>(false);
+  const [rememberSession, setRememberSession] = useState<boolean>(() => isVaultRememberSessionEnabled());
 
   // WebDAV 跨设备恢复解密弹窗状态
   const [pullPasswordModalOpen, setPullPasswordModalOpen] = useState(false);
@@ -178,6 +183,21 @@ export function ProfileView({
       setIsVaultActive(init);
       setIsVaultCached(isVaultUnlocked());
     });
+    setRememberSession(isVaultRememberSessionEnabled());
+  };
+
+  const handleToggleRememberSession = async () => {
+    const nextVal = !rememberSession;
+    setVaultRememberSessionEnabled(nextVal);
+    setRememberSession(nextVal);
+    if (nextVal && isVaultCached) {
+      try {
+        const key = getVaultMasterKey();
+        await persistVaultSession('default_vault', key);
+      } catch (err) {
+        console.warn('Failed to persist session on toggle:', err);
+      }
+    }
   };
 
   useEffect(() => {
@@ -929,6 +949,40 @@ export function ProfileView({
               </div>
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
+          )}
+
+          {/* 保持解锁状态 (记住会话) 开关 */}
+          {isVaultActive && (
+            <div className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                    保持解锁状态 (记住会话)
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {rememberSession
+                      ? '已记住会话，重新打开应用将保持解锁'
+                      : '高安全纯内存持有，关闭或刷新页面需重新输入密码'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleToggleRememberSession}
+                className={`w-12 h-6.5 rounded-full p-1 transition-colors duration-200 ease-in-out cursor-pointer ${
+                  rememberSession ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'
+                }`}
+              >
+                <div
+                  className={`w-4.5 h-4.5 rounded-full bg-white shadow-md transform transition-transform duration-200 ease-in-out ${
+                    rememberSession ? 'translate-x-5.5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
           )}
 
           {/* 深色模式切换 */}

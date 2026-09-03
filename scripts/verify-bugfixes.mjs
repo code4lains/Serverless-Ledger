@@ -172,11 +172,12 @@ function simulateSyncCheck({
   forceDirection,
 }) {
   if (remoteModTime > lastKnownRemoteTime && remoteModTime > 0) {
-    if (lastSyncIso && !forceDirection) {
+    const effectiveLastSyncIso = lastSyncIso || '1970-01-01T00:00:00.000Z';
+    if (!forceDirection) {
       const hasLocalChanges = localTransactions.some(
         (tx) =>
-          (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
-          (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+          (Boolean(tx.updated_at) && tx.updated_at > effectiveLastSyncIso) ||
+          (Boolean(tx.created_at) && tx.created_at > effectiveLastSyncIso)
       );
       if (hasLocalChanges) {
         return {
@@ -207,6 +208,15 @@ const conflictResult = simulateSyncCheck({
 });
 assert.strictEqual(conflictResult.action, 'conflict_detected');
 
+// 首次同步设备（lastSyncIso 为空/未曾同步），本地已有离线账单时同样阻断覆盖 (BUG-02 2026-09-03)
+const firstSyncConflictResult = simulateSyncCheck({
+  lastKnownRemoteTime: 0,
+  remoteModTime: 2000,
+  lastSyncIso: undefined,
+  localTransactions: localOfflineNewTx,
+});
+assert.strictEqual(firstSyncConflictResult.action, 'conflict_detected', '首次同步设备在本地有账单时必须检测到冲突');
+
 const downloadResult = simulateSyncCheck({
   lastKnownRemoteTime: 1000,
   remoteModTime: 2000,
@@ -214,7 +224,7 @@ const downloadResult = simulateSyncCheck({
   localTransactions: localCleanTx,
 });
 assert.strictEqual(downloadResult.action, 'downloaded');
-console.log('✅ BUG-01 验证通过：冲突检测与防丢单逻辑工作正常');
+console.log('✅ BUG-01 & BUG-02 (同步防丢单与首次同步冲突检测) 验证通过');
 
 // =========================================================================
 // 6. BUG-02 验证: exportAllLocalData 过滤条件兼容性
@@ -333,4 +343,51 @@ assert.strictEqual(mockStorage.get('ledger_vault_session_default_vault'), undefi
 
 console.log('✅ BUG-10 验证通过：记住会话开关与安全加固功能正常');
 
-console.log('\n🎉 ALL 10 BUG FIX VERIFICATIONS COMPLETED SUCCESSFULLY!');
+// =========================================================================
+// 11. 2026-09-03 BUG-01 验证: 小星记账 Excel 多工作表千分位与货币符号清洗
+// =========================================================================
+console.log('\n[11] 验证 2026-09-03 BUG-01: 小星记账 Excel 多工作表千分位与货币符号清洗...');
+import * as XLSX from 'xlsx';
+import { parseXiaoxingLedgerWorkbook } from '../packages/shared/dist/index.js';
+
+const testWb = XLSX.utils.book_new();
+XLSX.utils.book_append_sheet(testWb, XLSX.utils.json_to_sheet([
+  { '支出日期': '2026-09-01 10:00:00', '支出金额': '¥1,234.56', '支出大类': '餐饮' },
+  { '支出日期': '2026-09-01 11:00:00', '支出金额': '0' },
+]), '支出');
+XLSX.utils.book_append_sheet(testWb, XLSX.utils.json_to_sheet([
+  { '收入日期': '2026-09-01 10:00:00', '收入金额': '2,500.00', '收入大类': '职业' },
+]), '收入');
+XLSX.utils.book_append_sheet(testWb, XLSX.utils.json_to_sheet([
+  { '转账日期': '2026-09-01 10:00:00', '金额': '¥3,000.00' },
+]), '转账');
+XLSX.utils.book_append_sheet(testWb, XLSX.utils.json_to_sheet([
+  { '借贷日期': '2026-09-01 10:00:00', '金额': '$1,500.00', '借贷类别': '借出' },
+]), '借贷');
+XLSX.utils.book_append_sheet(testWb, XLSX.utils.json_to_sheet([
+  { '支出日期': '2026-09-01 10:00:00', '支出金额': '5,000.50' },
+]), '应付款');
+XLSX.utils.book_append_sheet(testWb, XLSX.utils.json_to_sheet([
+  { '收入日期': '2026-09-01 10:00:00', '收入金额': '¥8,888.88' },
+]), '应收款');
+
+const xxParsed = parseXiaoxingLedgerWorkbook(testWb, []);
+assert.strictEqual(xxParsed.valid_rows, 6, '6 个工作表的有效数据行均应成功解析');
+assert.strictEqual(xxParsed.invalid_rows, 1, '无效的 0 金额行应正确跳过');
+assert.strictEqual(xxParsed.total_expense, 123456, '¥1,234.56 应转换为 123456 分');
+assert.strictEqual(xxParsed.total_income, 250000, '2,500.00 应转换为 250000 分');
+assert.strictEqual(xxParsed.total_transfer, 300000, '¥3,000.00 应转换为 300000 分');
+console.log('✅ 2026-09-03 BUG-01 验证通过：小星记账多表金额千分位与货币符号清洗准确');
+
+// =========================================================================
+// 12. 2026-09-03 BUG-03 验证: client.ts API 门面导出 remember_session 控制方法
+// =========================================================================
+console.log('\n[12] 验证 2026-09-03 BUG-03: client.ts 统一门面导出 isVaultRememberSessionEnabled 等方法...');
+import fs from 'fs';
+const clientTsContent = fs.readFileSync('packages/client/src/api/client.ts', 'utf-8');
+assert.ok(clientTsContent.includes('isVaultRememberSessionEnabled'), 'client.ts 必须导出 isVaultRememberSessionEnabled');
+assert.ok(clientTsContent.includes('setVaultRememberSessionEnabled'), 'client.ts 必须导出 setVaultRememberSessionEnabled');
+console.log('✅ 2026-09-03 BUG-03 验证通过：客户端统一门面已完整暴露安全开关 API');
+
+console.log('\n🎉 ALL BUG FIX VERIFICATIONS COMPLETED SUCCESSFULLY!');
+

@@ -74,6 +74,8 @@ export {
   isVaultUnlocked,
   restoreVaultSession,
   getVaultMetadata,
+  isVaultRememberSessionEnabled,
+  setVaultRememberSessionEnabled,
 } from '../auth/localAuth';
 
 /**

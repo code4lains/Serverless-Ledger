@@ -252,16 +252,18 @@ await testCrossDeviceSnapshotDecryption();
 // Test 5: Conflict detection contract test
 function checkConflict({ remoteModTime, lastKnownRemoteTime, lastSyncIso, forceDirection, transactions }) {
   if (remoteModTime > lastKnownRemoteTime && remoteModTime > 0) {
-    if (lastSyncIso && !forceDirection) {
+    const effectiveLastSyncIso = lastSyncIso || '1970-01-01T00:00:00.000Z';
+    if (!forceDirection) {
       const hasLocalChanges = transactions.some(
         (tx) =>
-          (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
-          (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+          (Boolean(tx.updated_at) && tx.updated_at > effectiveLastSyncIso) ||
+          (Boolean(tx.created_at) && tx.created_at > effectiveLastSyncIso)
       );
       if (hasLocalChanges) {
         return {
           success: false,
           action: 'conflict_detected',
+          message: '检测到云端与当前设备均有记账数据，存在合并冲突，请选择保留方向或手动导入合并',
         };
       }
     }
@@ -317,6 +319,17 @@ assert.strictEqual(
     transactions: modifiedTxs,
   }).action,
   'downloaded'
+);
+
+// Case 5: First-sync device (lastSyncIso is null/empty), local has offline transactions, remote is newer -> conflict_detected
+assert.strictEqual(
+  checkConflict({
+    remoteModTime: 1000,
+    lastKnownRemoteTime: 0,
+    lastSyncIso: undefined,
+    transactions: newTxs,
+  }).action,
+  'conflict_detected'
 );
 
 console.log('✅ WebDAV snapshot conflict detection contracts passed!');

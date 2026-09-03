@@ -1234,13 +1234,12 @@ export function parseXiaoxingLedgerWorkbook(
       // 8.1 支出工作表
       if (cleanSheetName === '支出' || (!['应付款', '应收款', '转账', '借贷'].includes(cleanSheetName) && ('支出日期' in row || '支出金额' in row))) {
         const rawDate = row['支出日期'] || row['日期'] || row['时间'];
-        const rawAmount = parseFloat(row['支出金额'] || row['金额']);
-        if (isNaN(rawAmount) || rawAmount <= 0) {
+        const amountInCents = toCents(row['支出金额'] || row['金额']);
+        if (amountInCents <= 0) {
           invalidCount++;
           continue;
         }
 
-        const amountInCents = toCents(rawAmount);
         const isoDate = parseExcelDateValue(rawDate);
 
         const majorCat = String(row['支出大类'] || row['大类'] || '').trim();
@@ -1306,13 +1305,12 @@ export function parseXiaoxingLedgerWorkbook(
       // 8.2 收入工作表
       else if (cleanSheetName === '收入' || (!['应付款', '应收款', '转账', '借贷'].includes(cleanSheetName) && ('收入日期' in row || '收入金额' in row))) {
         const rawDate = row['收入日期'] || row['日期'] || row['时间'];
-        const rawAmount = parseFloat(row['收入金额'] || row['金额']);
-        if (isNaN(rawAmount) || rawAmount <= 0) {
+        const amountInCents = toCents(row['收入金额'] || row['金额']);
+        if (amountInCents <= 0) {
           invalidCount++;
           continue;
         }
 
-        const amountInCents = toCents(rawAmount);
         const isoDate = parseExcelDateValue(rawDate);
 
         const majorCat = String(row['收入大类'] || row['大类'] || '').trim();
@@ -1376,13 +1374,12 @@ export function parseXiaoxingLedgerWorkbook(
       // 8.3 转账工作表
       else if (cleanSheetName === '转账' || '转账日期' in row || '转出账户' in row) {
         const rawDate = row['转账日期'] || row['日期'];
-        const rawAmount = parseFloat(row['金额'] || row['转账金额']);
-        if (isNaN(rawAmount) || rawAmount <= 0) {
+        const amountInCents = toCents(row['金额'] || row['转账金额']);
+        if (amountInCents <= 0) {
           invalidCount++;
           continue;
         }
 
-        const amountInCents = toCents(rawAmount);
         const isoDate = parseExcelDateValue(rawDate);
         const fromAccount = String(row['转出账户'] || '').trim() || null;
         const toAccount = String(row['转入账户'] || '').trim() || null;
@@ -1419,13 +1416,12 @@ export function parseXiaoxingLedgerWorkbook(
       // 8.4 借贷工作表
       else if (cleanSheetName === '借贷' || '借贷日期' in row || '借贷类别' in row) {
         const rawDate = row['借贷日期'] || row['日期'];
-        const rawAmount = parseFloat(row['金额'] || row['借贷金额']);
-        if (isNaN(rawAmount) || rawAmount <= 0) {
+        const amountInCents = toCents(row['金额'] || row['借贷金额']);
+        if (amountInCents <= 0) {
           invalidCount++;
           continue;
         }
 
-        const amountInCents = toCents(rawAmount);
         const isoDate = parseExcelDateValue(rawDate);
         const direction = String(row['借贷类别'] || row['类别'] || '').trim();
         const targetPerson = String(row['借贷对象'] || row['对象'] || '').trim();
@@ -1481,13 +1477,12 @@ export function parseXiaoxingLedgerWorkbook(
       // 8.5 应付款工作表
       else if (cleanSheetName === '应付款') {
         const rawDate = row['支出日期'] || row['日期'];
-        const rawAmount = parseFloat(row['支出金额'] || row['金额']);
-        if (isNaN(rawAmount) || rawAmount <= 0) {
+        const amountInCents = toCents(row['支出金额'] || row['金额']);
+        if (amountInCents <= 0) {
           invalidCount++;
           continue;
         }
 
-        const amountInCents = toCents(rawAmount);
         const isoDate = parseExcelDateValue(rawDate);
         const rawRemark = String(row['备注'] || row['商家'] || '').trim();
 
@@ -1514,13 +1509,12 @@ export function parseXiaoxingLedgerWorkbook(
       // 8.6 应收款工作表
       else if (cleanSheetName === '应收款') {
         const rawDate = row['收入日期'] || row['日期'];
-        const rawAmount = parseFloat(row['收入金额'] || row['金额']);
-        if (isNaN(rawAmount) || rawAmount <= 0) {
+        const amountInCents = toCents(row['收入金额'] || row['金额']);
+        if (amountInCents <= 0) {
           invalidCount++;
           continue;
         }
 
-        const amountInCents = toCents(rawAmount);
         const isoDate = parseExcelDateValue(rawDate);
         const rawRemark = String(row['备注'] || row['商家'] || '').trim();
 
