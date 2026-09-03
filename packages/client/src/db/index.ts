@@ -13,6 +13,7 @@ import {
   getDefaultCategories,
   VaultMetadata,
 } from '@ledger/shared';
+import { lockAllVaults } from '../auth/localAuth';
 
 /**
  * 账盾 - 本地权威 IndexedDB 数据库
@@ -406,4 +407,5 @@ export async function clearLocalDatabase() {
   await localDb.vault_meta.clear();
   await seedLocalCategories();
   await seedLocalLedgers();
+  lockAllVaults();
 }

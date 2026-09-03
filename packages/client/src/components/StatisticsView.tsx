@@ -20,6 +20,7 @@ import {
   calculateTotals,
   formatDateKey,
   classifyLoanTransaction,
+  parseLocalDate,
 } from '@ledger/shared';
 import { CategoryIcon } from './CategoryIcon';
 
@@ -105,8 +106,8 @@ export function StatisticsView({
     } else if (period === 'year') {
       setSelectedYear((y) => y - 1);
     } else if (period === 'custom' && customStartDate && customEndDate) {
-      const s = new Date(customStartDate);
-      const e = new Date(customEndDate);
+      const s = parseLocalDate(customStartDate);
+      const e = parseLocalDate(customEndDate);
       const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (24 * 3600 * 1000)));
       s.setDate(s.getDate() - diffDays);
       e.setDate(e.getDate() - diffDays);
@@ -127,8 +128,8 @@ export function StatisticsView({
     } else if (period === 'year') {
       setSelectedYear((y) => y + 1);
     } else if (period === 'custom' && customStartDate && customEndDate) {
-      const s = new Date(customStartDate);
-      const e = new Date(customEndDate);
+      const s = parseLocalDate(customStartDate);
+      const e = parseLocalDate(customEndDate);
       const diffDays = Math.max(1, Math.round((e.getTime() - s.getTime()) / (24 * 3600 * 1000)));
       s.setDate(s.getDate() + diffDays);
       e.setDate(e.getDate() + diffDays);
@@ -339,7 +340,7 @@ export function StatisticsView({
       (period === 'custom' &&
         customStartDate &&
         customEndDate &&
-        new Date(customEndDate).getTime() - new Date(customStartDate).getTime() <= 35 * 24 * 3600 * 1000);
+        parseLocalDate(customEndDate).getTime() - parseLocalDate(customStartDate).getTime() <= 35 * 24 * 3600 * 1000);
 
     const now = new Date();
     const currentYear = now.getFullYear();
@@ -368,8 +369,8 @@ export function StatisticsView({
           daysCount = totalDaysInMonth;
         }
       } else {
-        startDate = new Date(customStartDate || defaultStartDate);
-        const rawEndDate = new Date(customEndDate || defaultEndDate);
+        startDate = parseLocalDate(customStartDate || defaultStartDate);
+        const rawEndDate = parseLocalDate(customEndDate || defaultEndDate);
         // 如果自定义范围跨越了未来，且起始日期在今天及之前，自动截止到今天
         const endDate = rawEndDate > now && startDate <= now ? now : rawEndDate;
         daysCount = Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / (24 * 3600 * 1000)) + 1);

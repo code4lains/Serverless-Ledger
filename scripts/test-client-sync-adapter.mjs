@@ -250,15 +250,38 @@ async function testCrossDeviceSnapshotDecryption() {
 await testCrossDeviceSnapshotDecryption();
 
 // Test 5: Conflict detection contract test
-function checkConflict({ remoteModTime, lastKnownRemoteTime, lastSyncIso, forceDirection, transactions }) {
+function checkConflict({
+  remoteModTime,
+  lastKnownRemoteTime,
+  lastSyncIso,
+  forceDirection,
+  transactions = [],
+  categories = [],
+  budgets = [],
+  recurringRules = [],
+  ledgers = [],
+}) {
   if (remoteModTime > lastKnownRemoteTime && remoteModTime > 0) {
     const effectiveLastSyncIso = lastSyncIso || '1970-01-01T00:00:00.000Z';
     if (!forceDirection) {
-      const hasLocalChanges = transactions.some(
-        (tx) =>
-          (Boolean(tx.updated_at) && tx.updated_at > effectiveLastSyncIso) ||
-          (Boolean(tx.created_at) && tx.created_at > effectiveLastSyncIso)
-      );
+      const hasLocalChanges =
+        transactions.some(
+          (tx) =>
+            (Boolean(tx.updated_at) && tx.updated_at > effectiveLastSyncIso) ||
+            (Boolean(tx.created_at) && tx.created_at > effectiveLastSyncIso)
+        ) ||
+        categories.some(
+          (c) => Boolean(c.updated_at) && c.updated_at > effectiveLastSyncIso
+        ) ||
+        budgets.some(
+          (b) => Boolean(b.updated_at) && b.updated_at > effectiveLastSyncIso
+        ) ||
+        recurringRules.some(
+          (r) => Boolean(r.updated_at) && r.updated_at > effectiveLastSyncIso
+        ) ||
+        ledgers.some(
+          (l) => Boolean(l.updated_at) && l.updated_at > effectiveLastSyncIso
+        );
       if (hasLocalChanges) {
         return {
           success: false,
@@ -328,6 +351,50 @@ assert.strictEqual(
     lastKnownRemoteTime: 0,
     lastSyncIso: undefined,
     transactions: newTxs,
+  }).action,
+  'conflict_detected'
+);
+
+// Case 6: Local category modified -> conflict_detected
+assert.strictEqual(
+  checkConflict({
+    remoteModTime: 1000,
+    lastKnownRemoteTime: 500,
+    lastSyncIso,
+    categories: [{ category_id: 'c1', updated_at: '2026-09-02T00:00:00.000Z' }],
+  }).action,
+  'conflict_detected'
+);
+
+// Case 7: Local budget modified -> conflict_detected
+assert.strictEqual(
+  checkConflict({
+    remoteModTime: 1000,
+    lastKnownRemoteTime: 500,
+    lastSyncIso,
+    budgets: [{ budget_id: 'b1', updated_at: '2026-09-02T00:00:00.000Z' }],
+  }).action,
+  'conflict_detected'
+);
+
+// Case 8: Local recurring rule modified -> conflict_detected
+assert.strictEqual(
+  checkConflict({
+    remoteModTime: 1000,
+    lastKnownRemoteTime: 500,
+    lastSyncIso,
+    recurringRules: [{ rule_id: 'r1', updated_at: '2026-09-02T00:00:00.000Z' }],
+  }).action,
+  'conflict_detected'
+);
+
+// Case 9: Local ledger modified -> conflict_detected
+assert.strictEqual(
+  checkConflict({
+    remoteModTime: 1000,
+    lastKnownRemoteTime: 500,
+    lastSyncIso,
+    ledgers: [{ ledger_id: 'l1', updated_at: '2026-09-02T00:00:00.000Z' }],
   }).action,
   'conflict_detected'
 );

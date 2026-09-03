@@ -143,7 +143,7 @@ export function CalculatorModal({
 
     const numToUse = currentNum === '' ? (tokens[tokens.length - 2] || '0') : currentNum;
     const fullExpr = `${tokens.join(' ')} ${numToUse} =`;
-    const res = evaluateTokens(tokens, currentNum);
+    const res = evaluateTokens(tokens, numToUse);
     const formattedRes = parseFloat(res.toFixed(2)).toString();
 
     setExpressionPreview(fullExpr);
@@ -186,7 +186,8 @@ export function CalculatorModal({
   const handleConfirm = () => {
     let finalAmount = currentNum;
     if (tokens.length > 0) {
-      const res = evaluateTokens(tokens, currentNum);
+      const numToUse = currentNum === '' ? (tokens[tokens.length - 2] || '0') : currentNum;
+      const res = evaluateTokens(tokens, numToUse);
       finalAmount = parseFloat(res.toFixed(2)).toString();
     }
     onConfirm(finalAmount);

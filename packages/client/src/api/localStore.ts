@@ -659,9 +659,59 @@ export async function updateRecurringRule(
     ? (typeof updates.auto_record === 'boolean' ? (updates.auto_record ? 1 : 0) : updates.auto_record)
     : existing.auto_record;
 
+  let nextRunDate = updates.next_run_date !== undefined
+    ? (updates.next_run_date ? updates.next_run_date.slice(0, 10) : '')
+    : undefined;
+
+  if (nextRunDate === undefined) {
+    const isScheduleChanged =
+      updates.frequency !== undefined ||
+      updates.interval !== undefined ||
+      updates.day_of_month !== undefined ||
+      updates.day_of_week !== undefined ||
+      updates.month_of_year !== undefined ||
+      updates.start_date !== undefined;
+
+    if (isScheduleChanged) {
+      const mergedFrequency = updates.frequency ?? existing.frequency;
+      const mergedInterval = (updates.interval !== undefined ? updates.interval : existing.interval) || 1;
+      const mergedDayOfMonth = updates.day_of_month !== undefined ? updates.day_of_month : existing.day_of_month;
+      const mergedDayOfWeek = updates.day_of_week !== undefined ? updates.day_of_week : existing.day_of_week;
+      const mergedMonthOfYear = updates.month_of_year !== undefined ? updates.month_of_year : existing.month_of_year;
+      const mergedStartDate = updates.start_date !== undefined
+        ? (updates.start_date ? updates.start_date.slice(0, 10) : undefined)
+        : (existing.start_date ? existing.start_date.slice(0, 10) : undefined);
+
+      nextRunDate = calculateNextRunDate(
+        {
+          frequency: mergedFrequency,
+          interval: mergedInterval,
+          day_of_month: mergedDayOfMonth,
+          day_of_week: mergedDayOfWeek,
+          month_of_year: mergedMonthOfYear,
+          start_date: mergedStartDate,
+        },
+        formatDateOnly(new Date())
+      );
+    } else {
+      nextRunDate = existing.next_run_date;
+    }
+  }
+
+  const startDate = updates.start_date !== undefined
+    ? (updates.start_date ? updates.start_date.slice(0, 10) : existing.start_date)
+    : existing.start_date;
+
+  const endDate = updates.end_date !== undefined
+    ? (updates.end_date ? updates.end_date.slice(0, 10) : null)
+    : existing.end_date;
+
   const updated: RecurringRule = {
     ...existing,
     ...updates,
+    start_date: startDate,
+    end_date: endDate,
+    next_run_date: nextRunDate,
     auto_record: autoRecord,
     updated_at: now,
   };

@@ -47,6 +47,7 @@ import {
   isVaultInitialized,
   isVaultUnlocked,
   lockVault,
+  lockAllVaults,
   isVaultRememberSessionEnabled,
   setVaultRememberSessionEnabled,
   getVaultMasterKey,
@@ -1021,6 +1022,7 @@ export function ProfileView({
             onClick={async () => {
               if (window.confirm('⚠️ 警告：此操作将清空本地所有账本、流水、分类与设置，确定继续吗？')) {
                 await clearLocalDatabase();
+                lockAllVaults();
                 if (onRefreshData) await onRefreshData();
                 refreshStorageAndVault();
                 alert('本地数据已全部清空');

@@ -270,11 +270,24 @@ export async function syncWithRemoteWebDAV(options?: {
       const lastSyncIso = config.lastSyncedAt || '1970-01-01T00:00:00.000Z';
       if (!options?.forceDirection) {
         const localData = await exportAllLocalData();
-        const hasLocalChanges = localData.transactions.some(
-          (tx) =>
-            (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
-            (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
-        );
+        const hasLocalChanges =
+          localData.transactions.some(
+            (tx) =>
+              (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
+              (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+          ) ||
+          localData.categories.some(
+            (c) => Boolean(c.updated_at) && c.updated_at > lastSyncIso
+          ) ||
+          localData.budgets.some(
+            (b) => Boolean(b.updated_at) && b.updated_at > lastSyncIso
+          ) ||
+          localData.recurringRules.some(
+            (r) => Boolean(r.updated_at) && r.updated_at > lastSyncIso
+          ) ||
+          localData.ledgers.some(
+            (l) => Boolean(l.updated_at) && l.updated_at > lastSyncIso
+          );
         if (hasLocalChanges) {
           return {
             success: false,
@@ -311,6 +324,40 @@ export async function syncWithRemoteWebDAV(options?: {
         localModified: now,
         message: `检测到远端有更新，已自动拉取并合并 (${importStats.importedTransactions} 笔账单)`,
       };
+    }
+
+    // 远端未变新准备上传前，检查本地是否有任何数据实体自 lastSyncedAt 以来发生变动
+    if (!options?.forceDirection && config.lastSyncedAt) {
+      const lastSyncIso = config.lastSyncedAt;
+      const localData = await exportAllLocalData();
+      const hasLocalChanges =
+        localData.transactions.some(
+          (tx) =>
+            (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
+            (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+        ) ||
+        localData.categories.some(
+          (c) => Boolean(c.updated_at) && c.updated_at > lastSyncIso
+        ) ||
+        localData.budgets.some(
+          (b) => Boolean(b.updated_at) && b.updated_at > lastSyncIso
+        ) ||
+        localData.recurringRules.some(
+          (r) => Boolean(r.updated_at) && r.updated_at > lastSyncIso
+        ) ||
+        localData.ledgers.some(
+          (l) => Boolean(l.updated_at) && l.updated_at > lastSyncIso
+        );
+
+      if (!hasLocalChanges) {
+        return {
+          success: true,
+          action: 'up_to_date',
+          remoteModified: remoteMeta?.lastModified,
+          localModified: config.lastSyncedAt,
+          message: '数据已是最新',
+        };
+      }
     }
 
     // 本地有更新或时间一致 -> 上传最新本地快照

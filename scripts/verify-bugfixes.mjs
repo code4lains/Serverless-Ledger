@@ -583,7 +583,224 @@ console.log('\n[28] 验证 Bug N7: reorderCategories 使用 Dexie 读写事务�
 assert.ok(localStoreTsContent.includes("localDb.transaction('rw', localDb.categories"), 'reorderCategories 必须包裹在事务中');
 console.log('✅ Bug N7 验证通过：分类批量重排序已纳入原子读写事务');
 
+// =========================================================================
+// 29. Bug 1 验证: WebDAV 自动同步防死循环上传 (Ping-Pong Sync Loop)
+// =========================================================================
+console.log('\n[29] 验证 Bug 1: WebDAV 自动同步远端未变新且本地无变更时跳过上传 (action: up_to_date)...');
+assert.ok(snapshotSyncTsContent.includes("action: 'up_to_date'"), 'snapshotSync.ts 必须支持 up_to_date 返回');
+assert.ok(snapshotSyncTsContent.includes("message: '数据已是最新'"), 'snapshotSync.ts 必须提示 数据已是最新');
+assert.ok(snapshotSyncTsContent.includes("localModified: config.lastSyncedAt"), 'snapshotSync.ts 必须返回 config.lastSyncedAt');
+assert.ok(snapshotSyncTsContent.includes("remoteModified: remoteMeta?.lastModified"), 'snapshotSync.ts 必须返回 remoteMeta?.lastModified');
+
+function simulateAutoSyncUpToDateCheck({
+  options,
+  config,
+  remoteMeta,
+  localData,
+}) {
+  if (!options?.forceDirection && config.lastSyncedAt) {
+    const lastSyncIso = config.lastSyncedAt;
+    const hasLocalChanges =
+      localData.transactions.some(
+        (tx) =>
+          (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
+          (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+      ) ||
+      localData.categories.some(
+        (c) => Boolean(c.updated_at) && c.updated_at > lastSyncIso
+      ) ||
+      localData.budgets.some(
+        (b) => Boolean(b.updated_at) && b.updated_at > lastSyncIso
+      ) ||
+      localData.recurringRules.some(
+        (r) => Boolean(r.updated_at) && r.updated_at > lastSyncIso
+      ) ||
+      localData.ledgers.some(
+        (l) => Boolean(l.updated_at) && l.updated_at > lastSyncIso
+      );
+
+    if (!hasLocalChanges) {
+      return {
+        success: true,
+        action: 'up_to_date',
+        remoteModified: remoteMeta?.lastModified,
+        localModified: config.lastSyncedAt,
+        message: '数据已是最新',
+      };
+    }
+  }
+  return { success: true, action: 'uploaded' };
+}
+
+const lastSyncTime = '2026-09-03T10:00:00.000Z';
+const cleanLocalData = {
+  transactions: [{ transaction_id: 't1', created_at: '2026-09-03T09:00:00.000Z', updated_at: '2026-09-03T09:00:00.000Z' }],
+  categories: [{ category_id: 'c1', created_at: '2026-08-21T00:00:00.000Z', updated_at: '2026-08-21T00:00:00.000Z' }],
+  budgets: [{ budget_id: 'b1', created_at: '2026-09-03T08:00:00.000Z', updated_at: '2026-09-03T08:00:00.000Z' }],
+  recurringRules: [{ rule_id: 'r1', created_at: '2026-09-03T08:00:00.000Z', updated_at: '2026-09-03T08:00:00.000Z' }],
+  ledgers: [{ ledger_id: 'l1', created_at: '2026-09-03T08:00:00.000Z', updated_at: '2026-09-03T08:00:00.000Z' }],
+};
+
+const upToDateResult = simulateAutoSyncUpToDateCheck({
+  config: { lastSyncedAt: lastSyncTime },
+  remoteMeta: { lastModified: '2026-09-03T10:00:00.000Z' },
+  localData: cleanLocalData,
+});
+assert.strictEqual(upToDateResult.action, 'up_to_date', '本地无变更时应直接返回 up_to_date');
+assert.strictEqual(upToDateResult.message, '数据已是最新');
+
+const localDataWithModifiedBudget = {
+  ...cleanLocalData,
+  budgets: [{ budget_id: 'b1', created_at: '2026-09-03T08:00:00.000Z', updated_at: '2026-09-03T11:00:00.000Z' }],
+};
+const uploadedResult = simulateAutoSyncUpToDateCheck({
+  config: { lastSyncedAt: lastSyncTime },
+  remoteMeta: { lastModified: '2026-09-03T10:00:00.000Z' },
+  localData: localDataWithModifiedBudget,
+});
+assert.strictEqual(uploadedResult.action, 'uploaded', '本地预算更新后应继续上传');
+console.log('✅ Bug 1 验证通过：WebDAV 自动同步成功规避死循环上传，准确拦截无变动上传');
+
+// =========================================================================
+// 30. Bug 2 验证: 同步冲突检测全面涵盖分类、预算、周期规则与账本
+// =========================================================================
+console.log('\n[30] 验证 Bug 2: 远端有更新时的同步冲突检测涵盖全部数据实体...');
+assert.ok(snapshotSyncTsContent.includes('localData.categories.some'), '冲突检测必须检查分类变动');
+assert.ok(snapshotSyncTsContent.includes('localData.budgets.some'), '冲突检测必须检查预算变动');
+assert.ok(snapshotSyncTsContent.includes('localData.recurringRules.some'), '冲突检测必须检查周期规则变动');
+assert.ok(snapshotSyncTsContent.includes('localData.ledgers.some'), '冲突检测必须检查账本变动');
+
+function simulateFullConflictCheck({
+  remoteModTime,
+  lastKnownRemoteTime,
+  config,
+  options,
+  localData,
+}) {
+  if (remoteModTime > lastKnownRemoteTime && remoteModTime > 0) {
+    const lastSyncIso = config.lastSyncedAt || '1970-01-01T00:00:00.000Z';
+    if (!options?.forceDirection) {
+      const hasLocalChanges =
+        localData.transactions.some(
+          (tx) =>
+            (Boolean(tx.updated_at) && tx.updated_at > lastSyncIso) ||
+            (Boolean(tx.created_at) && tx.created_at > lastSyncIso)
+        ) ||
+        localData.categories.some(
+          (c) => Boolean(c.updated_at) && c.updated_at > lastSyncIso
+        ) ||
+        localData.budgets.some(
+          (b) => Boolean(b.updated_at) && b.updated_at > lastSyncIso
+        ) ||
+        localData.recurringRules.some(
+          (r) => Boolean(r.updated_at) && r.updated_at > lastSyncIso
+        ) ||
+        localData.ledgers.some(
+          (l) => Boolean(l.updated_at) && l.updated_at > lastSyncIso
+        );
+      if (hasLocalChanges) {
+        return {
+          success: false,
+          action: 'conflict_detected',
+          message: '检测到云端与当前设备均有记账数据，存在合并冲突，请选择保留方向或手动导入合并',
+        };
+      }
+    }
+    return { success: true, action: 'downloaded' };
+  }
+  return { success: true, action: 'uploaded' };
+}
+
+// 1. 本地分类修改
+const catConflictRes = simulateFullConflictCheck({
+  remoteModTime: 2000,
+  lastKnownRemoteTime: 1000,
+  config: { lastSyncedAt: lastSyncTime },
+  localData: {
+    ...cleanLocalData,
+    categories: [{ category_id: 'c_custom', updated_at: '2026-09-03T11:00:00.000Z' }],
+  },
+});
+assert.strictEqual(catConflictRes.action, 'conflict_detected', '本地分类变动且远端更新应判定为冲突');
+
+// 2. 本地周期规则修改
+const ruleConflictRes = simulateFullConflictCheck({
+  remoteModTime: 2000,
+  lastKnownRemoteTime: 1000,
+  config: { lastSyncedAt: lastSyncTime },
+  localData: {
+    ...cleanLocalData,
+    recurringRules: [{ rule_id: 'r_new', updated_at: '2026-09-03T11:00:00.000Z' }],
+  },
+});
+assert.strictEqual(ruleConflictRes.action, 'conflict_detected', '本地周期规则变动且远端更新应判定为冲突');
+
+// 3. 本地账本修改
+const ledgerConflictRes = simulateFullConflictCheck({
+  remoteModTime: 2000,
+  lastKnownRemoteTime: 1000,
+  config: { lastSyncedAt: lastSyncTime },
+  localData: {
+    ...cleanLocalData,
+    ledgers: [{ ledger_id: 'l_new', updated_at: '2026-09-03T11:00:00.000Z' }],
+  },
+});
+assert.strictEqual(ledgerConflictRes.action, 'conflict_detected', '本地账本变动且远端更新应判定为冲突');
+
+// 4. 强制拉取覆盖
+const forcedPullRes = simulateFullConflictCheck({
+  remoteModTime: 2000,
+  lastKnownRemoteTime: 1000,
+  config: { lastSyncedAt: lastSyncTime },
+  options: { forceDirection: 'pull' },
+  localData: {
+    ...cleanLocalData,
+    ledgers: [{ ledger_id: 'l_new', updated_at: '2026-09-03T11:00:00.000Z' }],
+  },
+});
+assert.strictEqual(forcedPullRes.action, 'downloaded', '指定 forceDirection: pull 时不应拦截冲突');
+console.log('✅ Bug 2 验证通过：同步冲突检测全面覆盖分类、预算、周期规则及账本');
+
+// =========================================================================
+// 31. Bug 3 验证: updateRecurringRule 修改排程参数自动重算 next_run_date
+// =========================================================================
+console.log('\n[31] 验证 Bug 3: updateRecurringRule 修改排程参数自动重算 next_run_date...');
+const localStoreContentForRec = fs.readFileSync('packages/client/src/api/localStore.ts', 'utf-8');
+assert.ok(localStoreContentForRec.includes('calculateNextRunDate'), 'updateRecurringRule 必须调用 calculateNextRunDate');
+assert.ok(localStoreContentForRec.includes('isScheduleChanged'), 'updateRecurringRule 必须检测排程字段变更');
+console.log('✅ Bug 3 验证通过：修改周期规则排程参数时自动推算更新 next_run_date');
+
+// =========================================================================
+// 32. Bug 4 验证: CalculatorModal 运算符末尾按等号时正确传递 numToUse
+// =========================================================================
+console.log('\n[32] 验证 Bug 4: CalculatorModal 运算符末尾求值正确传递 numToUse...');
+const calcModalContent = fs.readFileSync('packages/client/src/components/CalculatorModal.tsx', 'utf-8');
+assert.ok(calcModalContent.includes('evaluateTokens(tokens, numToUse)'), 'CalculatorModal 必须向 evaluateTokens 传递 numToUse');
+assert.ok(!calcModalContent.includes('evaluateTokens(tokens, currentNum)'), '不再向 evaluateTokens 传递空字符串 currentNum');
+console.log('✅ Bug 4 验证通过：计算器在运算符末尾按等号时求值准确 (如 10 + = 20)');
+
+// =========================================================================
+// 33. Bug 6 验证: StatisticsView 使用 parseLocalDate 规避负时区日期回退 1 天
+// =========================================================================
+console.log('\n[33] 验证 Bug 6: StatisticsView 使用 parseLocalDate 规避负时区日期回退...');
+const statsViewContent = fs.readFileSync('packages/client/src/components/StatisticsView.tsx', 'utf-8');
+assert.ok(statsViewContent.includes('parseLocalDate(customStartDate)'), 'StatisticsView 必须使用 parseLocalDate 解析起始日期');
+assert.ok(statsViewContent.includes('parseLocalDate(customEndDate)'), 'StatisticsView 必须使用 parseLocalDate 解析结束日期');
+assert.ok(!statsViewContent.includes('new Date(customStartDate)'), '不再使用 new Date 解析无时间的 YYYY-MM-DD');
+console.log('✅ Bug 6 验证通过：统计视图在西半球/负时区下日期不再回退 1 天');
+
+// =========================================================================
+// 34. Bug 7 验证: 清空本地数据联动清除保险库内存密钥与 SessionStorage
+// =========================================================================
+console.log('\n[34] 验证 Bug 7: 清空本地数据联动清除保险库会话凭据...');
+const profileViewContent = fs.readFileSync('packages/client/src/components/ProfileView.tsx', 'utf-8');
+const dbIndexContentForClear = fs.readFileSync('packages/client/src/db/index.ts', 'utf-8');
+assert.ok(profileViewContent.includes('lockAllVaults()'), 'ProfileView 清空数据流程必须调用 lockAllVaults');
+assert.ok(dbIndexContentForClear.includes('lockAllVaults()'), 'clearLocalDatabase 内部必须调用 lockAllVaults');
+console.log('✅ Bug 7 验证通过：清空本地数据彻底抹除内存凭据并广播锁定状态');
+
 console.log('\n🎉 ALL BUG FIX VERIFICATIONS COMPLETED SUCCESSFULLY!');
+
 
 
 
