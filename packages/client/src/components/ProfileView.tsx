@@ -32,7 +32,9 @@ import {
   EyeOff,
   AlertTriangle,
   X,
+  Smartphone,
 } from 'lucide-react';
+import { WidgetConfigModal } from './WidgetConfigModal';
 import { Ledger, Transaction, SyncConfig, SyncProviderType } from '@ledger/shared';
 import { syncManager, SyncStats } from '../api/syncManager';
 import { getLocalStorageStats, clearLocalDatabase } from '../db';
@@ -59,6 +61,7 @@ interface ProfileViewProps {
   transactions: Transaction[];
   darkMode: boolean;
   vaultStatus?: 'uninitialized' | 'unlocked' | 'locked';
+  activeLedgerId?: string;
   onToggleDarkMode: () => void;
   onSync?: () => Promise<void>;
   onOpenLedgerModal: () => void;
@@ -76,6 +79,7 @@ export function ProfileView({
   transactions,
   darkMode,
   vaultStatus = 'uninitialized',
+  activeLedgerId,
   onToggleDarkMode,
   onSync,
   onOpenLedgerModal,
@@ -133,6 +137,7 @@ export function ProfileView({
 
   // WebDAV 跨设备恢复解密弹窗状态
   const [pullPasswordModalOpen, setPullPasswordModalOpen] = useState(false);
+  const [isWidgetModalOpen, setIsWidgetModalOpen] = useState(false);
   const [pullPasswordInput, setPullPasswordInput] = useState('');
   const [pullPasswordError, setPullPasswordError] = useState('');
   const [showPullPassword, setShowPullPassword] = useState(false);
@@ -918,6 +923,28 @@ export function ProfileView({
               <ChevronRight className="w-4 h-4 text-slate-400" />
             </button>
           )}
+
+          {/* 桌面小部件 */}
+          <button
+            type="button"
+            onClick={() => requireUnlockWrapper(() => setIsWidgetModalOpen(true))}
+            className="w-full p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-950/50 flex items-center justify-center text-sky-600 dark:text-sky-400">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                  桌面小部件
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  桌面速览今日/本月收支
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-slate-400" />
+          </button>
         </div>
       </div>
 
@@ -1055,6 +1082,13 @@ export function ProfileView({
         </p>
         <p>本地安全存储 · 支持多端同步</p>
       </div>
+
+      <WidgetConfigModal
+        isOpen={isWidgetModalOpen}
+        onClose={() => setIsWidgetModalOpen(false)}
+        ledgers={ledgers}
+        activeLedgerId={activeLedgerId || 'all'}
+      />
 
       {/* WebDAV 跨设备恢复主密码解密弹窗 */}
       {pullPasswordModalOpen && (

@@ -1,0 +1,19 @@
+package com.ledger.serverless
+
+import android.os.Bundle
+import com.getcapacitor.BridgeActivity
+import com.ledger.serverless.widget.LedgerWidgetPlugin
+
+// MainActivity 注册 LedgerWidgetPlugin 示例模板。
+// 同步脚本 (scripts/sync-android-widget.mjs) 会在已生成的
+// packages/client/android/app/src/main/java/com/ledger/serverless/MainActivity.kt
+// 中注入以下两行 (若已包含则跳过):
+//   import com.ledger.serverless.widget.LedgerWidgetPlugin
+//   registerPlugin(LedgerWidgetPlugin::class.java)
+// 本文件仅作模板参考,不要直接覆盖用户生成的 MainActivity.kt。
+class MainActivity : BridgeActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        registerPlugin(LedgerWidgetPlugin::class.java)
+        super.onCreate(savedInstanceState)
+    }
+}

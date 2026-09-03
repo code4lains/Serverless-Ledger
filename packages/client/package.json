@@ -10,7 +10,8 @@
     "test": "node ../../scripts/verify-crypto.mjs && node ../../scripts/test-client-sync-adapter.mjs",
     "cap:add:android": "cap add android",
     "cap:add:ios": "cap add ios",
-    "cap:sync": "cap sync",
+    "cap:sync": "cap sync && node ../../scripts/sync-android-widget.mjs",
+    "widget:sync": "node ../../scripts/sync-android-widget.mjs",
     "cap:open:android": "cap open android",
     "cap:open:ios": "cap open ios",
     "tauri": "tauri",
@@ -19,6 +20,7 @@
   },
   "dependencies": {
     "@capacitor/android": "^7.0.1",
+    "@capacitor/app": "^7.0.1",
     "@capacitor/core": "^7.0.1",
     "@capacitor/ios": "^7.0.1",
     "@ledger/shared": "*",

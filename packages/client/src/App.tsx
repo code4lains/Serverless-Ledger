@@ -100,6 +100,7 @@ import { VaultModal, VaultModalAction } from './components/VaultModal';
 import { NumericKeypad } from './components/NumericKeypad';
 import { CalculatorModal } from './components/CalculatorModal';
 import { recurringEngine } from './api/recurringEngine';
+import { calculateAndSyncWidgetData } from './widget/widgetDataSync';
 
 export type NavigationTab = 'detail' | 'stats' | 'record' | 'category' | 'profile';
 
@@ -317,6 +318,8 @@ export function App() {
       setSyncStats(stats);
       if (!stats.isSyncing) {
         loadAllData();
+        // subscribe 回调闭包中的 activeLedgerId 可能为 stale，直接调用无参版本（内部按 current 回退）
+        calculateAndSyncWidgetData().catch(() => {});
       }
     });
 
@@ -335,9 +338,52 @@ export function App() {
 
     init();
 
+    // 初次同步桌面小部件数据（非 Android 原生环境内部直接返回）
+    calculateAndSyncWidgetData().catch(() => {});
+
+    // Deep Link 监听：点击桌面小部件拉起 App 并跳转（Web 端无插件则静默跳过）
+    let deepLinkCleanup: (() => void) | undefined;
+    try {
+      // @ts-ignore - @capacitor/app 为可选原生依赖，未安装时 Web 构建/运行静默跳过
+      import('@capacitor/app')
+        .then((mod) => {
+          const CapApp = mod.App;
+          if (!CapApp?.addListener) return;
+          let listenerHandle: { remove: () => void } | undefined;
+          CapApp.addListener('appUrlOpen', (event: { url: string }) => {
+            if (event.url.startsWith('ledger://widget')) {
+              try {
+                const url = new URL(event.url);
+                const action = url.searchParams.get('action');
+                if (action === 'record') {
+                  setNavTab('record');
+                } else if (action === 'detail') {
+                  setNavTab('detail');
+                } else if (action === 'stats') {
+                  setNavTab('stats');
+                }
+              } catch {
+                /* 解析失败则忽略 */
+              }
+            }
+          }).then((h: { remove: () => void }) => {
+            listenerHandle = h;
+            deepLinkCleanup = () => listenerHandle?.remove();
+          }).catch(() => {});
+        })
+        .catch(() => {});
+    } catch {
+      /* Web 端无插件则静默跳过 */
+    }
+
     return () => {
       unsubSync();
       syncManager.stop();
+      try {
+        deepLinkCleanup?.();
+      } catch {
+        /* 忽略清理异常 */
+      }
       if (typeof window !== 'undefined') {
         window.removeEventListener('vault:status_changed', handleVaultChange);
       }
@@ -435,6 +481,7 @@ export function App() {
       }
       await refreshTransactions();
       await refreshBudgets();
+      calculateAndSyncWidgetData(activeLedgerId).catch(() => {});
 
       // 如果启用了自动同步，触发后台静默同步
       syncManager.triggerAutoSync().catch(() => {});
@@ -451,6 +498,7 @@ export function App() {
     showToast('修改已保存', 'success');
     await refreshTransactions();
     await refreshBudgets();
+    calculateAndSyncWidgetData(activeLedgerId).catch(() => {});
     setSelectedTxForDetail(null);
   };
 
@@ -460,6 +508,7 @@ export function App() {
     showToast('账单已删除', 'info');
     await refreshTransactions();
     await refreshBudgets();
+    calculateAndSyncWidgetData(activeLedgerId).catch(() => {});
     setSelectedTxForDetail(null);
   };
 
@@ -1070,6 +1119,7 @@ export function App() {
                 transactions={transactions}
                 darkMode={darkMode}
                 vaultStatus={vaultStatus}
+                activeLedgerId={activeLedgerId}
                 onToggleDarkMode={() => setDarkMode(!darkMode)}
                 onSync={handleSync}
                 onOpenLedgerModal={() => setIsLedgerModalOpen(true)}

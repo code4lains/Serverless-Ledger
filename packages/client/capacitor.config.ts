@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     cleartext: true,
+    // ledger:// deep link 由原生 AndroidManifest (ledger scheme) 处理，
+    // 此处放行以便 Capacitor WebView / appUrlOpen 能接收 widget 点击跳转。
+    allowNavigation: ['ledger://*'],
   },
   plugins: {
     CapacitorHttp: {

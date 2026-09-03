@@ -1,0 +1,31 @@
+<!-- 账盾小组件 AndroidManifest 片段模板 (不要直接覆盖生成的 Manifest)。
+     Source of truth: packages/client/android-widget/AndroidManifest.widget.snippet.xml
+     同步脚本 scripts/sync-android-widget.mjs 会做字符串注入 (若已包含则跳过)。
+
+     安装说明:
+     1. receiver 片段插入到 <application> ... </application> 内 (与 <activity> 同级)。
+     2. deep-link intent-filter 片段插入到 MainActivity 的 <activity> 内
+        (与 existing CAPACITOR intent-filter 同级)，用于 ledger://widget?action=xxx 唤醒。
+-->
+<!-- 片段 A:小组件 receiver (放入 <application> 内) -->
+<receiver
+    android:name=".widget.LedgerWidgetProvider"
+    android:exported="false"
+    android:label="账盾">
+    <intent-filter>
+        <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+    </intent-filter>
+    <meta-data
+        android:name="android.appwidget.provider"
+        android:resource="@xml/ledger_widget_info" />
+</receiver>
+
+<!-- 片段 B:deep link (放入 MainActivity <activity> 内) -->
+<intent-filter>
+    <action android:name="android.intent.action.VIEW" />
+    <category android:name="android.intent.category.DEFAULT" />
+    <category android:name="android.intent.category.BROWSABLE" />
+    <data
+        android:scheme="ledger"
+        android:host="widget" />
+</intent-filter>
