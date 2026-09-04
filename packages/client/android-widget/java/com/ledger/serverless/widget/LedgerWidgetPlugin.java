@@ -32,6 +32,14 @@ public class LedgerWidgetPlugin extends Plugin {
             String jsonStr = data.toString();
 
             Context context = getContext();
+            if (context == null && getActivity() != null) {
+                context = getActivity().getApplicationContext();
+            }
+            if (context == null) {
+                call.reject("Context is null");
+                return;
+            }
+
             SharedPreferences prefs = context.getSharedPreferences(
                 LedgerWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE
             );

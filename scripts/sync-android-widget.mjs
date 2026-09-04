@@ -72,34 +72,47 @@ function injectMainActivity(destMainPath) {
   }
 
   let src = fs.readFileSync(mainPath, 'utf8');
-  if (src.includes('LedgerWidgetPlugin')) {
-    console.log('[widget-sync] MainActivity already contains LedgerWidgetPlugin, skip.');
-    return 'skipped';
-  }
 
   // 1. 注入 import
   const importLine = isJava ? 'import com.ledger.serverless.widget.LedgerWidgetPlugin;' : 'import com.ledger.serverless.widget.LedgerWidgetPlugin';
-  if (src.includes('import com.getcapacitor.BridgeActivity')) {
-    src = src.replace(
-      /import com\.getcapacitor\.BridgeActivity;?/,
-      `$& \n${importLine}`
-    );
-  } else {
-    src = src.replace(/(package\s+[^\n]+\n)/, `$1\n${importLine}\n`);
+  if (!src.includes('com.ledger.serverless.widget.LedgerWidgetPlugin')) {
+    if (src.includes('import com.getcapacitor.BridgeActivity')) {
+      src = src.replace(
+        /import com\.getcapacitor\.BridgeActivity;?/,
+        `$& \n${importLine}`
+      );
+    } else {
+      src = src.replace(/(package\s+[^\n]+\n)/, `$1\n${importLine}\n`);
+    }
   }
 
-  // 2. 注入 registerPlugin
+  // 2. 注入 registerPlugin (必须在 super.onCreate 之前调用，否则 Bridge 已完成创建无法生效)
   const registerLine = isJava ? 'registerPlugin(LedgerWidgetPlugin.class);' : 'registerPlugin(LedgerWidgetPlugin::class.java)';
+
+  // 如果已经包含 registerPlugin，但顺序在 super.onCreate 之后，自动纠正顺序
+  if (src.includes('LedgerWidgetPlugin')) {
+    if (/super\.onCreate\([^)]*\);?\s*registerPlugin\(LedgerWidgetPlugin/s.test(src)) {
+      src = src.replace(
+        /(super\.onCreate\([^)]*\);?)\s*(registerPlugin\(LedgerWidgetPlugin[^)]*\);?)/s,
+        '$2\n        $1'
+      );
+      fs.writeFileSync(mainPath, src, 'utf8');
+      console.log('[widget-sync] Fixed registerPlugin order in MainActivity (now before super.onCreate).');
+      return 'reordered';
+    }
+    console.log('[widget-sync] MainActivity already contains LedgerWidgetPlugin in correct order, skip.');
+    return 'skipped';
+  }
 
   if (isJava) {
     if (/public\s+void\s+onCreate/.test(src)) {
-      src = src.replace(/(super\.onCreate\(savedInstanceState\);\n)/, `$1        ${registerLine}\n`);
+      src = src.replace(/(public\s+void\s+onCreate[^{]*\{\s*)/, `$1\n        ${registerLine}\n`);
     } else {
-      src = src.replace(/(public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{)/, `$1\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        ${registerLine}\n    }\n`);
+      src = src.replace(/(public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{)/, `$1\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        ${registerLine}\n        super.onCreate(savedInstanceState);\n    }\n`);
     }
   } else {
     if (/override\s+fun\s+onCreate/.test(src)) {
-      src = src.replace(/(override\s+fun\s+onCreate[^\n]*\{\n)/, `$1        ${registerLine}\n`);
+      src = src.replace(/(override\s+fun\s+onCreate[^{]*\{\s*)/, `$1\n        ${registerLine}\n`);
     } else if (/class\s+MainActivity[^\n{]*\{/.test(src)) {
       src = src.replace(/(class\s+MainActivity[^\n{]*\{\n?)/, `$1    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        ${registerLine}\n        super.onCreate(savedInstanceState)\n    }\n`);
     } else if (/class\s+MainActivity[^\n{]*$/.test(src.replace(/\r/g, '').split('\n').find((l) => l.includes('class MainActivity')) ?? '')) {
