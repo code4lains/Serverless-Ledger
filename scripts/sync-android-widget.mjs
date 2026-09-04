@@ -90,7 +90,7 @@ function injectMainActivity(destMainPath) {
   const registerLine = isJava ? 'registerPlugin(LedgerWidgetPlugin.class);' : 'registerPlugin(LedgerWidgetPlugin::class.java)';
 
   // 如果已经包含 registerPlugin，但顺序在 super.onCreate 之后，自动纠正顺序
-  if (src.includes('LedgerWidgetPlugin')) {
+  if (src.includes('registerPlugin(LedgerWidgetPlugin')) {
     if (/super\.onCreate\([^)]*\);?\s*registerPlugin\(LedgerWidgetPlugin/s.test(src)) {
       src = src.replace(
         /(super\.onCreate\([^)]*\);?)\s*(registerPlugin\(LedgerWidgetPlugin[^)]*\);?)/s,
@@ -100,7 +100,7 @@ function injectMainActivity(destMainPath) {
       console.log('[widget-sync] Fixed registerPlugin order in MainActivity (now before super.onCreate).');
       return 'reordered';
     }
-    console.log('[widget-sync] MainActivity already contains LedgerWidgetPlugin in correct order, skip.');
+    console.log('[widget-sync] MainActivity already contains registerPlugin in correct order, skip.');
     return 'skipped';
   }
 

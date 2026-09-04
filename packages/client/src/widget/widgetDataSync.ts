@@ -275,8 +275,22 @@ export async function calculateAndSyncWidgetData(activeLedgerId?: string): Promi
     const now = new Date();
     const payload = computeWidgetPayloadPure(txs, ledgerName, settings, now);
 
-    await LedgerWidget.updateWidgetData({ data: payload });
-  } catch (err) {
+    alert(
+      `[小部件同步 1/2: 前端已就绪]\n平台: ${Capacitor.getPlatform()} (isNative=${Capacitor.isNativePlatform()})\n账本: ${payload.ledgerName}\n数据量: ${txs.length}笔\n今日支出: ${payload.item1_val}\n本月支出: ${payload.item2_val}\n本月结余: ${payload.item3_val}`
+    );
+
+    try {
+      await LedgerWidget.updateWidgetData({ data: payload });
+      alert(
+        `[小部件同步 2/2: 原生调用成功!]\n已向安卓系统提交小部件更新！\n若桌面小部件仍未变动，请返回桌面观察。`
+      );
+    } catch (pluginErr: any) {
+      alert(
+        `[小部件同步 2/2: 原生调用失败!]\n错误类型: ${pluginErr?.name || 'Error'}\n错误信息: ${pluginErr?.message || String(pluginErr)}\n堆栈: ${pluginErr?.stack || '无'}`
+      );
+      throw pluginErr;
+    }
+  } catch (err: any) {
     console.warn('[widget] calculateAndSyncWidgetData failed:', err);
   }
 }

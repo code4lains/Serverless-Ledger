@@ -52,6 +52,18 @@ public class LedgerWidgetPlugin extends Plugin {
             } catch (Exception ignored) {
             }
 
+            try {
+                final Context toastCtx = context;
+                final String showMsg = "【原生收到数据】已写入并触发小部件更新";
+                new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+                    @Override
+                    public void run() {
+                        android.widget.Toast.makeText(toastCtx, showMsg, android.widget.Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception ignored) {
+            }
+
             // 2. 主动触发系统桌面小组件广播更新
             int[] ids;
             try {
