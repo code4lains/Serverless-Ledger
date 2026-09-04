@@ -812,6 +812,11 @@ const widgetInfoContent = fs.readFileSync('packages/client/android-widget/res/xm
 assert.ok(widgetInfoContent.includes('android:previewLayout="@layout/widget_ledger_card"'), 'ledger_widget_info 必须声明 previewLayout 供桌面预览');
 assert.ok(widgetInfoContent.includes('android:description="@string/widget_description"'), 'ledger_widget_info 必须声明 description 满足 Android 12+ 规范');
 
+const widgetLayoutContent = fs.readFileSync('packages/client/android-widget/res/layout/widget_ledger_card.xml', 'utf-8');
+assert.ok(!/<View[\s/>]/.test(widgetLayoutContent), 'widget_ledger_card.xml 严禁包含 <View> 标签 (RemoteViews 不支持，会导致载入小部件失败)');
+assert.ok(!widgetLayoutContent.includes('paddingHorizontal'), 'widget_ledger_card.xml 不得使用高版本专有属性 paddingHorizontal');
+assert.ok(!widgetLayoutContent.includes('paddingVertical'), 'widget_ledger_card.xml 不得使用高版本专有属性 paddingVertical');
+
 const clientPkgContent = fs.readFileSync('packages/client/package.json', 'utf-8');
 const clientPkgJson = JSON.parse(clientPkgContent);
 assert.strictEqual(clientPkgJson.scripts['capacitor:sync:after'], 'node ../../scripts/sync-android-widget.mjs', 'package.json 必须配置 capacitor:sync:after 自动化同步钩子');

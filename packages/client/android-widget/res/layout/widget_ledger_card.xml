@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 账盾桌面小组件卡片布局 (RemoteViews)
-     约束: 仅使用 RemoteViews 支持的 View (FrameLayout/LinearLayout/TextView/ImageView/View)，
-     保证构建通过与各启动器完美兼容。
-     id 约定 (必须与 LedgerWidgetProvider.kt 一致):
+     严格遵循 RemoteViews 白名单规范:
+     仅使用 FrameLayout / LinearLayout / ImageView / TextView，绝不使用 View 标签或未白名单类。
+     id 约定:
        widget_container, tv_ledger_name, btn_quick_record,
        tv_label1/tv_value1, tv_label2/tv_value2, tv_label3/tv_value3 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
@@ -10,7 +10,10 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_card_bg"
-    android:padding="14dp">
+    android:paddingLeft="14dp"
+    android:paddingRight="14dp"
+    android:paddingTop="14dp"
+    android:paddingBottom="14dp">
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -43,6 +46,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginStart="6dp"
+                    android:layout_marginLeft="6dp"
                     android:ellipsize="end"
                     android:maxLines="1"
                     android:text="默认日常账本"
@@ -58,8 +62,10 @@
                 android:layout_height="wrap_content"
                 android:background="@drawable/widget_btn_record_bg"
                 android:gravity="center"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="4dp">
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp">
 
                 <TextView
                     android:layout_width="wrap_content"
@@ -71,8 +77,8 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 弹性上部间距，使核心指标纵向居中舒展 -->
-        <View
+        <!-- 弹性上部间距: 使用 FrameLayout 作为合法的 RemoteViews 占位垫片 -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
@@ -104,6 +110,7 @@
                     android:layout_height="wrap_content"
                     android:layout_marginBottom="2dp"
                     android:layout_marginEnd="3dp"
+                    android:layout_marginRight="3dp"
                     android:text="¥"
                     android:textColor="#CBD5E1"
                     android:textSize="15sp"
@@ -120,13 +127,13 @@
             </LinearLayout>
         </LinearLayout>
 
-        <!-- 弹性下部间距，确保底部双列卡片稳稳贴底 -->
-        <View
+        <!-- 弹性下部间距: 使用 FrameLayout 作为合法的 RemoteViews 占位垫片 -->
+        <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1" />
 
-        <!-- 底部双列撞色卡片区 (填充底部空间，避免下半部分空旷) -->
+        <!-- 底部双列撞色卡片区 (填充底部空间) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -137,11 +144,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginEnd="5dp"
+                android:layout_marginRight="5dp"
                 android:layout_weight="1"
                 android:background="@drawable/widget_tile_expense_bg"
                 android:orientation="vertical"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="7dp">
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp">
 
                 <TextView
                     android:id="@+id/tv_label2"
@@ -167,11 +177,14 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="5dp"
+                android:layout_marginLeft="5dp"
                 android:layout_weight="1"
                 android:background="@drawable/widget_tile_balance_bg"
                 android:orientation="vertical"
-                android:paddingHorizontal="10dp"
-                android:paddingVertical="7dp">
+                android:paddingLeft="10dp"
+                android:paddingRight="10dp"
+                android:paddingTop="7dp"
+                android:paddingBottom="7dp">
 
                 <TextView
                     android:id="@+id/tv_label3"
