@@ -228,7 +228,6 @@ export function computeWidgetPayloadPure(
 export async function calculateAndSyncWidgetData(activeLedgerId?: string): Promise<void> {
   try {
     if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') {
-      alert("Not native android platform, skipping widget sync.");
       return;
     }
 
@@ -273,18 +272,11 @@ export async function calculateAndSyncWidgetData(activeLedgerId?: string): Promi
             .filter((t) => t.ledger_id === targetLedgerId || (!t.ledger_id && ledgers.length === 1))
             .toArray();
 
-    // Debug info: append tx count to ledger name
-    ledgerName = `${ledgerName} (${txs.length}笔)`;
-
     const now = new Date();
     const payload = computeWidgetPayloadPure(txs, ledgerName, settings, now);
 
-    alert(`Syncing widget data: ${JSON.stringify(payload)}`);
-
     await LedgerWidget.updateWidgetData({ data: payload });
-    alert("Widget sync successful!");
   } catch (err) {
-    alert(`Widget sync error: ${String(err)}`);
     console.warn('[widget] calculateAndSyncWidgetData failed:', err);
   }
 }
