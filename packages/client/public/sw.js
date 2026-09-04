@@ -4,7 +4,7 @@
  * 践行《项目技术白皮书 4.1 & 7.3》规范
  */
 
-const CACHE_NAME = 'serverless-ledger-v3.0.0';
+const CACHE_NAME = 'serverless-ledger-v3.1.0';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

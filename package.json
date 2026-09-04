@@ -1,6 +1,6 @@
 {
   "name": "serverless-ledger-monorepo",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "description": "账盾 - 基于 React + Capacitor/Tauri + WebDAV 加密快照同步的去中心化纯本地优先个人财务应用",
   "workspaces": [

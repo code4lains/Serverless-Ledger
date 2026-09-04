@@ -1078,7 +1078,7 @@ export function ProfileView({
       {/* 底部应用信息 */}
       <div className="text-center pt-4 text-xs text-slate-400 dark:text-slate-500 space-y-1">
         <p className="font-semibold text-slate-500 dark:text-slate-400">
-          账盾 v3.0.0
+          账盾 v3.1.0
         </p>
         <p>本地安全存储 · 支持多端同步</p>
       </div>
