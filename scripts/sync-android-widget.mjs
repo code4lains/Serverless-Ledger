@@ -59,40 +59,57 @@ function copyDirRecursive(srcDir, destDir, filter) {
   return out;
 }
 
-function injectMainActivity(mainPath) {
+function injectMainActivity(destMainPath) {
+  let mainPath = path.join(destMainPath, 'java', 'com', 'ledger', 'serverless', 'MainActivity.java');
+  let isJava = true;
   if (!fs.existsSync(mainPath)) {
-    console.log(`[widget-sync] skip MainActivity inject (not found): ${mainPath}`);
+    mainPath = path.join(destMainPath, 'java', 'com', 'ledger', 'serverless', 'MainActivity.kt');
+    isJava = false;
+  }
+  if (!fs.existsSync(mainPath)) {
+    console.log(`[widget-sync] skip MainActivity inject (not found either .java or .kt): ${mainPath}`);
     return 'missing';
   }
+
   let src = fs.readFileSync(mainPath, 'utf8');
   if (src.includes('LedgerWidgetPlugin')) {
     console.log('[widget-sync] MainActivity already contains LedgerWidgetPlugin, skip.');
     return 'skipped';
   }
+
   // 1. 注入 import
-  const importLine = 'import com.ledger.serverless.widget.LedgerWidgetPlugin';
+  const importLine = isJava ? 'import com.ledger.serverless.widget.LedgerWidgetPlugin;' : 'import com.ledger.serverless.widget.LedgerWidgetPlugin';
   if (src.includes('import com.getcapacitor.BridgeActivity')) {
     src = src.replace(
-      'import com.getcapacitor.BridgeActivity',
-      `import com.getcapacitor.BridgeActivity\n${importLine}`,
+      /import com\.getcapacitor\.BridgeActivity;?/,
+      `$& \n${importLine}`
     );
   } else {
-    // 退化:加到 package 行之后
-    src = src.replace(/(package\s+[^\n]+\n)/, `$1${importLine}\n`);
+    src = src.replace(/(package\s+[^\n]+\n)/, `$1\n${importLine}\n`);
   }
+
   // 2. 注入 registerPlugin
-  const registerLine = 'registerPlugin(LedgerWidgetPlugin::class.java)';
-  if (/override\s+fun\s+onCreate/.test(src)) {
-    src = src.replace(/(override\s+fun\s+onCreate[^\n]*\{\n)/, `$1        ${registerLine}\n`);
-  } else if (/class\s+MainActivity[^\n{]*\{/.test(src)) {
-    src = src.replace(/(class\s+MainActivity[^\n{]*\{\n?)/, `$1    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        ${registerLine}\n        super.onCreate(savedInstanceState)\n    }\n`);
-  } else if (/class\s+MainActivity[^\n{]*$/.test(src.replace(/\r/g, '').split('\n').find((l) => l.includes('class MainActivity')) ?? '')) {
-    // Capacitor 默认生成的空类体 `class MainActivity : BridgeActivity()` (无大括号)
-    src = src.replace(/(class\s+MainActivity[^\n{]*)/, `$1 {\n    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        ${registerLine}\n        super.onCreate(savedInstanceState)\n    }\n}`);
+  const registerLine = isJava ? 'registerPlugin(LedgerWidgetPlugin.class);' : 'registerPlugin(LedgerWidgetPlugin::class.java)';
+
+  if (isJava) {
+    if (/public\s+void\s+onCreate/.test(src)) {
+      src = src.replace(/(super\.onCreate\(savedInstanceState\);\n)/, `$1        ${registerLine}\n`);
+    } else {
+      src = src.replace(/(public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{)/, `$1\n    @Override\n    public void onCreate(android.os.Bundle savedInstanceState) {\n        super.onCreate(savedInstanceState);\n        ${registerLine}\n    }\n`);
+    }
   } else {
-    console.log('[widget-sync] WARN: cannot locate MainActivity class body, skip register inject.');
-    return 'warn';
+    if (/override\s+fun\s+onCreate/.test(src)) {
+      src = src.replace(/(override\s+fun\s+onCreate[^\n]*\{\n)/, `$1        ${registerLine}\n`);
+    } else if (/class\s+MainActivity[^\n{]*\{/.test(src)) {
+      src = src.replace(/(class\s+MainActivity[^\n{]*\{\n?)/, `$1    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        ${registerLine}\n        super.onCreate(savedInstanceState)\n    }\n`);
+    } else if (/class\s+MainActivity[^\n{]*$/.test(src.replace(/\r/g, '').split('\n').find((l) => l.includes('class MainActivity')) ?? '')) {
+      src = src.replace(/(class\s+MainActivity[^\n{]*)/, `$1 {\n    override fun onCreate(savedInstanceState: android.os.Bundle?) {\n        ${registerLine}\n        super.onCreate(savedInstanceState)\n    }\n}`);
+    } else {
+      console.log('[widget-sync] WARN: cannot locate MainActivity class body, skip register inject.');
+      return 'warn';
+    }
   }
+
   fs.writeFileSync(mainPath, src, 'utf8');
   console.log('[widget-sync] MainActivity injected with LedgerWidgetPlugin.');
   return 'injected';
@@ -172,8 +189,7 @@ export function syncAndroidWidget() {
   );
   for (const f of copied) console.log(`[widget-sync] copied: ${path.relative(repoRoot, f)}`);
 
-  const mainActivity = path.join(destMain, 'java', 'com', 'ledger', 'serverless', 'MainActivity.kt');
-  const mainStatus = injectMainActivity(mainActivity);
+  const mainStatus = injectMainActivity(destMain);
   const manifestStatus = injectManifest(path.join(destMain, 'AndroidManifest.xml'));
 
   console.log(`[widget-sync] done. files=${copied.length} mainActivity=${mainStatus} manifest=${manifestStatus}`);
