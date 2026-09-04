@@ -59,10 +59,10 @@ class LedgerWidgetProvider : AppWidgetProvider() {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val dataStr = prefs.getString(KEY_DATA, null)
 
-            var ledgerName = "默认日常账本"
-            var label1 = "今日支出"; var value1 = "0.00"
-            var label2 = "本月支出"; var value2 = "0.00"
-            var label3 = "本月结余"; var value3 = "0.00"
+            var ledgerName = "请打开App同步数据"
+            var label1 = "今日支出"; var value1 = "-.--"
+            var label2 = "本月支出"; var value2 = "-.--"
+            var label3 = "本月结余"; var value3 = "-.--"
             var clickAction = "record"
             var updatedAtDay: String? = null
             var hideAmounts = false

@@ -272,6 +272,9 @@ export async function calculateAndSyncWidgetData(activeLedgerId?: string): Promi
             .filter((t) => t.ledger_id === targetLedgerId || (!t.ledger_id && ledgers.length === 1))
             .toArray();
 
+    // Debug info: append tx count to ledger name
+    ledgerName = `${ledgerName} (${txs.length}笔)`;
+
     const now = new Date();
     const payload = computeWidgetPayloadPure(txs, ledgerName, settings, now);
 
