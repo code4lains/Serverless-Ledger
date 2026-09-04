@@ -31,10 +31,16 @@ class LedgerWidgetPlugin : Plugin() {
             val prefs = context.getSharedPreferences(
                 LedgerWidgetProvider.PREFS_NAME, Context.MODE_PRIVATE
             )
-            prefs.edit().putString(LedgerWidgetProvider.KEY_DATA, jsonStr).apply()
+            // 使用 commit() 保证同步落盘后再触发刷新
+            prefs.edit().putString(LedgerWidgetProvider.KEY_DATA, jsonStr).commit()
 
-            // 主动触发桌面小组件刷新广播; ids 为空也视为成功 resolve
-            // (用户尚未添加小组件到桌面时 ids 即为空,属正常情况)
+            // 1. 就地直接更新 RemoteViews (无需排队等待广播调度，实现 0 延迟响应)
+            try {
+                LedgerWidgetProvider.updateAllWidgets(context)
+            } catch (_: Exception) {
+            }
+
+            // 2. 主动触发系统桌面小组件广播更新
             val ids: IntArray = try {
                 val mgr = AppWidgetManager.getInstance(context)
                 mgr.getAppWidgetIds(ComponentName(context, LedgerWidgetProvider::class.java))
@@ -50,7 +56,6 @@ class LedgerWidgetPlugin : Plugin() {
                 }
                 context.sendBroadcast(intent)
             } catch (_: Exception) {
-                // 广播失败不影响 resolve,前端已持久化数据,系统轮询也会刷新
             }
 
             call.resolve()

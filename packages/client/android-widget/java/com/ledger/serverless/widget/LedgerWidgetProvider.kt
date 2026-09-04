@@ -20,7 +20,7 @@ import java.util.Locale
  *
  * Payload 约定 (SharedPreferences `ledger_widget_prefs` / key `widget_data`, JSON):
  *   ledgerName, item1_label/val, item2_label/val, item3_label/val,
- *   clickAction (record|detail|stats), updatedAt (ISO), hideAmounts (可选 boolean)
+ *   clickAction (record|detail|stats), updatedAt (ISO), updatedAtDay (YYYY-MM-DD), hideAmounts (可选 boolean)
  */
 class LedgerWidgetProvider : AppWidgetProvider() {
 
@@ -54,12 +54,12 @@ class LedgerWidgetProvider : AppWidgetProvider() {
         }
     }
 
-    private fun updateWidgets(context: Context, mgr: AppWidgetManager, ids: IntArray) {
+    fun updateWidgets(context: Context, mgr: AppWidgetManager, ids: IntArray) {
         try {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val dataStr = prefs.getString(KEY_DATA, null)
 
-            var ledgerName = "默认账本"
+            var ledgerName = "默认日常账本"
             var label1 = "今日支出"; var value1 = "0.00"
             var label2 = "本月支出"; var value2 = "0.00"
             var label3 = "本月结余"; var value3 = "0.00"
@@ -79,17 +79,22 @@ class LedgerWidgetProvider : AppWidgetProvider() {
                     value3 = json.optString("item3_val", value3)
                     clickAction = json.optString("clickAction", clickAction)
                     hideAmounts = json.optBoolean("hideAmounts", false)
-                    val updatedAt = json.optString("updatedAt", "")
-                    // ISO "2026-09-03T..." 取前 10 位即日期
-                    updatedAtDay = if (updatedAt.length >= 10) updatedAt.substring(0, 10) else null
+
+                    val updatedAtDayJson = json.optString("updatedAtDay", "")
+                    if (updatedAtDayJson.isNotEmpty()) {
+                        updatedAtDay = updatedAtDayJson
+                    } else {
+                        val updatedAt = json.optString("updatedAt", "")
+                        updatedAtDay = if (updatedAt.length >= 10) updatedAt.substring(0, 10) else null
+                    }
                 } catch (_: Exception) {
                     // JSON 解析失败则使用默认值继续渲染，保证不崩
                 }
             }
 
-            // 跨天清零: today 项 (label 含"今日") 若 updatedAt 日期 != 今天则显示 0.00
+            // 跨天清零: today 项 (label 含"今日") 若数据统计的本地日期 != 今天本地日期，显示 0.00
             try {
-                val today = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+                val today = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
                 if (updatedAtDay != null && updatedAtDay != today) {
                     if (label1.contains("今日")) value1 = "0.00"
                     if (label2.contains("今日")) value2 = "0.00"
@@ -115,6 +120,7 @@ class LedgerWidgetProvider : AppWidgetProvider() {
                 views.setTextViewText(R.id.tv_label3, label3)
                 views.setTextViewText(R.id.tv_value3, value3)
 
+                // 卡片主体点击 Intent (依据用户配置 clickAction: 记账/明细/统计)
                 val deepLink = Intent(context, MainActivity::class.java).apply {
                     action = Intent.ACTION_VIEW
                     data = Uri.parse("ledger://widget?action=$clickAction")
@@ -125,6 +131,21 @@ class LedgerWidgetProvider : AppWidgetProvider() {
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
                 views.setOnClickPendingIntent(R.id.widget_container, pending)
+
+                // 快捷“+ 记一笔”按钮直接拉起记账弹窗
+                try {
+                    val recordLink = Intent(context, MainActivity::class.java).apply {
+                        action = Intent.ACTION_VIEW
+                        data = Uri.parse("ledger://widget?action=record")
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    }
+                    val recordPending = PendingIntent.getActivity(
+                        context, 1, recordLink,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                    views.setOnClickPendingIntent(R.id.btn_quick_record, recordPending)
+                } catch (_: Exception) {
+                }
 
                 try {
                     mgr.updateAppWidget(appWidgetId, views)
@@ -139,5 +160,19 @@ class LedgerWidgetProvider : AppWidgetProvider() {
     companion object {
         const val PREFS_NAME = "ledger_widget_prefs"
         const val KEY_DATA = "widget_data"
+
+        @JvmStatic
+        fun updateAllWidgets(context: Context) {
+            try {
+                val mgr = AppWidgetManager.getInstance(context)
+                val ids = mgr.getAppWidgetIds(ComponentName(context, LedgerWidgetProvider::class.java))
+                if (ids != null && ids.isNotEmpty()) {
+                    val provider = LedgerWidgetProvider()
+                    provider.updateWidgets(context, mgr, ids)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 }

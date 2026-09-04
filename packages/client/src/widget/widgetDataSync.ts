@@ -13,7 +13,7 @@
  */
 
 import { Capacitor } from '@capacitor/core';
-import type { Transaction } from '@ledger/shared';
+import { parseLocalDate, type Transaction } from '@ledger/shared';
 import { localDb } from '../db';
 import { LedgerWidget, type WidgetClickAction, type WidgetPayload } from './ledgerWidgetBridge';
 
@@ -117,7 +117,8 @@ export function formatAmount(cents: number): string {
 export type WidgetTxInput = Pick<Transaction, 'transaction_date' | 'type' | 'amount'>;
 
 function toLocalDate(value: string): Date | null {
-  const d = new Date(value);
+  if (!value) return null;
+  const d = parseLocalDate(value);
   if (Number.isNaN(d.getTime())) {
     return null;
   }
@@ -194,6 +195,11 @@ export function computeWidgetPayloadPure(
 ): WidgetPayload {
   const safeSettings = sanitizeSettings(settings);
   const list = Array.isArray(txs) ? txs : [];
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  const localDayStr = `${y}-${m}-${d}`;
+
   return {
     ledgerName,
     item1_label: METRIC_LABELS[safeSettings.slot1],
@@ -204,6 +210,7 @@ export function computeWidgetPayloadPure(
     item3_val: formatAmount(resolveMetricValue(list, safeSettings.slot3, now)),
     clickAction: safeSettings.clickAction,
     updatedAt: now.toISOString(),
+    updatedAtDay: localDayStr,
   };
 }
 
@@ -240,15 +247,30 @@ export async function calculateAndSyncWidgetData(activeLedgerId?: string): Promi
       targetLedgerId = 'all';
     }
 
+    // 账本名称解析：若为全部账本但本地仅有1个账本，或者当前处于默认账本，优化展示名称
+    let ledgerName = '全部账本';
+    if (targetLedgerId !== 'all') {
+      ledgerName = ledgers.find((l) => l.ledger_id === targetLedgerId)?.name ?? '全部账本';
+    } else {
+      if (ledgers.length === 1) {
+        ledgerName = ledgers[0].name;
+      } else {
+        const def = ledgers.find((l) => l.is_default === 1);
+        if (def && (!activeLedgerId || activeLedgerId === 'all' || activeLedgerId === def.ledger_id)) {
+          ledgerName = def.name;
+        } else if (activeLedgerId && activeLedgerId !== 'all') {
+          const matched = ledgers.find((l) => l.ledger_id === activeLedgerId);
+          if (matched) ledgerName = matched.name;
+        }
+      }
+    }
+
     const txs: Transaction[] =
       targetLedgerId === 'all'
         ? await localDb.transactions.toArray()
-        : await localDb.transactions.where('ledger_id').equals(targetLedgerId).toArray();
-
-    const ledgerName =
-      targetLedgerId === 'all'
-        ? '全部账本'
-        : (ledgers.find((l) => l.ledger_id === targetLedgerId)?.name ?? '全部账本');
+        : await localDb.transactions
+            .filter((t) => t.ledger_id === targetLedgerId || (!t.ledger_id && ledgers.length === 1))
+            .toArray();
 
     const now = new Date();
     const payload = computeWidgetPayloadPure(txs, ledgerName, settings, now);

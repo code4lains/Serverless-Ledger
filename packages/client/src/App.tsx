@@ -334,12 +334,10 @@ export function App() {
     const init = async () => {
       await checkVaultStatus();
       await loadAllData();
+      calculateAndSyncWidgetData(activeLedgerId).catch(() => {});
     };
 
     init();
-
-    // 初次同步桌面小部件数据（非 Android 原生环境内部直接返回）
-    calculateAndSyncWidgetData().catch(() => {});
 
     // Deep Link 监听：点击桌面小部件拉起 App 并跳转（Web 端无插件则静默跳过）
     let deepLinkCleanup: (() => void) | undefined;
@@ -389,6 +387,26 @@ export function App() {
       }
     };
   }, []);
+
+  // 当交易流水、当前账本或保险库解锁状态变化时，自动重算并刷新安卓桌面小部件
+  useEffect(() => {
+    calculateAndSyncWidgetData(activeLedgerId).catch(() => {});
+  }, [transactions, activeLedgerId, vaultStatus]);
+
+  // 当 App 切到后台时，确保将最新指标同步至桌面小部件
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        calculateAndSyncWidgetData(activeLedgerId).catch(() => {});
+      }
+    };
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibility);
+      return () => {
+        document.removeEventListener('visibilitychange', handleVisibility);
+      };
+    }
+  }, [activeLedgerId]);
 
   // 当切换账本或筛选条件时刷新流水与预算
   useEffect(() => {

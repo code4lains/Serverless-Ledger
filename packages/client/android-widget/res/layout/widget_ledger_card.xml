@@ -1,51 +1,86 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 账盾桌面小组件卡片布局 (RemoteViews)
-     约束: 仅使用 RemoteViews 支持的 View (FrameLayout/LinearLayout/TextView/ImageView)，
-     不引用自定义 drawable (除 widget_card_bg 外) 与主题属性，保证构建通过。
+     约束: 仅使用 RemoteViews 支持的 View (FrameLayout/LinearLayout/TextView/ImageView/View)，
+     保证构建通过与各启动器完美兼容。
      id 约定 (必须与 LedgerWidgetProvider.kt 一致):
-       widget_container, tv_ledger_name,
+       widget_container, tv_ledger_name, btn_quick_record,
        tv_label1/tv_value1, tv_label2/tv_value2, tv_label3/tv_value3 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_container"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/widget_card_bg"
-    android:padding="16dp">
+    android:padding="14dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <!-- 顶部:账本图标 + 账本名称 (图标使用系统 drawable，避免缺资源) -->
+        <!-- 顶部栏: 账本药丸标签 (左) + 快捷记一笔按钮 (右) -->
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
-            <ImageView
-                android:layout_width="16dp"
-                android:layout_height="16dp"
-                android:src="@android:drawable/ic_menu_agenda"
-                android:tint="#FFFFFF" />
+            <!-- 账本名称徽章 -->
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/tv_ledger_name"
+                <ImageView
+                    android:layout_width="14dp"
+                    android:layout_height="14dp"
+                    android:src="@android:drawable/ic_menu_agenda"
+                    android:tint="#A5B4FC" />
+
+                <TextView
+                    android:id="@+id/tv_ledger_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:text="默认日常账本"
+                    android:textColor="#F8FAFC"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
+            <!-- 快捷记一笔高亮胶囊按钮 -->
+            <LinearLayout
+                android:id="@+id/btn_quick_record"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
-                android:text="默认账本"
-                android:textColor="#FFFFFF"
-                android:textSize="14sp"
-                android:textStyle="bold" />
+                android:background="@drawable/widget_btn_record_bg"
+                android:gravity="center"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="+ 记一笔"
+                    android:textColor="#FFFFFF"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- 指标一 (大字，如今日支出) -->
+        <!-- 弹性上部间距，使核心指标纵向居中舒展 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- 核心指标 (Hero 指标一: 今日支出) -->
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
             android:orientation="vertical">
 
             <TextView
@@ -53,72 +88,107 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="今日支出"
-                android:textColor="#E0E0E0"
-                android:textSize="11sp" />
+                android:textColor="#93C5FD"
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/tv_value1"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="0.00"
-                android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="2dp"
+                android:gravity="bottom"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:layout_marginEnd="3dp"
+                    android:text="¥"
+                    android:textColor="#CBD5E1"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_value1"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0.00"
+                    android:textColor="#FFFFFF"
+                    android:textSize="26sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- 底部双列:指标二 + 指标三 -->
+        <!-- 弹性下部间距，确保底部双列卡片稳稳贴底 -->
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <!-- 底部双列撞色卡片区 (填充底部空间，避免下半部分空旷) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
             android:orientation="horizontal">
 
+            <!-- 左卡片: 本月支出 (撞色微光块一) -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginEnd="5dp"
                 android:layout_weight="1"
-                android:orientation="vertical">
+                android:background="@drawable/widget_tile_expense_bg"
+                android:orientation="vertical"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="7dp">
 
                 <TextView
                     android:id="@+id/tv_label2"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="本月支出"
-                    android:textColor="#E0E0E0"
+                    android:textColor="#94A3B8"
                     android:textSize="11sp" />
 
                 <TextView
                     android:id="@+id/tv_value2"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:text="0.00"
-                    android:textColor="#FFFFFF"
-                    android:textSize="16sp"
+                    android:textColor="#FB7185"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
             </LinearLayout>
 
+            <!-- 右卡片: 本月结余 (撞色微光块二) -->
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
                 android:layout_weight="1"
-                android:gravity="end"
-                android:orientation="vertical">
+                android:background="@drawable/widget_tile_balance_bg"
+                android:orientation="vertical"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="7dp">
 
                 <TextView
                     android:id="@+id/tv_label3"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="本月结余"
-                    android:textColor="#E0E0E0"
+                    android:textColor="#94A3B8"
                     android:textSize="11sp" />
 
                 <TextView
                     android:id="@+id/tv_value3"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
                     android:text="0.00"
-                    android:textColor="#FFFFFF"
-                    android:textSize="16sp"
+                    android:textColor="#34D399"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
             </LinearLayout>
         </LinearLayout>

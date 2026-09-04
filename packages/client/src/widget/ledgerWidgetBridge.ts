@@ -23,6 +23,7 @@ export interface WidgetPayload {
   item3_val: string;
   clickAction: WidgetClickAction;
   updatedAt: string;
+  updatedAtDay?: string;
 }
 
 export interface LedgerWidgetPlugin {
