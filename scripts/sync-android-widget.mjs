@@ -184,7 +184,7 @@ export function syncAndroidWidget() {
     ...copyDirRecursive(
       path.join(templateDir, 'java'),
       path.join(destMain, 'java'),
-      (p) => p.endsWith('.kt') && !p.endsWith('.template'),
+      (p) => (p.endsWith('.java') || p.endsWith('.kt')) && !p.endsWith('.template'),
     ),
   );
   for (const f of copied) console.log(`[widget-sync] copied: ${path.relative(repoRoot, f)}`);

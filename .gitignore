@@ -47,3 +47,5 @@ docs
 release/
 release-*/
 release*
+
+packages/client/android/
